@@ -207,6 +207,17 @@ pub(crate) fn values(function: &Function) -> Vec<Value> {
     found
 }
 
+/// How deep the bodies of two paths are the same: the body that both see, from the body of the function.
+pub(crate) fn common_depth(a: &[Step], b: &[Step]) -> usize {
+    a.iter().zip(b).take_while(|(a, b)| a == b).count()
+}
+
+/// Whether the value is the output of an input of its name (R-2): a line of the body of the function that binds the name
+/// of an input binds the output, and reading the name reads the input.
+pub(crate) fn binds_the_output_of_an_input(function: &Function, value: &Value) -> bool {
+    matches!(&value.bound, Bound::Line(loc, _) if loc.body.is_empty()) && function.signature.params.iter().any(|param| param.name == value.name)
+}
+
 /// Whether a value seen in `seen_in` reaches a reader in `reader`, with nothing of the same name between them.
 pub(crate) fn sees(function: &Function, value: &Value, reader: &[Step]) -> bool {
     if !reader.starts_with(&value.seen_in) {

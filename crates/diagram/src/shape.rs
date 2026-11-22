@@ -608,6 +608,13 @@ pub struct Port {
     pub caption: String,
     /// Its type, by its index in [`Drawing::types`]; none when `check` does not know it, which takes anything.
     pub ty: Option<usize>,
+    /// For an input of a type variable that another input settles (`core.sub(size, b)`): its type is that of the other,
+    /// which a wire meets rather than fits (spec 3.4, `u16` and `i32` give an `i32`). False for another terminal.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub meets: bool,
+    /// The bound of that variable, which decides how two types meet (spec 3.5); none for another terminal.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub bound: Option<labcraft_types::Bound>,
     /// The constant it holds as the file writes it, escapes kept: what a field in place opens with (notation 2.6). Empty
     /// for another input, or a constant above `LITERAL_BYTES`.
     #[cfg_attr(feature = "serde", serde(default))]

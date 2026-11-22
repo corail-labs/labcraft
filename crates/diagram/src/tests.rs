@@ -2008,9 +2008,23 @@ fn corners_round_by_the_radius_or_half_the_shorter_side() {
 
 /// The verdict of the drawing on a wire from the port named `from` to the input named `to` (notation 2.5).
 fn verdict_of(drawing: &crate::Drawing, from: &str, to: &str) -> crate::Verdict {
-    let start = drawing.ports.iter().position(|port| !port.input && port.name == from).unwrap_or_else(|| panic!("no output {from}"));
     let end = drawing.ports.iter().position(|port| port.input && port.name == to).unwrap_or_else(|| panic!("no input {to}"));
-    crate::wiring(drawing, start).into_iter().nth(end).flatten().unwrap_or_else(|| panic!("{from} -> {to} is no wire"))
+    verdict_at(drawing, from, end)
+}
+
+/// The verdict of the drawing on a wire from the port named `from` to the input at `end` in [`crate::Drawing::ports`].
+fn verdict_at(drawing: &crate::Drawing, from: &str, end: usize) -> crate::Verdict {
+    let start = drawing.ports.iter().position(|port| !port.input && port.name == from).unwrap_or_else(|| panic!("no output {from}"));
+    crate::wiring(drawing, start).into_iter().nth(end).flatten().unwrap_or_else(|| panic!("{from} -> {end} is no wire"))
+}
+
+/// The `yield` of the output `name` in the arm `arm`, by its index in [`crate::Drawing::ports`].
+fn yield_of(drawing: &crate::Drawing, name: &str, arm: &str) -> usize {
+    drawing
+        .ports
+        .iter()
+        .position(|port| port.input && port.frame && port.name == name && port.arm == arm)
+        .unwrap_or_else(|| panic!("no yield {name} in {arm}"))
 }
 
 fn code_of(verdict: &crate::Verdict) -> &'static str {
@@ -2047,6 +2061,76 @@ fn a_wire_out_of_an_arm_to_what_feeds_its_structure_is_a_cycle() {
     let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    s = core.add(x, 1.0)\n    c = core.gt(s, 0.0)\n    y = match c {\n        true => {\n            d = core.abs(x)\n            yield d\n        }\n        false => yield x\n    }\n}\n";
     let drawing = drawing_of(main);
     assert_eq!(code_of(&verdict_of(&drawing, "d", "s.b")), "wire.cycle");
+}
+
+/// Spec 3.4: two number types that meet in one operation give the smallest type that both widen to, so an input of a
+/// type variable that the other input settles takes a value that meets it, not only one that fits it: `u16` and `i32`
+/// give an `i32`; `i64` and `f64` have none; a change of scale on integers goes through an `f64`. The bound of the
+/// variable holds (3.5): an `f64` does not meet a `u8` of `core.and`, nor a `bool` (`Bits`). What the wider type then
+/// changes downstream, `wire.connect` judges at the drop (architecture 12.4).
+#[test]
+fn an_input_of_a_type_variable_takes_what_meets_the_other() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(size: u16, small: i32, big: i64, real: f64, flag: bool, volts: i32[V], millis: i32[mV], code: u8) -> (r: i32, s: i64, t: f64[V], h: u8) {\n    r = core.sub(size, small)\n    s = core.sub(big, 1)\n    t = core.add(volts, 2 V)\n    h = core.and(code, 0x80)\n}\n";
+    let drawing = drawing_of(main);
+    assert_eq!(code_of(&verdict_of(&drawing, "small", "r.b")), "takes");
+    assert_eq!(code_of(&verdict_of(&drawing, "flag", "r.b")), "wire.type_mismatch");
+    assert_eq!(code_of(&verdict_of(&drawing, "real", "s.b")), "wire.type_mismatch");
+    assert_eq!(code_of(&verdict_of(&drawing, "millis", "t.b")), "takes");
+    assert_eq!(code_of(&verdict_of(&drawing, "real", "h.b")), "wire.type_mismatch");
+    assert_eq!(code_of(&verdict_of(&drawing, "flag", "h.b")), "wire.type_mismatch");
+    assert_eq!(code_of(&verdict_of(&drawing, "size", "h.b")), "takes");
+}
+
+/// Commands.md 6.7 and spec 5.2: a wire from inside a loop to the `yield` of a `match` that the loop reads takes the
+/// value out of the loop, and the `match` would then read what it feeds: a cycle, as `wire.connect` says after the
+/// passage. From inside the `match`, or from a value that does not depend on it, the `yield` takes the wire.
+#[test]
+fn a_wire_out_of_a_loop_to_the_yield_of_what_feeds_the_loop_is_a_cycle() {
+    let main = "labcraft 1
+
+use core
+
+fn main(c: bool, k: i32) -> (ys: [i32]) {
+    n = match c {
+        true => yield 3
+        false => {
+            m = core.add(k, 1)
+            yield m
+        }
+    }
+    ys = for i in 0..n {
+        at = core.add(i, 2)
+        collect at
+    }
+}
+";
+    let drawing = drawing_of(main);
+    assert_eq!(code_of(&verdict_at(&drawing, "at", yield_of(&drawing, "n", "true"))), "wire.cycle");
+    assert_eq!(code_of(&verdict_at(&drawing, "i", yield_of(&drawing, "n", "true"))), "wire.cycle");
+    assert_eq!(code_of(&verdict_at(&drawing, "m", yield_of(&drawing, "n", "false"))), "takes");
+    assert_eq!(code_of(&verdict_at(&drawing, "k", yield_of(&drawing, "n", "true"))), "takes");
+    // A loop in an arm, its carry to the `yield` of that arm: the arm reads what the loop gives, no cycle.
+    let main = "labcraft 1
+
+use time
+
+fn main(c: bool, e0: error = none) -> (out: error) {
+    out = match c {
+        true => {
+            f = loop carry e = e0 {
+                g = time.wait(1 s, err: e)
+                next e = g
+                until true
+            }
+            yield f
+        }
+        false => yield e0
+    }
+}
+";
+    let drawing = drawing_of(main);
+    let verdict = verdict_at(&drawing, "e", yield_of(&drawing, "out", "true"));
+    assert!(matches!(&verdict, crate::Verdict::Takes { exits, .. } if exits.len() == 1), "{verdict:?}");
 }
 
 // The size of a frame (`frame size`, `frame NAME size`, spec 11): a frame is drawn as large as its entry says, never

@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 347 324" width="347" height="324" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="last_of_loop">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 347 328" width="347" height="328" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="last_of_loop">
 <style>
 svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-64748B-64748B: #64748B; }
 @media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-64748B-64748B: #64748B; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect width="347" height="324" style="fill: var(--canvas-fill)"/>
+<rect width="347" height="328" style="fill: var(--canvas-fill)"/>
 <defs>
 <symbol id="icon-bd615852e60351e8" viewBox="0 0 32 32" overflow="hidden">
 <path d="M10.556 20.667l10.889 -3.111" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
@@ -22,7 +22,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <defs>
 <polygon id="outline-0" points="0,2 0.15,1.23 0.59,0.59 1.23,0.15 2,0 15.17,0 15.94,0.15 16.59,0.59 23.41,7.41 23.85,8.06 24,8.83 24,23.17 23.85,23.94 23.41,24.59 16.59,31.41 15.94,31.85 15.17,32 2,32 1.23,31.85 0.59,31.41 0.15,30.77 0,30"/>
 </defs>
-<rect x="16" y="16" width="312" height="292" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect x="16" y="16" width="312" height="296" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">fn last_of_loop</text>
 <g data-wire="count" data-from="count.count" data-to="fn.count">
 <path d="M249.02 216 L328 216" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -39,7 +39,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="273.86" y="243.65" font-size="10" style="fill: var(--node-title)">squared</text>
 </g>
 <g data-node="count"><title>loop</title>
-<rect x="57.02" y="56" width="192" height="236" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect x="57.02" y="56" width="192" height="240" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
 <polyline points="79.53,67.57 79.82,69.2 79.53,70.83 78.69,72.28 77.42,73.35 75.84,73.92 74.2,73.92 72.62,73.35 71.35,72.28 70.51,70.83 70.22,69.2 70.51,67.57 71.35,66.12 72.62,65.05 74.2,64.48 75.84,64.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
 <polyline points="75.33,67.43 78.8,64.99 76.36,61.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
 <text x="85.02" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>

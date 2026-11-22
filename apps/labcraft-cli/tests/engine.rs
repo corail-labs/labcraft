@@ -246,20 +246,31 @@ fn view_select_takes_every_name_that_the_drawings_of_the_examples_give() {
 /// The program files of `examples/`, in memory under `/p`, so that a test edits them without touching the repository.
 fn examples_in_memory() -> Arc<labcraft_engine::Memory> {
     let memory = Arc::new(labcraft_engine::Memory::new());
-    let root = repository().join("examples");
-    let mut pending = vec![root.clone()];
+    put_folder(&memory, &repository().join("examples"), "/p");
+    memory
+}
+
+/// The examples, and the library `wiring` of the cases that the editor met on an example of 0.5.0 (`tests/wiring`): a
+/// `match` then a `for`, a `for` in an arm, an output bound by a labelled node.
+fn examples_and_wiring_cases() -> Arc<labcraft_engine::Memory> {
+    let memory = examples_in_memory();
+    put_folder(&memory, &repository().join("apps/labcraft-cli/tests/wiring"), "/p/wiring");
+    memory
+}
+
+fn put_folder(memory: &labcraft_engine::Memory, root: &std::path::Path, at: &str) {
+    let mut pending = vec![root.to_path_buf()];
     while let Some(folder) = pending.pop() {
         for entry in std::fs::read_dir(&folder).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 pending.push(path);
             } else if path.extension().is_some_and(|extension| extension == "lcf" || extension == "lct" || extension == "toml") {
-                let relative = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
-                memory.put(format!("/p/{relative}"), std::fs::read(&path).unwrap());
+                let relative = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                memory.put(format!("{at}/{relative}"), std::fs::read(&path).unwrap());
             }
         }
     }
-    memory
 }
 
 /// What a diff of lines shows between `before` and `after`, as git counts it: the lines added and the lines removed,
@@ -289,13 +300,13 @@ fn changed_lines(before: &str, after: &str) -> (Vec<String>, Vec<String>) {
     (added, removed)
 }
 
-/// Scenario 5 of `docs/acceptance-m1.md`, point 1: moving one node of a function of `examples/` changes its entry of
+/// Scenario 5 of `docs/acceptance-m1.md`, point 1: moving one node of a function of `examples/` (and of the wiring cases) changes its entry of
 /// `layout` alone, or adds it, with the section when the file had none; a node that the section cannot name gets its
 /// label first (commands.md 6.7, `node.move`). And where it goes is where it was in its frame, plus the move (spec 11):
 /// the place in its frame of the new drawing is the old one, plus `by`. Each move is undone before the next.
 #[test]
 fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
-    let memory = examples_in_memory();
+    let memory = examples_and_wiring_cases();
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(labcraft_format::STACK_SIZE)
@@ -320,12 +331,13 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
                     .filter(|listed| listed.drawable)
                     .map(|listed| (listed.function.clone(), listed.file.clone()))
                     .collect();
-                let (mut moved, mut labels, mut frames_moved) = (0, 0, 0);
+                let (mut moved, mut labels, mut frames_moved, mut wiring_cases) = (0, 0, 0, 0);
                 // Down and to the right, then up and to the left, past the top of a small frame (the move that brought a
                 // node back to its place in an arm, before the decision of the owner of 2026-11-17).
                 for ((function, file), by) in listed.iter().flat_map(|listed| [(listed.clone(), (8, 16)), (listed.clone(), (-16, -40))]) {
                     ok(&mut session, "view.show_function", json!({ "function": function }));
                     let Some(before) = session.view().main.drawing.clone() else { continue };
+                    wiring_cases += usize::from(function.starts_with("wiring."));
                     let path = format!("/p/{file}");
                     let text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
                     for (at, placed) in before.placed.iter().enumerate().filter(|(_, placed)| !placed.name.is_empty()) {
@@ -376,6 +388,8 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
                 }
                 // The three `s` of the arms of `station` are named by their line: they get a label (commands.md 9.2).
                 assert!(moved > 50 && labels >= 3, "{moved} nodes moved, {labels} labelled");
+                // The four functions of the wiring cases, each moved down then up.
+                assert_eq!(wiring_cases, 8, "the wiring cases are drawn");
                 eprintln!("scenario 5: {moved} nodes moved, {labels} labelled, of which {frames_moved} moved their frame");
             })
             .unwrap()
@@ -385,7 +399,7 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
 }
 
 /// What the canvas says of a wire while it is drawn is what `wire.connect` does at the drop (notation 2.5, 2.6: the
-/// filter is the predicate of the command): on each function of `examples/`, a wire between two ports, judged on the
+/// filter is the predicate of the command): on each function of `examples/` and of the wiring cases, a wire between two ports, judged on the
 /// drawing by `labcraft_diagram::wiring` from its start, an output, and from its end, an input, which must agree, then
 /// given to the command with `replace`, which a drop on a wired input passes, and without it when the canvas says the
 /// wire replaces something, which the command then refuses (`wire.occupied`). Every pair of a small function, and of a
@@ -398,7 +412,7 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
 /// which the canvas refuses.
 #[test]
 fn the_canvas_judges_a_wire_as_wire_connect_does() {
-    let memory = examples_in_memory();
+    let memory = examples_and_wiring_cases();
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(labcraft_format::STACK_SIZE)
@@ -425,9 +439,11 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                     .collect();
                 let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
                 let mut wrong = Vec::new();
+                let mut wiring_cases = 0;
                 for (function, file) in listed {
                     ok(&mut session, "view.show_function", json!({ "function": function }));
                     let Some(drawing) = session.view().main.drawing.clone() else { continue };
+                    wiring_cases += usize::from(function.starts_with("wiring."));
                     let path = format!("/p/{file}");
                     let text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
                     let mut pairs = Vec::new();
@@ -540,7 +556,9 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                             assert_eq!(String::from_utf8(memory.get(&path).unwrap()).unwrap(), text, "nothing written");
                             continue;
                         }
-                        let left = (said == "takes" && did == "wire.type_mismatch" && target.ty.is_none())
+                        // An input of a type variable that another settles takes what meets it (spec 3.4): what the wider
+                        // type changes downstream, the command judges.
+                        let left = (said == "takes" && did == "wire.type_mismatch" && (target.ty.is_none() || target.meets))
                             || (said == "wire.out_of_scope" && named_twice(&from))
                             // A name of several bodies names none of them out of them (9.2): the editor sends `node.output`.
                             || (did == "edit.ambiguous" && named_twice(&from))
@@ -564,6 +582,7 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                 }
                 eprintln!("{counts:?}");
                 assert!(wrong.is_empty(), "{} of {}:\n{}", wrong.len(), counts.values().sum::<usize>(), wrong.join("\n"));
+                assert_eq!(wiring_cases, 4, "the four functions of the wiring cases are drawn");
                 // Each verdict is met, agreed on.
                 // A wire out of a loop is no longer refused (commands.md 6.7, `through`): the examples hold few other
                 // values out of scope.

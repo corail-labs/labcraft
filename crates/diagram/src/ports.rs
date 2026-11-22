@@ -85,19 +85,28 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 }
             };
             let mut never = String::new();
+            let (mut meets, mut bound) = (false, None);
             let (key, family) = match terminal.expects {
                 graph::Expects::Type => (Some(Key::Id(terminal.ty)), String::new()),
                 graph::Expects::Fixed(ty) => (fixed(ty).map(Key::Fixed), String::new()),
                 graph::Expects::Family(family) => (None, family_key(family)),
-                graph::Expects::Variable { variable, numbers } => {
+                graph::Expects::Variable { variable, bound: of_variable } => {
                     // Another input of the same variable that a wire reaches settles it; a literal takes the type
                     // that the call settles (`core.add(x, 1)` with `x` an `f64`).
                     let settled = node.inputs.iter().find(|other| {
-                        !std::ptr::eq(*other, terminal) && other.expects == graph::Expects::Variable { variable, numbers } && !other.reads.is_empty()
+                        !std::ptr::eq(*other, terminal)
+                            && other.expects == graph::Expects::Variable { variable, bound: of_variable }
+                            && !other.reads.is_empty()
                     });
                     match settled {
-                        Some(other) => (Some(Key::Id(other.ty)), String::new()),
-                        None if numbers => (None, family_key(graph::Family { base: graph::Base::Number, dimensions: 0 })),
+                        Some(other) => {
+                            (meets, bound) = (true, of_variable);
+                            (Some(Key::Id(other.ty)), String::new())
+                        }
+                        // A variable that only numbers can be: `Number` or `Integer`, not `Bits`, which holds `bool` too.
+                        None if of_variable.is_some_and(|bound| !bound.holds(&labcraft_types::Ty::Bool)) => {
+                            (None, family_key(graph::Family { base: graph::Base::Number, dimensions: 0 }))
+                        }
                         None => (None, String::new()),
                     }
                 }
@@ -122,6 +131,8 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 name: to,
                 caption: terminal.name.clone(),
                 ty: None,
+                meets,
+                bound,
                 literal: terminal.literal.clone().unwrap_or_default(),
                 holds,
                 value,
@@ -160,6 +171,8 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 name: from,
                 caption: terminal.name.clone(),
                 ty: None,
+                meets: false,
+                bound: None,
                 literal: String::new(),
                 holds: Holds::Nothing,
                 value: bound.unwrap_or_default(),
@@ -190,6 +203,8 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 name: if name.is_empty() { String::new() } else { format!("{name}.after") },
                 caption: "after".to_owned(),
                 ty: None,
+                meets: false,
+                bound: None,
                 literal: String::new(),
                 holds: Holds::Nothing,
                 value: String::new(),
@@ -281,6 +296,8 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     name,
                     caption: terminal.terminal.name.clone(),
                     ty: None,
+                    meets: false,
+                    bound: None,
                     literal: String::new(),
                     holds,
                     value,
@@ -490,8 +507,12 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
                         (_, _, Some(holder)) if holder == made_by => true,
                         (Some(reaching), _, Some(holder)) => reaching.contains(&holder),
                         (_, Some(reached), Some(_)) => reached.contains(&made_by),
-                        // A part inside a structure (`next`, `until`, `collect`, `yield`) is no reader outside.
-                        _ if target.frame => false,
+                        // A part inside a structure (`next`, `until`, `collect`, `yield`) is read by its structure: no reader
+                        // outside for a value inside it, but a value from outside, out of a structure beside it, closes a
+                        // cycle when that structure reads, deep, what the structure of the part makes (commands.md 6.7).
+                        _ if target.frame => target.placed.is_some_and(|structure| {
+                            lifted(drawing, made_by, target.body).is_none() && lifted_cycle(drawing, &graph, &mut upstream, made_by, structure)
+                        }),
                         // A value taken out of an arm (commands.md 6.7): the structures around it give it, in the body
                         // that both see, so the reader there must not feed the outermost of them.
                         _ => lifted_cycle(drawing, &graph, &mut upstream, made_by, reader),
@@ -500,6 +521,8 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
                 // A carry or a clause taken out of its loop (commands.md 6.7, `through`): the loop gives it, so a reader
                 // outside it that feeds the loop closes a cycle.
                 (None, Some(reader)) if source.frame && !source.input => match drawing.bodies.get(source.body).and_then(|body| body.owner) {
+                    // A part of a structure (a `yield`) is read in the body that holds it: there, the loop is no reader.
+                    Some(owner) if target.frame && lifted(drawing, owner, target.body).is_some() => false,
                     Some(owner) if lifted(drawing, reader, drawing.placed.get(owner).map_or(source.body, |node| node.body)) != Some(owner) => {
                         lifted_cycle(drawing, &graph, &mut upstream, owner, reader)
                     }
@@ -584,6 +607,8 @@ pub fn passage_refusal(drawing: &Drawing, source: &Port, target: &Port, collects
         (Some(_), Some(expected)) if collects > 0 => (arrayed(&found) != text(Some(expected))).then(|| text(Some(expected))),
         (Some(found), Some(expected)) => {
             let fits = match (drawing.type_keys.get(found), drawing.type_keys.get(expected)) {
+                // Two inputs of one type variable meet (spec 3.4).
+                (Some(found), Some(expected)) if target.meets => found.meets(expected, target.bound),
                 (Some(found), Some(expected)) => matches!(found.fit(expected), Fit::Same | Fit::Coerce),
                 _ => true,
             };

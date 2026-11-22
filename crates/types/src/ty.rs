@@ -140,6 +140,16 @@ impl NumberKind {
         let reaches = |from: NumberKind, to: NumberKind| from == to || from.widens_to(to);
         BY_SIZE.into_iter().find(|kind| reaches(self, *kind) && reaches(other, *kind))
     }
+
+    /// Where two numbers of one dimension meet in one operation (spec 3.4): [`NumberKind::meeting`], through an `f64` when
+    /// their units differ, since a change of scale goes through a floating-point number.
+    pub fn meeting_scaled(self, other: NumberKind, same_unit: bool) -> Option<NumberKind> {
+        let met = self.meeting(other)?;
+        if same_unit || met.is_inexact() {
+            return Some(met);
+        }
+        met.widens_to(NumberKind::F64).then_some(NumberKind::F64)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -149,7 +159,7 @@ pub struct Variant {
 }
 
 /// The bound of a type variable (spec 3.5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Bound {
     /// Integers, floats and complex numbers, with any unit; a `duration` counts as an `f64[s]`.
     Number,
@@ -447,6 +457,31 @@ impl FitKey {
             (FitKey::Number(kind, unit), FitKey::Duration) => number_to_number(*kind, unit, NumberKind::F64, &Unit::SECOND),
             _ => Fit::No,
         }
+    }
+
+    /// Whether a value of this type meets one of type `other` in one operation, two inputs of one type variable (spec
+    /// 3.4, 3.5): two numbers of one dimension meet in the smallest kind that both widen to, through a floating-point
+    /// number for a change of scale (`u16` and `i32` give an `i32`); another type must fit. As `check` meets them.
+    /// The bound of the variable decides as in `check`: an `Integer` or a `Bits` holds only what it holds, and only a
+    /// `Number` takes a `duration` as an `f64[s]` (3.1).
+    pub fn meets(&self, other: &FitKey, bound: Option<Bound>) -> bool {
+        if let Some(bound @ (Bound::Integer | Bound::Bits)) = bound {
+            let ty = |key: &FitKey| match key {
+                FitKey::Number(kind, unit) => Some(Ty::Number { kind: *kind, unit: *unit }),
+                FitKey::Bool => Some(Ty::Bool),
+                _ => None,
+            };
+            return matches!((ty(self), ty(other)), (Some(a), Some(b)) if bound.meeting(&a, &b).is_some());
+        }
+        let number = |key: &FitKey| match key {
+            FitKey::Number(kind, unit) => Some((*kind, *unit)),
+            FitKey::Duration if bound == Some(Bound::Number) => Some((NumberKind::F64, Unit::SECOND)),
+            _ => None,
+        };
+        let (Some((kind, unit)), Some((other_kind, other_unit))) = (number(self), number(other)) else {
+            return matches!(self.fit(other), Fit::Same | Fit::Coerce);
+        };
+        unit.same_dimension(&other_unit) && other_kind.meeting_scaled(kind, unit == other_unit).is_some()
     }
 }
 

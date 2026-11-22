@@ -35,10 +35,10 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <rect x="19" y="16" width="1384" height="608" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn projectile</text>
 <g data-wire="drag" data-from="fn.drag" data-to="k.a">
-<path d="M19 532 L173.75 532 Q179.75 532 179.75 538 L179.75 562 Q179.75 568 185.75 568 L203 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 536 L173.75 536 Q179.75 536 179.75 542 L179.75 562 Q179.75 568 185.75 568 L203 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="mass" data-from="fn.mass" data-to="k.b">
-<path d="M19 508 L181.75 508 Q187.75 508 187.75 514 L187.75 586 Q187.75 592 193.75 592 L203 592" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 512 L181.75 512 Q187.75 512 187.75 518 L187.75 586 Q187.75 592 193.75 592 L203 592" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="vx0" data-from="fn.vx0" data-to="flight_time.vx">
 <path d="M19 352 L357.75 352 Q361.75 352 361.75 356 L361.75 356 Q361.75 360 365.75 360 L459 360" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -58,11 +58,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M1275 408 L1234.81 408 Q1230.81 408 1230.81 404 L1230.81 404 Q1230.81 400 1234.81 400 L1403 400" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
-<path d="M19 556 L165.75 556 Q171.75 556 171.75 550 L171.75 506 Q171.75 500 177.75 500 L355.75 500 Q361.75 500 361.75 494 L361.75 462 Q361.75 456 367.75 456 L459 456" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="260.73" y="497" font-size="10" style="fill: var(--ink-muted)">dt</text>
+<path d="M19 560 L165.75 560 Q171.75 560 171.75 554 L171.75 510 Q171.75 504 177.75 504 L355.75 504 Q361.75 504 361.75 498 L361.75 462 Q361.75 456 367.75 456 L459 456" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="260.73" y="501" font-size="10" style="fill: var(--ink-muted)">dt</text>
 </g>
 <g data-wire="g" data-from="g.value" data-to="flight_time.g">
-<path d="M272.98 408 L355.75 408 Q361.75 408 361.75 414 L361.75 426 Q361.75 432 367.75 432 L459 432" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M272.98 412 L355.75 412 Q361.75 412 361.75 418 L361.75 426 Q361.75 432 367.75 432 L459 432" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="407.36" y="429" font-size="10" style="fill: var(--ink-muted)">g</text>
 </g>
 <g data-wire="k" data-from="k.result" data-to="flight_time.k">
@@ -78,22 +78,22 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <rect x="23" y="370.18" width="61.15" height="11.64" style="fill: var(--canvas-fill)"/>
 <text x="31" y="379.65" font-size="10" style="fill: var(--node-title)">vy0</text>
 <text x="53.06" y="379.28" font-size="9" style="fill: var(--ink-muted)">[m/s]</text>
-<circle cx="19" cy="508" r="3" style="fill: var(--wire-data)"/>
-<rect x="23" y="502.18" width="61.75" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="511.65" font-size="10" style="fill: var(--node-title)">mass</text>
-<text x="59.08" y="511.28" font-size="9" style="fill: var(--ink-muted)">[kg]</text>
-<circle cx="19" cy="532" r="3" style="fill: var(--wire-data)"/>
-<rect x="23" y="526.18" width="76.59" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="535.65" font-size="10" style="fill: var(--node-title)">drag</text>
-<text x="59.08" y="535.28" font-size="9" style="fill: var(--ink-muted)">[kg/m]</text>
-<rect x="99.59" y="525" width="56.16" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="103.59" y="535.65" font-size="10" style="fill: var(--pill-text)">◂ 0 kg/m</text>
-<circle cx="19" cy="556" r="3" style="fill: var(--wire-data)"/>
-<rect x="23" y="550.18" width="48.3" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="559.65" font-size="10" style="fill: var(--node-title)">dt</text>
-<text x="47.04" y="559.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
-<rect x="71.3" y="549" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="75.3" y="559.65" font-size="10" style="fill: var(--pill-text)">◂ 10 ms</text>
+<circle cx="19" cy="512" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="506.18" width="61.75" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="515.65" font-size="10" style="fill: var(--node-title)">mass</text>
+<text x="59.08" y="515.28" font-size="9" style="fill: var(--ink-muted)">[kg]</text>
+<circle cx="19" cy="536" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="530.18" width="76.59" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="539.65" font-size="10" style="fill: var(--node-title)">drag</text>
+<text x="59.08" y="539.28" font-size="9" style="fill: var(--ink-muted)">[kg/m]</text>
+<rect x="99.59" y="529" width="56.16" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="103.59" y="539.65" font-size="10" style="fill: var(--pill-text)">◂ 0 kg/m</text>
+<circle cx="19" cy="560" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="554.18" width="48.3" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="563.65" font-size="10" style="fill: var(--node-title)">dt</text>
+<text x="47.04" y="563.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
+<rect x="71.3" y="553" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="75.3" y="563.65" font-size="10" style="fill: var(--pill-text)">◂ 10 ms</text>
 <circle cx="1403" cy="160" r="3" style="fill: var(--wire-data)"/>
 <rect x="1300.51" y="154.18" width="98.49" height="11.64" style="fill: var(--canvas-fill)"/>
 <text x="1304.51" y="163.65" font-size="10" style="fill: var(--node-title)">flight_time</text>
@@ -108,10 +108,10 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="1374.74" y="403.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
 </g>
 <g data-node="g"><title>g = 9.81 m/s^2</title>
-<text x="182.75" y="411.65" font-size="10" style="fill: var(--node-title)">g</text>
-<rect x="196.77" y="401" width="68.21" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="200.77" y="411.65" font-size="10" style="fill: var(--pill-text)">9.81 m/s^2</text>
-<circle cx="272.98" cy="408" r="3" style="fill: var(--wire-data)"/>
+<text x="182.75" y="415.65" font-size="10" style="fill: var(--node-title)">g</text>
+<rect x="196.77" y="405" width="68.21" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="200.77" y="415.65" font-size="10" style="fill: var(--pill-text)">9.81 m/s^2</text>
+<circle cx="272.98" cy="412" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="k"><title>core.div</title>
 <rect x="203" y="528" width="168" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
@@ -129,7 +129,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="225.02" y="595.65" font-size="10" style="fill: var(--ink-muted)">[kg]</text>
 </g>
 <g data-node="flight_time"><title>loop</title>
-<rect x="459" y="64" width="816" height="468" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect x="459" y="64" width="816" height="472" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
 <polyline points="481.51,75.57 481.8,77.2 481.51,78.83 480.67,80.28 479.4,81.35 477.82,81.92 476.18,81.92 474.6,81.35 473.33,80.28 472.49,78.83 472.2,77.2 472.49,75.57 473.33,74.12 474.6,73.05 476.18,72.48 477.82,72.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
 <polyline points="477.31,75.43 480.78,72.99 478.34,69.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
 <text x="487" y="79.65" font-size="10" style="fill: var(--node-title)">loop</text>

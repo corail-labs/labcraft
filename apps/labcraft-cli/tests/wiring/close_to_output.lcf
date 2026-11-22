@@ -1,0 +1,17 @@
+labcraft 1
+
+use net
+
+/// An output bound directly by a labelled node (`#close: err = …`), whose name is also an input (R-2).
+fn close_to_output(
+    host: string,
+    port: u16 = 502,
+    unit: u8 = 1,
+    first: u16 = 0,
+    count: u16 = 1,
+    err: error = none,
+) -> (registers: [u16], err: error) {
+    c1, e1 = net.connect(host, port, err: err)
+    registers, c2, e2 = match_then_for(c1, unit: unit, first: first, count: count, err: e1)
+    #close: err = net.close(c2, err: e2)
+}

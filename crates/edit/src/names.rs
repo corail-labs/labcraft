@@ -112,6 +112,9 @@ pub(crate) fn rename(edit: &mut Edit, value: &Value, to: Name) -> Result<(), Edi
     };
     let from = value.name;
     let function = edit.body_function()?.clone();
+    // The output of an input of its name (R-2): reading the name reads the input, so no reader follows the rename.
+    let output_of_an_input = scope::binds_the_output_of_an_input(&function, value);
+    let sees = |seen_in: &[scope::Step]| !output_of_an_input && scope::sees(&function, value, seen_in);
     let readers: Vec<(scope::Loc, crate::places::Slot)> = scope::all(&function)
         .into_iter()
         .flat_map(|reader| {
@@ -120,14 +123,14 @@ pub(crate) fn rename(edit: &mut Edit, value: &Value, to: Name) -> Result<(), Edi
                 .map(|statement| {
                     slots(&statement, &reader)
                         .into_iter()
-                        .filter(|(_, seen_in)| scope::sees(&function, value, seen_in))
+                        .filter(|(_, seen_in)| sees(seen_in))
                         .map(|(slot, _)| (reader.clone(), slot))
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default()
         })
         .collect();
-    let after_readers: Vec<scope::Loc> = scope::all(&function).into_iter().filter(|reader| scope::sees(&function, value, &reader.body)).collect();
+    let after_readers: Vec<scope::Loc> = scope::all(&function).into_iter().filter(|reader| sees(&reader.body)).collect();
     let target_function: &mut Function = edit.body_function_mut()?;
     if let Some(statement) = scope::statement_mut(target_function, loc)
         && let labcraft_graph::StatementKind::Binding { targets, .. } = &mut statement.kind

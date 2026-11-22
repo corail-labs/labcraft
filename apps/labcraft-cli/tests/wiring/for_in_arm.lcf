@@ -1,0 +1,53 @@
+labcraft 1
+
+use bytes
+use core
+use errors
+use net
+
+/// A `for` inside an arm of a `match`: wires out of the loop, to the `yield` of its arm and beyond.
+fn for_in_arm(
+    connection: net.connection,
+    unit: u8 = 1,
+    first: u16 = 0,
+    count: u16 = 1,
+    transaction: u16 = 1,
+    err: error = none,
+) -> (registers: [u16], connection: net.connection, err: error) {
+    id, e1 = bytes.from_u16(transaction, err: err)
+    protocol, e2 = bytes.from_u16(0, err: e1)
+    length, e3 = bytes.from_u16(6, err: e2)
+    to, e4 = bytes.from_u8(unit, err: e3)
+    function, e5 = bytes.from_u8(3, err: e4)
+    start, e6 = bytes.from_u16(first, err: e5)
+    how_many, e7 = bytes.from_u16(count, err: e6)
+    request = bytes.concat(id, protocol, length, to, function, start, how_many)
+    c1, e8 = net.write(connection, request, err: e7)
+    header, c2, e9 = net.read(c1, 7, err: e8)
+    size, e10 = bytes.read_u16(header, 4, err: e9)
+    unit_byte = bytes.len(to)
+    rest = core.sub(size, unit_byte)
+    pdu, c3, e11 = net.read(c2, rest, err: e10)
+    code, e12 = bytes.read_u8(pdu, 0, err: e11)
+    high = core.and(code, 0x80)
+    registers, err_out = match high {
+        0 => {
+            e13, values = for i in 0..count, carry e = e12 {
+                offset = core.mul(i, 2)
+                at = core.add(offset, 2)
+                value, e14 = bytes.read_u16(pdu, at, err: e)
+                next e = e14
+                collect value
+            }
+            yield (values, e13)
+        }
+        _ => {
+            exception, e15 = bytes.read_u8(pdu, 1, err: e12)
+            refused = errors.make(wiring.exception, code: exception, message: "exception response to function 3")
+            e16 = errors.merge(e15, refused)
+            yield ([], e16)
+        }
+    }
+    connection = c3
+    err = err_out
+}

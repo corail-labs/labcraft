@@ -167,8 +167,13 @@ pub fn line_height(size: u32) -> i64 {
 }
 
 pub fn up(value: i64) -> i64 {
-    let rest = value.rem_euclid(style::grid());
-    if rest == 0 { value } else { value.saturating_add(style::grid() - rest) }
+    up_to(value, style::grid())
+}
+
+/// `value` rounded up to a whole number of `step`.
+pub fn up_to(value: i64, step: i64) -> i64 {
+    let rest = value.rem_euclid(step.max(1));
+    if rest == 0 { value } else { value.saturating_add(step.max(1) - rest) }
 }
 
 pub use labcraft_check::places::{Line, lines};
