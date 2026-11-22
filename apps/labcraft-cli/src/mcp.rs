@@ -37,7 +37,8 @@ pub enum Started {
     Attached(std::net::TcpStream),
     /// What took the connection refused it, or did not prove it holds the token: why (exit 2), not a wrong usage.
     Refused(String),
-    Headless(Box<Session>),
+    /// A session of its own, and what it tells the agent of the windows that show other projects.
+    Headless(Box<Session>, Option<String>),
 }
 
 /// Attaches to the window of the project of `--project` or the current folder (ide.md 8; mcp.md 1), else starts a
@@ -57,7 +58,24 @@ pub fn start(options: &McpOptions) -> Result<Started, String> {
             Err(crate::attach::NotAttached::NoWindow) => {}
         }
     }
-    session_at(options, root, true).map(|session| Started::Headless(Box::new(session)))
+    let note = elsewhere(&root, &crate::attach::other_projects(&root));
+    session_at(options, root, true).map(|session| Started::Headless(Box::new(session), note))
+}
+
+/// What an agent is told when it works on a project that no window shows while windows show others (decision of the
+/// owner, 2026-11-22): its edits are not seen there, and how the user gives it the project they look at.
+fn elsewhere(root: &Path, others: &[String]) -> Option<String> {
+    let shown: Vec<String> = others.iter().map(|project| format!("`{}`", crate::setup::plain(Path::new(project)))).collect();
+    let (first, _) = others.split_first()?;
+    Some(format!(
+        "This server works on `{}`, which no window of LabCraft shows, so the user does not see your edits. A window of \
+         LabCraft shows {}. To work on one of those, the user starts this MCP client in that folder, or gives \
+         `--project {}` to `labcraft-cli mcp` in its configuration: tell them so, rather than driving the window of \
+         LabCraft through its interface.",
+        crate::setup::plain(root),
+        shown.join(", "),
+        crate::setup::plain(Path::new(first)),
+    ))
 }
 
 /// The session on the root, checked as it starts; the message of a wrong usage otherwise (exit 2).
@@ -117,7 +135,12 @@ fn session_at(options: &McpOptions, root: PathBuf, background: bool) -> Result<S
 /// Serves what `mcp` started until stdin closes: relayed to the window, or a session of its own.
 pub fn serve_started(started: Started) -> ExitCode {
     match started {
-        Started::Headless(session) => serve(*session),
+        Started::Headless(session, note) => {
+            if let Some(note) = &note {
+                let _ = writeln!(std::io::stderr(), "labcraft-cli mcp: {note}");
+            }
+            serve(*session, note)
+        }
         Started::Refused(why) => {
             let _ = writeln!(std::io::stderr(), "error: {why}");
             ExitCode::from(2)
@@ -138,8 +161,9 @@ pub fn serve_started(started: Started) -> ExitCode {
 
 /// Serves the session until stdin closes, then lets go of the locks of this process (`engine::runs::let_go`): one
 /// session lives in it.
-pub fn serve(session: Session) -> ExitCode {
-    let options = labcraft_mcp::Options { viewer: false, version: env!("CARGO_PKG_VERSION").to_owned(), max_request: labcraft_mcp::MAX_REQUEST };
+pub fn serve(session: Session, note: Option<String>) -> ExitCode {
+    let options =
+        labcraft_mcp::Options { viewer: false, version: env!("CARGO_PKG_VERSION").to_owned(), max_request: labcraft_mcp::MAX_REQUEST, note };
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
     labcraft_mcp::serve(session, &mut input, Box::new(std::io::stdout()), &options);
@@ -156,6 +180,15 @@ pub fn internal_failure(what: &str) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_agent_on_a_project_no_window_shows_is_told_which_ones_are_shown() {
+        assert_eq!(elsewhere(Path::new("/w/thread"), &[]), None);
+        let note = elsewhere(Path::new("/w/thread"), &["/p/bench".to_owned(), "/p/other".to_owned()]).unwrap_or_default();
+        assert!(note.starts_with("This server works on `/w/thread`, which no window of LabCraft shows"), "{note}");
+        assert!(note.contains("A window of LabCraft shows `/p/bench`, `/p/other`."), "{note}");
+        assert!(note.contains("`--project /p/bench`"), "{note}");
+    }
 
     #[test]
     fn a_root_that_holds_the_home_folder_is_too_wide() {

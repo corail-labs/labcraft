@@ -17,10 +17,6 @@ pub const REPOSITORY: &str = "https://github.com/corail-labs/labcraft";
 /// The roadmap, where the milestones to come are said, with no date.
 pub const ROADMAP: &str = "https://github.com/corail-labs/labcraft/blob/main/docs/roadmap.md";
 
-fn issue(number: u32) -> String {
-    format!("https://github.com/corail-labs/labcraft/issues/{number}")
-}
-
 /// An example of the start page (ide.md 10), by the name of its folder: `examples` or `docs/rfc`.
 pub fn example(name: &str) -> Example {
     let (title, line) = match name {
@@ -91,24 +87,21 @@ pub fn planned(id: &str) -> Option<Planned> {
         keys::PLANNED_BUILD => {
             Some(card("Build", "A standalone executable, a library with a C ABI or a .NET facade, from the project", "M6", ROADMAP.to_owned()))
         }
-        keys::PLANNED_AGENT => Some(card(
-            "Connect an AI agent",
-            "An agent attached to this window edits the project with you, in the one history, signed with its name",
-            "M1, step 8",
-            issue(167),
-        )),
         "ide.planned.panel_view" => Some(card("Panel", "The front panel of the function: its controls and indicators", "M3", ROADMAP.to_owned())),
         _ => None,
     }
 }
 
 /// The commands of the command palette: every command of the registry, then the actions of the window, with their
-/// keys. Without a project, only what opens one can run.
-pub fn palette_entries(keymap: &Keymap, project: bool) -> Vec<Entry> {
+/// keys. Without a project, only what opens one can run. Without `agents`, where the window shows nothing of AI (ide.md
+/// 8), the commands about the agents are not there.
+pub fn palette_entries(keymap: &Keymap, project: bool, agents: bool) -> Vec<Entry> {
     let key = |id: &str| keys::key_of(keymap, &CommandRef::new(id));
     let opens = |id: &str| matches!(id, "project.new" | "project.open");
     let mut entries = Vec::new();
-    for command in registry::commands() {
+    for command in
+        registry::commands().iter().filter(|command| agents || ![crate::agents::DISCONNECT, crate::agents::SET_POLICY].contains(&command.id))
+    {
         let state = match command.planned {
             Some(planned) => State::Planned(Planned {
                 label: command.label.to_owned(),
@@ -131,7 +124,7 @@ pub fn palette_entries(keymap: &Keymap, project: bool) -> Vec<Entry> {
             .collect();
         entries.push(Entry { id: command.id.to_owned(), label: command.label.to_owned(), key: key(command.id), state, params });
     }
-    for (id, label) in keys::WINDOW_ACTIONS {
+    for (id, label) in keys::WINDOW_ACTIONS.iter().filter(|(id, _)| agents || *id != keys::CONNECT_AGENT) {
         let state = if !project && matches!(*id, keys::FIT | keys::VALUES | keys::OPEN_TRACE | keys::RUN | keys::STOP) {
             State::Disabled("Open a project first".to_owned())
         } else if let Some(why) = labcraft_engine::runs::not_enabled_here().filter(|_| matches!(*id, keys::RUN | keys::STOP)) {
@@ -148,7 +141,6 @@ pub fn palette_entries(keymap: &Keymap, project: bool) -> Vec<Entry> {
         keys::PLANNED_INSTRUMENTS,
         keys::PLANNED_BUILD,
         keys::PLANNED_DETACHED_MODE,
-        keys::PLANNED_AGENT,
     ] {
         if let Some(planned) = planned(id) {
             entries.push(Entry { id: id.to_owned(), label: planned.label.clone(), key: None, state: State::Planned(planned), params: Vec::new() });
@@ -164,7 +156,7 @@ mod tests {
     #[test]
     fn every_command_of_the_registry_is_in_the_palette_once() {
         let keymap = keys::keymap(craft_keymap::Platform::Windows);
-        let entries = palette_entries(&keymap, true);
+        let entries = palette_entries(&keymap, true, true);
         for command in registry::commands() {
             assert_eq!(entries.iter().filter(|entry| entry.id == command.id).count(), 1, "{}", command.id);
         }
@@ -175,11 +167,13 @@ mod tests {
     #[test]
     fn without_a_project_only_what_opens_one_runs() {
         let keymap = keys::keymap(craft_keymap::Platform::Windows);
-        let entries = palette_entries(&keymap, false);
+        let entries = palette_entries(&keymap, false, true);
         let state = |id: &str| entries.iter().find(|entry| entry.id == id).map(|entry| entry.state.clone()).unwrap();
         assert_eq!(state("project.open"), State::Enabled);
         assert!(matches!(state("file.read"), State::Disabled(_)));
-        assert!(matches!(state(keys::PLANNED_AGENT), State::Planned(_)));
+        assert_eq!(state(keys::CONNECT_AGENT), State::Enabled);
+        let without_ai = palette_entries(&keymap, true, false);
+        assert!(without_ai.iter().all(|entry| !entry.id.starts_with("agents.") && entry.id != keys::CONNECT_AGENT));
     }
 
     #[test]

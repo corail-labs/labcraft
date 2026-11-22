@@ -353,6 +353,8 @@ impl Page {
             Outward::OpenTrace(_) => {
                 self.say("A trace comes from a run, which the web page cannot make: runs need the desktop app (D-22)".to_owned())
             }
+            // The page shows nothing of AI (ide.md 8), and never offers it.
+            Outward::ConnectAgent => {}
         }
     }
 

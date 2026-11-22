@@ -23,6 +23,7 @@ pub mod fmt;
 pub mod mcp;
 pub mod output;
 pub mod run;
+pub mod setup;
 pub mod user_settings;
 pub mod walk;
 

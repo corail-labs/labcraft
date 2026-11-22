@@ -71,11 +71,13 @@ pub struct Options {
     pub version: String,
     /// The bound of a request, in bytes: [`MAX_REQUEST`].
     pub max_request: usize,
+    /// What the server says of where it works, after its instructions: a project that no window shows (mcp.md 1).
+    pub note: Option<String>,
 }
 
 impl Default for Options {
     fn default() -> Options {
-        Options { viewer: false, version: String::new(), max_request: MAX_REQUEST }
+        Options { viewer: false, version: String::new(), max_request: MAX_REQUEST, note: None }
     }
 }
 
@@ -296,7 +298,11 @@ pub fn serve_with(
     output: Box<dyn Write + Send + '_>,
     options: &Options,
 ) {
-    let instructions = tools::instructions(&served.tools);
+    let mut instructions = tools::instructions(&served.tools);
+    if let Some(note) = &options.note {
+        instructions.push(' ');
+        instructions.push_str(note);
+    }
     let shared = Shared {
         out: Mutex::new(output),
         broken: AtomicBool::new(false),

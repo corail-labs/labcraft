@@ -2205,6 +2205,7 @@ dependencies = [
  "labcraft-types",
  "serde",
  "serde_json",
+ "toml_edit",
 ]
 
 [[package]]

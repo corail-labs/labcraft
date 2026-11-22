@@ -52,6 +52,7 @@ pub mod agents;
 mod block;
 pub mod catalog;
 mod clipboard;
+mod connect;
 pub mod host;
 mod insert;
 pub mod keys;
@@ -197,6 +198,9 @@ pub enum Outward {
     /// Ask for a trace file, anywhere on the disk, and show its values over the function of the window that has focus,
     /// named here; none for the window of the project.
     OpenTrace(Option<String>),
+    /// `Connect an AI agent` (ide.md 8): write the entry of the MCP server in the MCP clients found, then give the lines
+    /// of what was done with [`Ide::connected_clients`].
+    ConnectAgent,
 }
 
 /// What the start page lists, given by the app.
@@ -272,6 +276,9 @@ pub struct Ide {
     agent_questions: agents::Questions,
     /// What the window shows of the agents attached: the pill, the highlights, the dots on the tabs, the notice.
     agent_view: agent_view::AgentView,
+    /// Whether the app connects MCP clients (`Connect an AI agent`): the desktop, not the web, which shows nothing of AI.
+    connects_agents: bool,
+    connect: connect::Connect,
     workspace: Workspace<Pane>,
     platform: Platform,
     keymap: Keymap,
@@ -405,6 +412,8 @@ impl Ide {
             settings_dialog: settings_dialog::Dialog::default(),
             agent_questions: agents::Questions::default(),
             agent_view: agent_view::AgentView::default(),
+            connects_agents: false,
+            connect: connect::Connect::default(),
             prefs,
             prefs_changed,
             workspace,
@@ -520,6 +529,27 @@ impl Ide {
     /// Whether the window shows anything of the agents (ide.md 8): with a project whose session serves them, and AI on.
     fn agents_shown(&self, host: Option<&dyn Host>) -> bool {
         host.is_some_and(Host::serves_agents) && self.settings.ai
+    }
+
+    /// The app connects MCP clients to LabCraft (`Connect an AI agent`, ide.md 8): the desktop says so once.
+    pub fn set_connects_agents(&mut self, connects: bool) {
+        self.connects_agents = connects;
+    }
+
+    /// What `Connect an AI agent` did, a line for each client (mcp.md 9), shown until the user closes it.
+    pub fn connected_clients(&mut self, lines: Vec<String>) {
+        self.connect = connect::Connect::Done(lines);
+    }
+
+    /// Whether the window offers `Connect an AI agent` and the commands about the agents: where it shows something of
+    /// AI, with a project or not.
+    fn offers_agents(&self) -> bool {
+        self.connects_agents && self.settings.ai
+    }
+
+    /// The agent attached that a command names (`agents.*`, #298).
+    fn agent_named(&self, name: Option<&str>) -> Result<agents::Connected, String> {
+        agents::named(&self.agent_view.connected, name).cloned()
     }
 
     /// The switch of AI (`ai.enabled`, ide.md 8): off, the app refuses the agents on its channel.
@@ -739,7 +769,7 @@ impl Ide {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         let menus = self.menus(&view, host.is_some());
-        let entries = if self.palette.is_open() { catalog::palette_entries(&self.keymap, host.is_some()) } else { Vec::new() };
+        let entries = if self.palette.is_open() { catalog::palette_entries(&self.keymap, host.is_some(), self.offers_agents()) } else { Vec::new() };
         let workspaces = catalog::workspaces();
         let palette_key = keys::key_of(&self.keymap, &CommandRef::new(keys::PALETTE));
         let right: Vec<Segment> =
@@ -867,6 +897,7 @@ impl Ide {
             outward.push(Outward::OpenLink(link));
         }
         self.show_settings(ui.ctx(), host, &view, &mut outward);
+        self.connect.show(ui.ctx());
         // Over everything, the settings included: the agent waits for the answer.
         if let Some(policies) = self.agent_questions.show(ui.ctx(), &self.prefs.settings) {
             self.write_setting(keyed::AI_POLICIES, policies, false, host, &view, &mut outward);
@@ -888,8 +919,8 @@ impl Ide {
         let agent_view::AgentView { pill, connected, .. } = &mut self.agent_view;
         for out in pill.show(ctx, connected, &self.prefs.settings) {
             match out {
-                pill::Out::Agent(asked) => self.agent_view.asked.push(asked),
-                pill::Out::Keep(policies) => self.write_setting(keyed::AI_POLICIES, policies, false, Some(host), &view, outward),
+                pill::Out::Command(command) => self.run(command, Some(host), &view, outward),
+                pill::Out::Forget(policies) => self.write_setting(keyed::AI_POLICIES, policies, false, Some(host), &view, outward),
                 pill::Out::Settings => self.settings_dialog.open(),
             }
         }
@@ -1462,7 +1493,7 @@ impl Ide {
     /// The menus, laid out for the platform, with their keys and their states: those of the function shown act on the
     /// window that has focus.
     fn menus(&self, view: &Published, project: bool) -> MenuBar {
-        let mut bar = craft_menu::layout(&keys::menus(), Target::current(), &LayoutOptions::new("LabCraft")).bar;
+        let mut bar = craft_menu::layout(&keys::menus(self.offers_agents()), Target::current(), &LayoutOptions::new("LabCraft")).bar;
         craft_menu::apply_keymap(&mut bar, &self.keymap);
         let shown = self.target(view).function.as_deref();
         let tab = shown.map(|function| tab_of(view, function)).unwrap_or_default();
@@ -1502,8 +1533,8 @@ impl Ide {
                     let held = keys::setting_of(id).is_some_and(|key| view.settings.project.contains_key(key));
                     ItemState { enabled: !held, checked }
                 }
-                keys::PLANNED_AGENT
-                | keys::PLANNED_INSTRUMENTS
+                keys::CONNECT_AGENT => ItemState { enabled: !self.connect.is_open(), checked: None },
+                keys::PLANNED_INSTRUMENTS
                 | keys::PLANNED_PAUSE
                 | keys::PLANNED_BREAKPOINT
                 | keys::PLANNED_WATCH
@@ -1618,7 +1649,7 @@ impl Ide {
     }
 
     fn start_page(&self, ui: &mut egui::Ui, start: &StartList) -> Option<start::Chosen> {
-        let actions = start_actions(&self.keymap);
+        let actions = start_actions(&self.keymap, self.offers_agents());
         start::show(
             ui,
             &start::Page {
@@ -1636,7 +1667,7 @@ impl Ide {
     fn chose_on_start(&mut self, chosen: start::Chosen, host: Option<&dyn Host>, view: &Published, outward: &mut Vec<Outward>) {
         match chosen {
             start::Chosen::Action(at) => {
-                if let Some(action) = start_actions(&self.keymap).get(at) {
+                if let Some(action) = start_actions(&self.keymap, self.offers_agents()).get(at) {
                     match &action.state {
                         palette::State::Planned(planned) => self.card.open(planned.clone()),
                         _ => self.run(CommandRef::new(action.id.clone()), host, view, outward),
@@ -2240,6 +2271,14 @@ impl Ide {
             }
             keys::RECORD => self.set_setting(keyed::RECORD_VALUES, json!(!self.settings.record_values), host, view, outward),
             keys::SETTINGS => self.settings_dialog.open(),
+            keys::CONNECT_AGENT => {
+                if !self.offers_agents() {
+                    self.say("Connect an AI agent: AI is off, or this window does not connect MCP clients");
+                } else if !self.connect.is_open() {
+                    self.connect = connect::Connect::Writing;
+                    outward.push(Outward::ConnectAgent);
+                }
+            }
             keys::STOP => match &mut self.running {
                 Some(running) => running.stop(),
                 None => self.say("Stop: no run going"),
@@ -2420,6 +2459,35 @@ impl Ide {
             id if id.starts_with("ide.planned.") => {
                 if let Some(planned) = catalog::planned(id) {
                     self.card.open(planned);
+                }
+            }
+            // The agents attached are the app's (ide.md 8; #298): the window asks it, as from the pill.
+            agents::DISCONNECT => match self.agent_named(params.get("agent").and_then(Value::as_str)) {
+                Ok(agent) => self.agent_view.asked.push(agents::Asked::Disconnect(agent.id)),
+                Err(why) => self.say(format!("{id}: {why}")),
+            },
+            agents::SET_POLICY => {
+                let agent = match self.agent_named(params.get("agent").and_then(Value::as_str)) {
+                    Ok(agent) => agent,
+                    Err(why) => {
+                        self.say(format!("{id}: {why}"));
+                        return;
+                    }
+                };
+                // The first connection is answered in its dialog (ide.md 8), not kept before it.
+                if agent.policy.is_none() {
+                    self.say(format!("{id}: {} asks to connect: answer in the dialog of the window", agent.signed));
+                    return;
+                }
+                let Some(policy) = params.get("policy").and_then(Value::as_str).and_then(agents::Policy::named) else {
+                    self.say("agents.set_policy: `policy` is one of ask, edits, all");
+                    return;
+                };
+                self.agent_view.asked.push(agents::Asked::Policy(agent.id, policy));
+                if params.get("keep").and_then(Value::as_bool) == Some(true) {
+                    let kept = self.prefs.settings.get(keyed::AI_POLICIES).cloned().unwrap_or(Value::Null);
+                    let policies = labcraft_engine::settings::keep_policy(&kept, &agent.client, &agent.project, policy.as_str());
+                    self.write_setting(keyed::AI_POLICIES, policies, false, host, view, outward);
                 }
             }
             // The layout is the user's: the window keeps it, the session never sees it.
@@ -2685,17 +2753,15 @@ fn select_params(function: &str, selection: &Selection) -> Value {
     json!({ "function": function, "nodes": selection.nodes, "wires": selection.wires, "terminals": selection.terminals })
 }
 
-/// The actions of the start page (ide.md 10).
-fn start_actions(keymap: &Keymap) -> Vec<palette::Entry> {
+/// The actions of the start page (ide.md 10); `Connect an AI agent` where the window shows something of AI.
+fn start_actions(keymap: &Keymap, agents: bool) -> Vec<palette::Entry> {
     let key = |id: &str| keys::key_of(keymap, &CommandRef::new(id));
     let entry = |id: &str, label: &str| palette::Entry { key: key(id), ..palette::Entry::new(id, label) };
-    let planned = |id: &str| {
-        catalog::planned(id)
-            .map(|planned| palette::Entry { state: palette::State::Planned(planned.clone()), ..palette::Entry::new(id, planned.label) })
-    };
     let mut actions = vec![entry("project.new", "New project…"), entry("project.open", "Open folder…")];
     actions.push(entry(keys::SETTINGS, "Settings…"));
-    actions.extend(planned(keys::PLANNED_AGENT));
+    if agents {
+        actions.push(entry(keys::CONNECT_AGENT, "Connect an AI agent…"));
+    }
     actions
 }
 

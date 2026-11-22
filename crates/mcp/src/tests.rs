@@ -123,7 +123,7 @@ impl Server {
             .stack_size(labcraft_format::STACK_SIZE)
             .spawn(move || {
                 let mut input = BufReader::new(Pipe { lines, held: Vec::new(), at: 0 });
-                let options = Options { viewer: false, version: "0.0.0-test".to_owned(), max_request };
+                let options = Options { viewer: false, version: "0.0.0-test".to_owned(), max_request, note: None };
                 serve(session, &mut input, Box::new(written), &options);
             })
             .unwrap();

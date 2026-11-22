@@ -1,4 +1,4 @@
-//! The control channel of the IDE (ide.md 8; mcp.md 9; architecture 12.8): how `labcraft-cli mcp` finds the window
+//! The control channel of the IDE (ide.md 8; mcp.md 1; architecture 12.8): how `labcraft-cli mcp` finds the window
 //! of its project and speaks to it.
 //!
 //! **The file.** A window that serves its project listens on `127.0.0.1`, on a port the system gives, and writes one
@@ -247,6 +247,28 @@ fn run_for_a_while(command: &mut std::process::Command) -> Result<String, String
             Err(error) => return Err(format!("{name}: {error}")),
         }
     }
+}
+
+/// At most this many files of the folder looked at, and projects named, by [`other_projects`] *(proposed)*.
+const OTHERS_LOOKED_AT: usize = 64;
+const OTHERS_NAMED: usize = 4;
+
+/// The projects that the windows of LabCraft show, other than the one at `root`, as their files say, by name: what
+/// `mcp` tells an agent that works on a project no window shows (mcp.md 1).
+pub fn other_projects(root: &Path) -> Vec<String> {
+    let Some(entries) = folder().and_then(|folder| std::fs::read_dir(folder).ok()) else { return Vec::new() };
+    let mut projects: Vec<String> = entries
+        .flatten()
+        .take(OTHERS_LOOKED_AT)
+        .filter(|entry| entry.path().extension().is_some_and(|extension| extension == "json"))
+        .filter_map(|entry| read_entry(&entry.path()))
+        .map(|entry| entry.project)
+        .filter(|project| Path::new(project) != root)
+        .collect();
+    projects.sort();
+    projects.dedup();
+    projects.truncate(OTHERS_NAMED);
+    projects
 }
 
 /// What the file at `path` says, when it reads.

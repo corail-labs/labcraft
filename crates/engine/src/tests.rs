@@ -1420,6 +1420,10 @@ fn the_window_refuses_an_agent_and_a_selection_of_nothing() {
         ("view.set_view", json!({ "function": "double", "view": "text" })),
         ("view.close_function", json!({ "function": "double" })),
         ("view.set_workspace", json!({ "workspace": "edit" })),
+        // Those the window runs itself too: an agent never changes its own policy, nor disconnects another (#298).
+        ("agents.disconnect", json!({ "agent": "cursor" })),
+        ("agents.set_policy", json!({ "policy": "all", "keep": true })),
+        ("project.open", json!({ "folder": "/q" })),
     ] {
         let refused = session.execute_as(&agent, id, &params).unwrap_err();
         assert_eq!(refused.code, "agent.not_allowed", "{id}");

@@ -36,6 +36,11 @@ fn wrong_usage_is_exit_2_with_nothing_on_stdout() {
         &["fmt", "somewhere", "--max-file-size", "-1"],
         &["fmt", "somewhere", "--max-file-size", "1073741825"],
         &["fmt", "somewhere", "--max-nesting", "1025"],
+        // `mcp setup` (cli.md 10): nothing is written on wrong usage.
+        &["mcp", "setup", "--client", "claude-desktop"],
+        &["mcp", "setup", "--client"],
+        &["mcp", "setup", "here"],
+        &["mcp", "setup", "--json"],
     ];
     for args in cases {
         let output = cli(args);

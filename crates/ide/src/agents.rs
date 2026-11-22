@@ -99,6 +99,23 @@ pub struct Connected {
     pub policy: Option<Policy>,
 }
 
+/// The commands of the window about the agents attached (commands.md 6.7; #298), which the pill, the command palette
+/// and a key call.
+pub const DISCONNECT: &str = "agents.disconnect";
+pub const SET_POLICY: &str = "agents.set_policy";
+
+/// The agent attached that a command names by the name its steps are signed with (`claude`, `claude 2`); by default,
+/// the one agent attached. Why there is none, otherwise.
+pub fn named<'a>(connected: &'a [Connected], name: Option<&str>) -> Result<&'a Connected, String> {
+    let names = || connected.iter().map(|agent| agent.signed.as_str()).collect::<Vec<_>>().join(", ");
+    match (name, connected) {
+        (_, []) => Err("no agent is attached".to_owned()),
+        (Some(name), _) => connected.iter().find(|agent| agent.signed == name).ok_or_else(|| format!("no agent `{name}` is attached: {}", names())),
+        (None, [one]) => Ok(one),
+        (None, _) => Err(format!("name the agent: {}", names())),
+    }
+}
+
 /// What the user asks of an agent attached, from the pill.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Asked {
@@ -250,6 +267,20 @@ pub fn shown_folder(folder: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_names_an_agent_by_its_signature_or_takes_the_one_attached() {
+        let agent =
+            |id: u64, signed: &str| Connected { id, client: "claude".to_owned(), signed: signed.to_owned(), project: "/p".to_owned(), policy: None };
+        assert_eq!(named(&[], None).unwrap_err(), "no agent is attached");
+        assert_eq!(named(&[], Some("claude")).unwrap_err(), "no agent is attached");
+        let one = [agent(1, "claude")];
+        assert_eq!(named(&one, None).unwrap().id, 1);
+        assert_eq!(named(&one, Some("cursor")).unwrap_err(), "no agent `cursor` is attached: claude");
+        let two = [agent(1, "claude"), agent(2, "claude 2")];
+        assert_eq!(named(&two, Some("claude 2")).unwrap().id, 2);
+        assert_eq!(named(&two, None).unwrap_err(), "name the agent: claude, claude 2");
+    }
 
     fn connect(id: u64, client: &str) -> Question {
         let (client, signed) = (client.to_owned(), format!("{client} 2"));

@@ -213,6 +213,8 @@ struct App {
     start: StartList,
     /// Whether each recent project is still there, looked at off the thread of the window.
     found: Option<Receiver<Vec<bool>>>,
+    /// `Connect an AI agent` (ide.md 8), writing off the thread of the window: its lines, once written.
+    connecting: Option<Receiver<Vec<String>>>,
     /// `LABCRAFT_FRAMES`: the time of each frame, and the motion it is measured over.
     timing: Option<Timing>,
 }
@@ -251,8 +253,10 @@ impl App {
             dialogs,
             start: StartList { recent: Vec::new(), examples, problem: None, in_memory: false },
             found: None,
+            connecting: None,
             timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
         };
+        app.ide.set_connects_agents(true);
         if let Some(problem) = problem {
             app.say_on_start(problem);
         }
@@ -448,6 +452,31 @@ impl App {
             Outward::OpenTrace(function) => {
                 self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace(function))
             }
+            Outward::ConnectAgent => self.connect_agents(ctx),
+        }
+    }
+
+    /// `Connect an AI agent` (ide.md 8): the entry of the server in the MCP clients found, as `labcraft-cli mcp setup`
+    /// writes it, with the `labcraft-cli` installed beside this program; off the thread of the window, since a file of a
+    /// client can be large.
+    fn connect_agents(&mut self, ctx: &egui::Context) {
+        let cli = std::env::current_exe().ok().and_then(|app| labcraft_cli::setup::beside(&app));
+        let Some(cli) = cli else {
+            self.ide.connected_clients(vec![
+                "labcraft-cli is not beside this program: install LabCraft again, or run `labcraft-cli mcp setup` from a terminal".to_owned(),
+            ]);
+            return;
+        };
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let wake = ctx.clone();
+        let spawned = std::thread::Builder::new().name("labcraft-connect".to_owned()).spawn(move || {
+            let outcomes = labcraft_cli::setup::setup(&labcraft_cli::setup::Env::of_the_process(), &cli, &[], false);
+            let _ = sender.send(labcraft_cli::setup::report(&outcomes, &[], false).lines().map(str::to_owned).collect());
+            wake.request_repaint();
+        });
+        match spawned {
+            Ok(_) => self.connecting = Some(receiver),
+            Err(error) => self.ide.connected_clients(vec![format!("The clients cannot be written: {error}")]),
         }
     }
 
@@ -542,6 +571,19 @@ impl eframe::App for App {
             for (recent, found) in self.start.recent.iter_mut().zip(found) {
                 recent.found = Some(found);
             }
+        }
+        let connected = self.connecting.as_ref().map(std::sync::mpsc::Receiver::try_recv);
+        match connected {
+            Some(Ok(lines)) => {
+                self.connecting = None;
+                self.ide.connected_clients(lines);
+            }
+            // The thread ended without a word: a bug of the tool, said rather than waited for.
+            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                self.connecting = None;
+                self.ide.connected_clients(vec!["The clients could not be set up: the work stopped (a bug of LabCraft)".to_owned()]);
+            }
+            Some(Err(std::sync::mpsc::TryRecvError::Empty)) | None => {}
         }
         for (ask, answer) in self.dialogs.take_answers() {
             self.answered(&ctx, ask, answer);

@@ -570,6 +570,8 @@ what the window shows are `agent.not_allowed` too (ide.md 8).
 | `view.toggle_panel` | `panel`, *`on`* (the other state) | Shows or hides `project`, `palette`, `inspector`, `problems` or `run` |
 | `view.reset_layout` | | Puts the panels back where ide.md 2 says, and docks every detached tab |
 | `view.set_workspace` | `workspace` | Changes the workspace of the window (ide.md 6); a planned one is `command.not_enabled`, and the message gives its milestone |
+| `agents.disconnect` | *`agent`* (the one agent attached) | Disconnects the agent attached that signs its steps with that name (`claude`, `claude 2`, 9.5), as Disconnect in the menu of the pill (ide.md 8): its call in progress ends, and its MCP client sees the server go. With no agent of that name, or none named while several are attached, the window says so and nothing changes |
+| `agents.set_policy` | *`agent`* (the one agent attached), `policy` (`ask`, `edits` or `all`), *`keep`* (`false`) | Sets the policy of the agent for this connection, as the menu of the pill does (ide.md 8); with `keep`, also keeps it for its client and this project in `ai.policies` (9.7), which answers the next connection of that client to that project without asking |
 
 **The `Text` panel**
 
