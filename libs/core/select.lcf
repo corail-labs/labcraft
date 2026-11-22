@@ -7,14 +7,14 @@ extern rust(crate: "labcraft-runtime", function: "select")
 fn select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
 
 terminals {
-    top 2
+    top 1
     left 3
     right middle result
-    fill "#64748B"
+    fill "#7E6B8C"
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {

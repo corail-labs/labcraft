@@ -111,7 +111,8 @@ its terminals: every line of the section still applies, and the left and right s
 places, which a smaller block would grow back to hold (spec 11.2). Escape during a drag puts it back. Beside it:
 
 - the outline: the one of the mask of its library, or the ordinary block without one; the ordinary block under a mask
-  that gives an outline (`template block`); the D (`template d`). An outline drawn by its points is shown, and changed in
+  that gives an outline (`template block`); the D (`template d`); the D of the primitives, Primitive (`template
+  primitive`). An outline drawn by its points is shown, and changed in
   `Text`;
 - the band: the mask's, `hidden`, `inside` or `above`; none for a function of the root library or of a library of
   primitives (spec 11.2);

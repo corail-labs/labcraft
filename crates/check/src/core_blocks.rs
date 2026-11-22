@@ -21,16 +21,27 @@ pub const FILES: &[(&str, &str)] = &[
     ("gt", include_str!("../../../libs/core/gt.lcf")),
     ("le", include_str!("../../../libs/core/le.lcf")),
     ("lt", include_str!("../../../libs/core/lt.lcf")),
+    ("max", include_str!("../../../libs/core/max.lcf")),
+    ("min", include_str!("../../../libs/core/min.lcf")),
     ("mul", include_str!("../../../libs/core/mul.lcf")),
     ("ne", include_str!("../../../libs/core/ne.lcf")),
     ("neg", include_str!("../../../libs/core/neg.lcf")),
     ("not", include_str!("../../../libs/core/not.lcf")),
     ("or", include_str!("../../../libs/core/or.lcf")),
+    ("pow", include_str!("../../../libs/core/pow.lcf")),
+    ("quotient", include_str!("../../../libs/core/quotient.lcf")),
+    ("remainder", include_str!("../../../libs/core/remainder.lcf")),
+    ("round_to_i32", include_str!("../../../libs/core/round_to_i32.lcf")),
     ("select", include_str!("../../../libs/core/select.lcf")),
+    ("shl", include_str!("../../../libs/core/shl.lcf")),
+    ("shr", include_str!("../../../libs/core/shr.lcf")),
     ("sqrt", include_str!("../../../libs/core/sqrt.lcf")),
     ("sub", include_str!("../../../libs/core/sub.lcf")),
+    ("to_f32", include_str!("../../../libs/core/to_f32.lcf")),
+    ("to_i32", include_str!("../../../libs/core/to_i32.lcf")),
     ("unitless", include_str!("../../../libs/core/unitless.lcf")),
     ("with_unit", include_str!("../../../libs/core/with_unit.lcf")),
+    ("xor", include_str!("../../../libs/core/xor.lcf")),
 ];
 
 /// Whether a file is one of these, as embedded, by its name and its bytes: `check` reads it as the block of a primitive,
@@ -119,7 +130,7 @@ mod tests {
         }
     }
 
-    /// Its sections read with no problem, and its outline is `template d`, which names no terminal.
+    /// Its sections read with no problem, and its outline is `template primitive`, which names no terminal.
     #[test]
     fn each_file_has_sections_that_read_and_the_d() {
         for &(name, text) in FILES {
@@ -129,7 +140,7 @@ mod tests {
             let section = file.terminals.as_ref().unwrap_or_else(|| panic!("{name}: no `terminals` section"));
             let (_, problems) = labcraft_format::block::read(section, &inputs, &outputs, &names);
             assert!(problems.is_empty(), "{name}: {problems:?}");
-            assert!(block(name).is_some_and(|block| matches!(block.outline, Some(Read::D(_)))), "{name}");
+            assert!(block(name).is_some_and(|block| matches!(block.outline, Some(Read::D { trimmed: true, .. }))), "{name}");
         }
     }
 
@@ -158,10 +169,10 @@ mod tests {
         assert!(!is_block_file("libs/core/add.lcf", format!("{add}\n").as_bytes()));
     }
 
-    /// Only the primitives drawn as a D have a file (A.1): `min` and `max` have the ordinary block.
+    /// Only the primitives drawn as a D have a file (A.1): every one of `core` but `call`, which has the ordinary block.
     #[test]
-    fn a_primitive_without_a_glyph_has_no_file() {
-        assert!(block("min").is_none());
+    fn only_call_has_no_file() {
+        assert!(block("min").is_some());
         assert!(block("call").is_none());
     }
 }

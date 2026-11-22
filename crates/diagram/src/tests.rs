@@ -394,25 +394,29 @@ fn neighbouring_pills_step_outward() {
 /// The points where the arcs of a D of `w` × `h`, 32 high or more, meet its edges (spec 11.4), worked out by hand:
 /// a corner of 90° rounded by 2 meets its edges 2 from it; one of 135°, 2 / tan 67.5° = 0.83 from it, 0.59 across
 /// and along on the cut.
-fn d_tangents(w: i64, h: i64) -> Vec<(i64, i64)> {
+fn d_tangents(w: i64, h: i64, primitive: bool) -> Vec<(i64, i64)> {
+    // From 32 high, three places, the body of `template primitive` leaves 4 of the box above and below (spec 11.4): the
+    // same D, moved.
+    let inset = if primitive && h >= 3200 { 400 } else { 0 };
+    let (top, bottom) = (inset, h - inset);
     vec![
-        (0, 200),
-        (200, 0),
-        (w - 883, 0),
-        (w - 741, 59),
-        (w - 59, 741),
-        (w, 883),
-        (w, h - 883),
-        (w - 59, h - 741),
-        (w - 741, h - 59),
-        (w - 883, h),
-        (200, h),
-        (0, h - 200),
+        (0, top + 200),
+        (200, top),
+        (w - 883, top),
+        (w - 741, top + 59),
+        (w - 59, top + 741),
+        (w, top + 883),
+        (w, bottom - 883),
+        (w - 59, bottom - 741),
+        (w - 741, bottom - 59),
+        (w - 883, bottom),
+        (200, bottom),
+        (0, bottom - 200),
     ]
 }
 
-/// Notation 3.2: a primitive is a D of 24 × 32 with two values in, 24 × 16 with one, its right corners cut by 8 and its
-/// six corners rounded by 2; one input at the middle, two on the first and last places, three on the first, the middle
+/// Notation 3.2: a primitive is a D of 16 × 32 with two values in, 16 × 16 with one, its right corners cut by 8 and its
+/// six corners rounded by 2, its body 4 inside the box above and below from 32 high; one input at the middle, two on the first and last places, three on the first, the middle
 /// and the last, all on the left edge and on the grid; `select` with two constants keeps its size, and its neighbouring
 /// pills step outward as on a block.
 #[test]
@@ -423,28 +427,28 @@ fn a_primitive_is_a_d() {
     let sizer = Sizer::new(false);
     let node = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
     let add = sizer.size(node("y"), None, None);
-    assert_eq!((add.width, add.height), (2400, 3200));
+    assert_eq!((add.width, add.height), (1600, 3200));
     assert_eq!(add.inputs, [(0, 800), (0, 2400)]);
-    assert_eq!(add.outputs, [(2400, 1600)]);
-    // The D of `template d`, from the file of `core.add` in `libs/core` (spec A.1, 11.4).
+    assert_eq!(add.outputs, [(1600, 1600)]);
+    // The D of `template primitive`, from the file of `core.add` in `libs/core` (spec A.1, 11.4).
     let outline = add.shapes.iter().find_map(|shape| match shape {
         Shape::Outline { outline, .. } => sizer.outlines_drawn.borrow().get(*outline).cloned(),
         _ => None,
     });
     let outline = outline.unwrap();
-    for point in d_tangents(2400, 3200) {
+    for point in d_tangents(1600, 3200, true) {
         assert!(outline.contains(&point), "{point:?}: {outline:?}");
     }
     let select = sizer.size(node("z"), None, None);
-    assert_eq!((select.width, select.height), (2400, 3200));
+    assert_eq!((select.width, select.height), (1600, 3200));
     assert_eq!(select.inputs, [(0, 800), (0, 1600), (0, 2400)]);
     // `1.0` at 16, 3 cells at 10 and 4 on each side, 26.06, its right end 8 left of the half terminal: from -37.06. `0.0`,
     // 8 lower, steps past it: its right end 8 left of -37.06, from -71.12.
     assert_eq!(select.reaches, [None, Some(3706), Some(7112)]);
-    // 16 high, one tip at (24, 8), a corner of 90° rounded by 2: its arc 2 / sin 45° - 2 = 0.83 inside the box.
+    // 16 high, one tip at (16, 8), a corner of 90° rounded by 2: its arc 2 / sin 45° - 2 = 0.83 inside the box.
     let neg = sizer.size(node("w"), None, None);
-    assert_eq!((neg.width, neg.height), (2400, 1600));
-    assert_eq!((neg.inputs.clone(), neg.outputs.clone()), (vec![(0, 800)], vec![(2317, 800)]));
+    assert_eq!((neg.width, neg.height), (1600, 1600));
+    assert_eq!((neg.inputs.clone(), neg.outputs.clone()), (vec![(0, 800)], vec![(1517, 800)]));
 }
 
 /// Notation 3.2: a unit that does not hold in a D of 24 makes it wider, with 3 on each side, up to the grid; its
@@ -462,7 +466,7 @@ fn a_long_unit_widens_the_d() {
 }
 
 /// Notation 3.2, spec 11.2: only the unit of `with_unit` and `unitless` widens the D. `[V]`, 3 cells at 10, 18.06, and 3
-/// on each side, 24.06: 32. `|x|`, as wide, leaves `abs` at the 24 of its section.
+/// on each side, 24.06: 32. `|x|`, as wide, leaves `abs` at the 16 of its section (`top 1`).
 #[test]
 fn a_unit_widens_the_d_and_a_sign_never_does() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[V], z: f64) {\n    y = core.with_unit(a, [V])\n    z = core.abs(a)\n}\n";
@@ -473,7 +477,7 @@ fn a_unit_widens_the_d_and_a_sign_never_does() {
         let sized = sizer.size(graph.nodes.iter().find(|node| node.key == key).unwrap(), None, None);
         (sized.width, sized.height)
     };
-    assert_eq!((size("y"), size("z")), ((3200, 1600), (2400, 1600)));
+    assert_eq!((size("y"), size("z")), ((3200, 1600), (1600, 1600)));
 }
 
 /// Decided at step 2 of M0v: 24 for the header, the first line at 40, lines 24 apart, the last 16 above the bottom, 12
@@ -743,7 +747,7 @@ fn a_d_holds_all_its_inputs() {
     assert_eq!(sized.height, 4800);
     let ys: Vec<i64> = sized.inputs.iter().map(|&(_, y)| y).collect();
     assert_eq!(ys, [800, 4000, 1600, 2400, 3200]);
-    assert_eq!(sized.outputs, [(2400, 2400)]);
+    assert_eq!(sized.outputs, [(1600, 2400)]);
 }
 
 /// Notation 3.2: targets too many for the one value of a primitive, an error that is still drawn, give it outputs on the
@@ -761,27 +765,28 @@ fn the_outputs_too_many_of_a_d_take_places() {
     };
     let defaults = crate::style::Style::default();
     let two = size_of("y, z", &defaults);
-    assert_eq!((two.width, two.height), (2400, 3200));
-    // `result` on the middle, the other on the first free place, 8, on the arc of the corner (24, 8), by hand: from its
-    // tangent point (23.41, 7.41) to its middle (23.85, 8.06), both rounded to the hundredth, 8 crosses it at 23.81.
-    assert_eq!(two.outputs, [(2400, 1600), (2381, 800)]);
+    assert_eq!((two.width, two.height), (1600, 3200));
+    // `result` on the middle, the other on the first free place, 8. 32 high, the body runs from 4 to 28, and its cut
+    // from (8, 4) to (16, 12), straight between the arcs of its corners (0.83 each way): 8 crosses it at 12, 4 inside.
+    assert_eq!(two.outputs, [(1600, 1600), (1200, 800)]);
     assert_eq!(two.inputs, [(0, 800), (0, 2400)]);
     // Four targets on three places: two more, five, 48 high; `result` on the middle, 24, the others on 8, 16 and 32.
     let four = size_of("w, x, y, z", &defaults);
     assert_eq!(four.height, 4800);
-    assert_eq!(four.outputs, [(2400, 2400), (2381, 800), (2400, 1600), (2400, 3200)]);
+    assert_eq!(four.outputs, [(1600, 2400), (1200, 800), (1600, 1600), (1600, 3200)]);
     // A cut of 16, tried with `--style`: never two outputs on one point, whatever the outline does. The cut is at most
-    // half the width, 12, so the output at 8 is on the straight part of the cut, at 12 + 8 = 20, 4 inside the box, which
+    // half the width, 8, so the output at 8 is on the straight part of the cut, at 8 + 4 = 12, 4 inside the box, which
     // the guard of 11.4 still allows: the D is drawn.
     let mut tried = defaults.clone();
     tried.numbers.chamfer = 1600;
     let cut = size_of("y, z", &tried);
     assert_ne!(cut.outputs.first(), cut.outputs.get(1));
     assert!(cut.shapes.iter().any(|shape| matches!(shape, Shape::Outline { .. })), "{:?}", cut.outputs);
-    assert_eq!(cut.outputs, [(2400, 1600), (2000, 800)]);
+    assert_eq!(cut.outputs, [(1600, 1600), (1200, 800)]);
     // `with_unit` and its long unit, 72 wide, with two targets: its one place on the right holds one, so it grows by two
-    // places, 32 high. The cut of 16 is then whole, and the output at 8 lies on it at 72 - 16 + 8 = 64, 8 inside the
-    // box: a guard of 11.4 breaks, and the block is drawn ordinary, its outputs on its right edge, none off the block.
+    // places, 32 high. Its body runs from 4 to 28, so the cut of 16 is at most half of 24, 12, from (60, 4) to (72, 16),
+    // and the output at 8 lies on it at 60 + 4 = 64, 8 inside the box: a guard of 11.4 breaks, and the block is drawn
+    // ordinary, its outputs on its right edge, none off the block.
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[kg/(m*s)], z: f64[kg/(m*s)]) {\n    y, z = core.with_unit(a, [kg/(m*s)])\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
@@ -1553,8 +1558,8 @@ fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
 }
 
 /// `LC7005` (notation 2.1): two nodes that the file places one over the other, in one body. `core.add` is a D of
-/// 24 across (its file of `libs/core`, `top 2`), so its block spans x to x + 24: at 100 and 123 the blocks share one unit
-/// across and all their height; at 100 and 124 they only touch.
+/// 16 across (its file of `libs/core`, `top 1`), so its block spans x to x + 16: at 100 and 115 the blocks share one unit
+/// across and all their height; at 100 and 116 they only touch.
 #[test]
 fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
     let main = |second: &str| {
@@ -1563,7 +1568,7 @@ fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
              layout {{\n    node ab at (100, 40)\n    node y at ({second}, 40)\n}}\n"
         )
     };
-    let warnings = drawing_of(&main("123")).warnings;
+    let warnings = drawing_of(&main("115")).warnings;
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     let warning = &warnings[0];
     assert_eq!(warning.code(), labcraft_types::Code::Lc7005);
@@ -1571,12 +1576,12 @@ fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
     // The entry of `y`: line 12 of the file (1 `labcraft`, 3 `use`, 5 `fn`, 10 `layout {`, 11 `node ab`, 12 `node y`).
     assert_eq!(warning.span.map(|span| span.start.line), Some(12));
     assert_eq!(warning.file, "main.lcf");
-    assert!(drawing_of(&main("124")).warnings.is_empty());
+    assert!(drawing_of(&main("116")).warnings.is_empty());
     // A node that the file does not place moves out of the way and is never named.
     let unplaced = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, c: f64) -> (y: f64) {\n    ab = core.add(a, b)\n    y = core.add(ab, c)\n}\n\n\
                     layout {\n    node ab at (100, 40)\n}\n";
     assert!(drawing_of(unplaced).warnings.is_empty());
-    // Three in a diagonal, `y` at (100, 100), `w` at (105, 105), `a` at (110, 110), each 24 across, 32 down: from the
+    // Three in a diagonal, `y` at (100, 100), `w` at (105, 105), `a` at (110, 110), each 16 across, 32 down: from the
     // left `y`, `w`, `a`. `w` overlaps `y`; `a` overlaps both, and names the nearest above it, `w` (105 against 100).
     let diagonal = "labcraft 1\n\nuse core\n\nfn main(p: f64, q: f64, r: f64, s: f64) -> (y: f64) {\n    a = core.add(p, q)\n    \
                     w = core.add(a, r)\n    y = core.add(w, s)\n}\n\nlayout {\n    node a at (110, 110)\n    node w at (105, 105)\n    \
@@ -2557,7 +2562,7 @@ fn a_block_with_an_outline_draws_it_and_its_terminals_start_on_it() {
     let drawn = g_outlined("\noutline {\n    template d\n}\n");
     let polygons = outline_polygons(&drawn);
     assert_eq!(polygons.len(), 1, "{polygons:?}");
-    for point in d_tangents(4000, 4000) {
+    for point in d_tangents(4000, 4000, false) {
         assert!(polygons[0].contains(&point), "{point:?}: {polygons:?}");
     }
 }
@@ -2760,7 +2765,7 @@ fn the_outline_of_a_mask_is_drawn_and_a_function_with_its_own_keeps_it() {
     // With a band, the outline is drawn twice, the fill under the band and the stroke over it (`shaped`): the same points.
     assert_eq!(polygons.len(), 2, "{polygons:?}");
     assert_eq!(polygons[0], polygons[1]);
-    for point in d_tangents(4000, 4000) {
+    for point in d_tangents(4000, 4000, false) {
         assert!(polygons[0].contains(&point), "{point:?}");
     }
 }

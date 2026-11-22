@@ -1,20 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -40 222 176" width="222" height="176" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="quotient_of_the_lowest">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -40 214 176" width="214" height="176" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="quotient_of_the_lowest">
 <style>
-svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; }
-@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; } }
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-686B9E-686B9E: #686B9E; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-686B9E-686B9E: #686B9E; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect y="-40" width="222" height="176" style="fill: var(--canvas-fill)"/>
-<rect x="19" y="16" width="184" height="104" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect y="-40" width="214" height="176" style="fill: var(--canvas-fill)"/>
+<defs>
+<symbol id="icon-8d28bbb91e4887da" viewBox="0 0 32 32" overflow="hidden">
+<path d="M14.444 10.556l-4.667 10.889" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+<path d="M22.222 10.556l-4.667 10.889" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+</symbol>
+</defs>
+<defs>
+<polygon id="outline-0" points="0,6 0.15,5.23 0.59,4.59 1.23,4.15 2,4 7.17,4 7.94,4.15 8.59,4.59 15.41,11.41 15.85,12.06 16,12.83 16,19.17 15.85,19.94 15.41,20.59 8.59,27.41 7.94,27.85 7.17,28 2,28 1.23,27.85 0.59,27.41 0.15,26.77 0,26"/>
+</defs>
+<rect x="19" y="16" width="176" height="104" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn quotient_of_the_lowest</text>
 <g data-wire="a" data-from="fn.a" data-to="y.a">
 <path d="M19 68 L116.14 68" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="b" data-from="fn.b" data-to="y.b">
-<path d="M19 92 L99.14 92 Q105.14 92 105.14 86 L105.14 81.5 Q105.14 76 110.64 76 L116.14 76" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 92 L101.14 92 Q105.14 92 105.14 88 L105.14 88 Q105.14 84 109.14 84 L116.14 84" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="y" data-from="y.result" data-to="fn.y">
-<path d="M156.14 68 L203 68" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M132.14 76 L195 76" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g>
 <circle cx="19" cy="68" r="3" style="fill: var(--wire-data)"/>
@@ -27,20 +36,19 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="31" y="95.65" font-size="10" style="fill: var(--node-title)">b</text>
 <rect x="45.02" y="85" width="32.08" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="49.02" y="95.65" font-size="10" style="fill: var(--pill-text)">◂ -1</text>
-<circle cx="203" cy="68" r="3" style="fill: var(--wire-data)"/>
-<rect x="180.98" y="62.18" width="18.02" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="184.98" y="71.65" font-size="10" style="fill: var(--node-title)">y</text>
+<circle cx="195" cy="76" r="3" style="fill: var(--wire-data)"/>
+<rect x="172.98" y="70.18" width="18.02" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="176.98" y="79.65" font-size="10" style="fill: var(--node-title)">y</text>
 </g>
 <g data-node="y"><title>core.quotient</title>
-<rect x="116.14" y="60" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="125.31" y="78.04" font-size="9" style="fill: var(--node-title)">quot</text>
-<text x="125.31" y="88.52" font-size="9" style="fill: var(--node-title)">ient</text>
+<use href="#outline-0" x="116.14" y="60" style="fill: var(--rgb-686B9E-686B9E); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-8d28bbb91e4887da" x="116.14" y="68" width="16" height="16"/>
 <circle cx="116.14" cy="68" r="3" style="fill: var(--wire-data)"/>
-<circle cx="156.14" cy="68" r="3" style="fill: var(--wire-data)"/>
-<circle cx="116.14" cy="76" r="3" style="fill: var(--wire-data)"/>
+<circle cx="116.14" cy="84" r="3" style="fill: var(--wire-data)"/>
+<circle cx="132.14" cy="76" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g>
-<rect x="16" y="-24" width="190" height="20" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<rect x="16" y="-24" width="182" height="20" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
 <text x="20" y="-10.35" font-size="10" style="fill: var(--node-title)">The run stopped on a fault</text>
 </g>
 <g data-value="a"><title>-128</title>

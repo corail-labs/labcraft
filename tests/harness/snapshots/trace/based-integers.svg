@@ -12,7 +12,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </symbol>
 </defs>
 <defs>
-<polygon id="outline-0" points="0,2 0.15,1.23 0.59,0.59 1.23,0.15 2,0 15.17,0 15.94,0.15 16.59,0.59 23.41,7.41 23.85,8.06 24,8.83 24,23.17 23.85,23.94 23.41,24.59 16.59,31.41 15.94,31.85 15.17,32 2,32 1.23,31.85 0.59,31.41 0.15,30.77 0,30"/>
+<polygon id="outline-0" points="0,6 0.15,5.23 0.59,4.59 1.23,4.15 2,4 7.17,4 7.94,4.15 8.59,4.59 15.41,11.41 15.85,12.06 16,12.83 16,19.17 15.85,19.94 15.41,20.59 8.59,27.41 7.94,27.85 7.17,28 2,28 1.23,27.85 0.59,27.41 0.15,26.77 0,26"/>
 </defs>
 <rect x="19" y="16" width="520" height="608" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn masks</text>
@@ -29,8 +29,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="321.92" y="509" font-size="10" style="fill: var(--ink-muted)">high</text>
 </g>
 <g data-wire="word" data-from="word.result" data-to="fn.word">
-<path d="M313.52 472 L427.52 472 Q433.52 472 433.52 478 L433.52 590 Q433.52 596 439.52 596 L539 596" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="317.52" y="469" font-size="10" style="fill: var(--ink-muted)">word</text>
+<path d="M305.52 472 L427.52 472 Q433.52 472 433.52 478 L433.52 590 Q433.52 596 439.52 596 L539 596" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="309.52" y="469" font-size="10" style="fill: var(--ink-muted)">word</text>
 </g>
 <g data-wire="flags" data-from="flags.value" data-to="fn.flags">
 <path d="M409.85 68 L467.52 68 Q473.52 68 473.52 74 L473.52 494 Q473.52 500 479.52 500 L539 500" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -107,10 +107,10 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="word"><title>core.add</title>
 <use href="#outline-0" x="289.52" y="456" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
-<use href="#icon-a464ab62d3482605" x="289.52" y="460" width="24" height="24"/>
+<use href="#icon-a464ab62d3482605" x="289.52" y="464" width="16" height="16"/>
 <circle cx="289.52" cy="464" r="3" style="fill: var(--wire-data)"/>
 <circle cx="289.52" cy="480" r="3" style="fill: var(--wire-data)"/>
-<circle cx="313.52" cy="472" r="3" style="fill: var(--wire-data)"/>
+<circle cx="305.52" cy="472" r="3" style="fill: var(--wire-data)"/>
 <rect x="234.4" y="473" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="238.4" y="483.65" font-size="10" style="fill: var(--pill-text)">0x0034</text>
 </g>
@@ -144,9 +144,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="433.52" y="379.65" font-size="10" style="fill: var(--node-title)">1</text>
 </g>
 <g data-value="word"><title>65332</title>
-<rect x="317.52" y="461.71" width="24.08" height="9.65" style="fill: var(--canvas-fill)"/>
-<text x="359.62" y="469" font-size="10" style="fill: var(--ink-muted)">word</text>
-<rect x="317.52" y="452" width="38.1" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
-<text x="321.52" y="463.65" font-size="10" style="fill: var(--node-title)">65332</text>
+<rect x="309.52" y="461.71" width="24.08" height="9.65" style="fill: var(--canvas-fill)"/>
+<text x="351.62" y="469" font-size="10" style="fill: var(--ink-muted)">word</text>
+<rect x="309.52" y="452" width="38.1" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="313.52" y="463.65" font-size="10" style="fill: var(--node-title)">65332</text>
 </g>
 </svg>

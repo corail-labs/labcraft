@@ -793,7 +793,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "block.set_outline",
             "Set Block Outline",
             "Write the `outline` section of the block",
-            "Writes the `outline` section (spec 11.4) from `outline`, its items one per line (`template d`, or a `path` and its pieces), in canonical form; `null` removes the section, and the block takes the outline of its mask or the ordinary one. Items that do not read, or that break the limits of 11.4, are `params.invalid`; an outline that reads but breaks a guard is written, and `check` gives its warning.",
+            "Writes the `outline` section (spec 11.4) from `outline`, its items one per line (`template d`, `template primitive`, or a `path` and its pieces), in canonical form; `null` removes the section, and the block takes the outline of its mask or the ordinary one. Items that do not read, or that break the limits of 11.4, are `params.invalid`; an outline that reads but breaks a guard is written, and `check` gives its warning.",
             object(
                 &[
                     ("file", string(FILE)),

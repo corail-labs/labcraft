@@ -7,16 +7,16 @@ extern rust(crate: "labcraft-runtime", function: "and")
 fn and<B: Bits>(a: B, b: B) -> (result: B)
 
 terminals {
-    top 2
+    top 1
     left 3
     left 1 a
     left last b
     right middle result
-    fill "#64748B"
+    fill "#686B9E"
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {

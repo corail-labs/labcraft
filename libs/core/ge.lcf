@@ -7,19 +7,19 @@ extern rust(crate: "labcraft-runtime", function: "ge")
 fn ge<N: Number>(a: N, b: N) -> (result: bool)
 
 terminals {
-    top 2
+    top 1
     left 3
     left 1 a
     left last b
     right middle result
-    fill "#64748B"
+    fill "#557F88"
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {
-    path "M10.556 20.667l10.889 -3.111" width 2.333
-    path "M10.556 17.556l10.889 -3.111l-10.889 -3.111" width 2.333
+    path "M10 17l12 -4l-12 -4" width 2.5
+    path "M10 23l12 -4" width 2.5
 }

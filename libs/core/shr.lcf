@@ -1,0 +1,25 @@
+labcraft 1
+
+/// The bits of `x` moved `count` places toward the low end.
+/// The block of a primitive of `core` (appendix A.1): this file gives its terminals and its outline; its signature
+/// is that of appendix A.1, which this one follows as far as the grammar writes it.
+extern rust(crate: "labcraft-runtime", function: "shr")
+fn shr<I: Integer>(x: I, count: i32) -> (result: I)
+
+terminals {
+    top 1
+    left 3
+    left 1 x
+    left last count
+    right middle result
+    fill "#686B9E"
+}
+
+outline {
+    template primitive
+}
+
+icon 32 {
+    path "M10.556 11.333l4.667 4.667l-4.667 4.667" width 2.333
+    path "M16.778 11.333l4.667 4.667l-4.667 4.667" width 2.333
+}

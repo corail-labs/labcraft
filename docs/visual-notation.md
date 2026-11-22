@@ -913,10 +913,14 @@ When the function comes from another library, a **band** at the top of the block
 tooltip): a block whose left edge is straight and whose right corners are cut by 8, half its least height, the output
 at the middle of the right edge, so that its shape says which way the data go (decided 2026-11-12, A3 of the review of
 M0v). The cut is moderate, so that it reads as a block with cut corners, not as an arrow; like a block, its corners
-are rounded by 2, those of the cut too. Its glyph is the icon of its file (spec A.1, from M1), white on the `fill` that the
-file gives, `#64748B`, a slate neutral in both themes, far from the colours that say something (`wire.resource`,
-`mark.invalid`, `select.stroke`, `node.active`) (decided 2026-11-20); the unit of `with_unit` and `unitless` stays a text, in
-the same ink. The list is closed (N-4):
+are rounded by 2, those of the cut too. From 32 high (three places on a side, or a D grown to it), its body leaves 4 of the box
+above and below, so that a tall D stays as light as one of 16 (decided 2026-11-22). Its glyph is the icon of its file
+(spec A.1, from M1), white on the `fill` that the file gives: a shade of slate per family, neutral in both themes and far
+from the colours that say something (`wire.resource`, `mark.invalid`, `select.stroke`, `node.active`) (decided
+2026-11-20; the families 2026-11-22): `#64748B` for arithmetic (`add` to `max`), `#557F88` for the comparisons,
+`#686B9E` for logic and the integers (`and`, `or`, `xor`, `not`, `shl`, `shr`, `quotient`, `remainder`), `#7E6B8C` for
+`select`, `#7F7464` for the units and the conversions. The unit of `with_unit` and `unitless` stays a text, in the same
+ink. The list is closed (N-4):
 
 | Glyph | Primitives |
 |---|---|
@@ -924,15 +928,20 @@ the same ink. The list is closed (N-4):
 | `−` with one input | `neg` |
 | `√` | `sqrt` |
 | `\|x\|` | `abs` |
+| `x` with `y` raised | `pow` |
+| a thermometer, empty / full | `min`, `max` |
 | `≥` `≤` `>` `<` `=` `≠` | comparisons |
-| `∧` `∨` `¬` | `and`, `or`, `not` |
+| `∧` `∨` `⊕` `¬` | `and`, `or`, `xor`, `not` |
+| `«` `»` | `shl`, `shr` |
+| `//` `%` | `quotient`, `remainder` |
 | `?` | `select` (condition on the upper input, then value if true, value if false) |
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
+| `i32` `~i32` `f32` | `to_i32`, `round_to_i32`, `to_f32` |
 
-**Size** *(decided 2026-11-13; sizes and rounding 2026-11-20)*: 24 × 32 for two values in and for `select` (`top 2`, `left 3` in its file of `libs/core`, spec A.1, from M1), 24 × 16 for one value in (`top 2`, `left 1`). The right corners are cut by 8 (`node.chamfer`), so that a D 16 high has a single tip, at the middle of its right edge, and its six corners, those of the cut too, are rounded by 2. A D that grows keeps them (the cut at most half its height and its width, for a value tried with `--style`). A unit too
+**Size** *(decided 2026-11-13; sizes and rounding 2026-11-20; widths 2026-11-22)*: 16 × 32 for two values in and for `select` (`top 1`, `left 3` in its file of `libs/core`, spec A.1, from M1), 16 × 16 for one value in (`top 1`, `left 1`), 24 × 16 for the units and the conversions (`top 2`), whose glyph is a word. The right corners are cut by 8 (`node.chamfer`), so that a D 16 high has a single tip, at the middle of its right edge, and its six corners, those of the cut too, are rounded by 2. A D that grows keeps them (the cut at most half its height and its width, for a value tried with `--style`). A unit too
 long for it (`[V]` already, 32 × 16; `[kg/(m*s)]`, 72 × 16) makes it wider, as wide as the unit needs with 3 on each
-side, rounded up to the grid; it keeps its height. A sign never widens it (`|x|` holds in 24). The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the ordinary compact
-view (block, no band).
+side, rounded up to the grid; it keeps its height. A sign never widens it. `core.call`, the one `core` function
+without a glyph, has the ordinary compact view (block, no band).
 
 **Terminals of a D**: on its straight left edge, all on the grid of 8. One input at the middle (8); two on the first
 and last places (8 and 24); three on the first, the middle and the last (8, 16, 24), `select` with its condition on
@@ -948,7 +957,7 @@ there) breaks a guard of its outline, and the block is drawn ordinary (spec 11.4
 **Constant on a primitive input**: the pill lies where a wire would, 8 left of the terminal, as on a block (`◂ 0.5` in
 front of `>`); two neighbouring pills step outward in the same way (above), so the D never grows for its pills.
 
-**The D in files (M1).** From M1 the D is the template `d` of the `outline` section (spec 11.4), and the places of its
+**The D in files (M1).** From M1 the D is the template `primitive` of the `outline` section (spec 11.4), and the places of its
 terminals are lines of a `terminals` section (spec 11.2), both written in the file of each primitive (spec A.1): a
 primitive is drawn by the rules of every block, and what this section says of the D is what those files give.
 

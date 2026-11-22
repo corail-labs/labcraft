@@ -1667,11 +1667,16 @@ outline {
   stays in the row of its place. The piece is spliced into the body: its points replace that stretch of the edge, so
   the outline is the body with its pieces. A place without a terminal keeps the straight edge. The `after:` terminal
   (11.2) never gets a piece.
-- **Templates.** `template d` or `template block`, alone in the section, names an outline that LabCraft gives: `d` is
-  the D of the primitives (visual notation 3.2),
+- **Templates.** `template d`, `template primitive` or `template block`, alone in the section, names an outline that
+  LabCraft gives: `d` is a D,
   `path (0, 0) round 2 (w - 8, 0) round 2 (w, 8) round 2 (w, h - 8) round 2 (w - 8, h) round 2 (0, h) round 2`, its 8
   being `node.chamfer` of the style (`check` judges it with that of the default style), and a corner that falls on the
-  one before it counted once: 16 high, the D has one tip, `(w, 8)`; `block` is
+  one before it counted once: 16 high, the D has one tip, `(w, 8)`; `primitive` is the D of the primitives (visual
+  notation 3.2), the same D below 32 high, and from 32 high, three places, a D whose body leaves 4 of the box above
+  and below,
+  `path (0, 4) round 2 (w - 8, 4) round 2 (w, 12) round 2 (w, h - 12) round 2 (w - 8, h - 4) round 2 (0, h - 4) round 2`,
+  the cut at most half of `h - 8` (decision of the owner, 2026-11-22: a terminal on the top side or a band inside
+  keeps to the box, so a block that has them takes `d`); `block` is
   the ordinary block of visual notation 3.2, which brings it back under the outline of a mask. A template names no
   terminal, and does not place one: `terminals` does.
 - **Where a terminal starts.** On its place, at the outermost point of the outline, pieces included, on its side,
@@ -2188,7 +2193,7 @@ outline_section = "outline" "{" { outline_item } "}" ;           (* M1, 11.4 *)
 outline_item   = "path" corner corner corner { corner }  (* the body, closed *)
                | ( "top" | "left" | "right" ) "terminal" "{" "path" offset offset offset { offset } "}"
                                                          (* a piece at each terminal of a side *)
-               | "template" IDENT ;                      (* d or block *)
+               | "template" IDENT ;                      (* d, primitive or block *)
 corner         = "(" coordinate "," coordinate ")" [ "round" INT ] ;
 coordinate     = INT | IDENT [ ( "+" | "-" ) INT ] ;     (* w, h or a terminal, 11.4 *)
 offset         = "(" [ "-" ] INT "," [ "-" ] INT ")" ;
@@ -2332,8 +2337,8 @@ value moved by `core.shr`; a negative `count` is a fault (8.2). `core.quotient` 
 `a − b × quotient`, so that the remainder has the sign of `b` and an index wraps the right way: `core.quotient(−7, 2)`
 is −4 and `core.remainder(−7, 2)` is 1. By 0 both are a fault, and so is `core.quotient` of the lowest value of a signed
 type by −1, which its type cannot hold; `core.remainder` of it by −1 is 0. `core.and`, `core.or` and `core.not` keep
-their glyph on integers; `core.xor`, `core.shl`, `core.shr`, `core.quotient` and `core.remainder` have the ordinary
-block ("Blocks of the primitives", below), outside the closed list of glyphs of the visual notation (3.2).
+their glyph on integers; `core.xor`, `core.shl`, `core.shr`, `core.quotient` and `core.remainder` have theirs in the
+closed list of glyphs of the visual notation (3.2), and their block ("Blocks of the primitives", below).
 
 `core.call` runs a function reference (section 4); its inputs after the first and its outputs are those
 of the referenced function. A reference that designates no function, the default of its type, fails with
@@ -2346,20 +2351,23 @@ fn core.call(function: fn(…) -> (…), …) -> (…)
 **Blocks of the primitives (M1).** The D of visual notation 3.2 is written in the grammar that every library uses
 (11.2, 11.4), so that a primitive is drawn by the same rules as any block. With the program of M1, each primitive drawn
 as a D has its file in `libs/core`, holding these sections; its glyph stays in the closed list of visual notation 3.2
-(N-4), drawn by the `icon` section of the file (11.1) in the manner of Tabler Icons 3.19.0 (MIT), white on a
-`fill "#64748B"` (decisions of the owner, 2026-11-20), except the unit of `with_unit` and `unitless`, which the call gives
-and which stays a text; the other functions of `core` have the ordinary block. The file declares the terminals of the primitive,
+(N-4), drawn by the `icon` section of the file (11.1) in the manner of Tabler Icons 3.19.0 (MIT), white on the `fill`
+of its family (visual notation 3.2; decisions of the owner, 2026-11-20 and 2026-11-22), except the unit of `with_unit`
+and `unitless`, which the call gives and which stays a text; `core.call`, without a glyph, has the ordinary block. The
+file declares the terminals of the primitive,
 `extern rust(crate: "labcraft-runtime", function: "add")` then `fn add<N: Number>(a: N, b: N) -> (result: N)`, with the
 types that the grammar writes: the signature that counts is the one above, whose `A·B`, `√N` and `unit: kind unit`
 no file writes (a type variable stands for them, and `unit`, which is no terminal, is left out). These files are no
 library: `use core` names the primitives, and `check` says nothing of them, since a file of `libs/core` as LabCraft
 embeds it, by its name and its bytes, is the block of a primitive and no program; changed in any way, it is judged as
 any program (decisions of the owner, 2026-11-20). Two values in, on the first and the last
-place, for `add`, `sub`, `mul`, `div`, the comparisons, `and` and `or`, a block of 24 × 32:
+place, for `add`, `sub`, `mul`, `div`, `pow`, `min`, `max`, the comparisons, `and`, `or`, `xor`, `shl`, `shr`,
+`quotient` and `remainder`, a block of 16 × 32 (the `fill` of the family of each; `pow`, `shl` and `shr` name their
+inputs `x` and `exponent` or `count`):
 
 ```text
 terminals {
-    top 2
+    top 1
     left 3
     left 1 a
     left last b
@@ -2368,15 +2376,15 @@ terminals {
 }
 
 outline {
-    template d
+    template primitive
 }
 ```
 
-One value in, in the middle, for `abs`, `neg` and `sqrt` (`not` names its input `a`), a block of 24 × 16:
+One value in, in the middle, for `abs`, `neg` and `sqrt` (`not` names its input `a`), a block of 16 × 16:
 
 ```text
 terminals {
-    top 2
+    top 1
     left 1
     left middle x
     right middle result
@@ -2384,28 +2392,30 @@ terminals {
 }
 
 outline {
-    template d
+    template primitive
 }
 ```
 
-`select` keeps its inputs on the three places from the top, its condition first, as the defaults put them, 24 × 32:
+`select` keeps its inputs on the three places from the top, its condition first, as the defaults put them, 16 × 32:
 
 ```text
 terminals {
-    top 2
+    top 1
     left 3
     right middle result
-    fill "#64748B"
+    fill "#7E6B8C"
 }
 
 outline {
-    template d
+    template primitive
 }
 ```
 
-`with_unit` and `unitless` have the section of one value in, 16 high, and are a D as wide as their unit (visual
-notation 3.2), the only blocks whose width a `terminals` section does not give. Each file but those two ends with the
-`icon` section of its glyph (11.1), drawn so that the glyph has the same size on a block of 16 as on one of 32.
+`to_i32`, `round_to_i32` and `to_f32` have the section of one value in with `top 2`, 24 × 16, for their glyph is a
+word. `with_unit` and `unitless` have that section too, 16 high, and are a D as wide as their unit (visual notation
+3.2), the only blocks whose width a `terminals` section does not give. Each file but those two ends with the
+`icon` section of its glyph (11.1), drawn in a square of the lesser side of the block: 16 on the D of 16 × 32 and of
+16 × 16, so that a glyph has the same size on both.
 
 ### A.2 `array`, `string`, `time`, `errors`, `ui`, `bytes`
 

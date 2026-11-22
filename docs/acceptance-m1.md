@@ -108,10 +108,11 @@ before the tag.
    cannot name gets its label too, on its own line (commands.md 6.7, `node.move`; decision of the owner, 2026-11-17).
 2. The other nodes stay automatic, and move as little as the placement allows: the figure of stability (notation 2.1:
    how many nodes a neutral node added on a wire moves) is, on each example, no worse than at the tag `v0.3.0-m0`,
-   and, since the primitives of 24 (#264), no worse than there: their sizes changed the figures by design (decision
-   of the owner, 2026-11-20). That is the threshold the roadmap left to M1. It is a guard against a regression, not
-   an expected value: the figures are written once, by the code of the tag then by that of #264, into a file of
-   `tests/figures/`, never again from the code under test.
+   and, since the primitives of 24 (#264), then the blocks of `core` (#305), no worse than there: their sizes changed
+   the figures by design (decisions of the owner, 2026-11-20 and 2026-11-22). That is the threshold the roadmap left
+   to M1. It is a guard against a regression, not an expected value: the figures are written once, by the code of the
+   tag, then by that of #264, then by that of #305, into a file of `tests/figures/`, never again from the code under
+   test.
 3. Resizing the frame, moving a terminal and routing a wire by hand each change one entry of `layout` (spec 11), as
    in point 1.
 
