@@ -7,15 +7,15 @@ extern rust(crate: "labcraft-runtime", function: "not")
 fn not<B: Bits>(a: B) -> (result: B)
 
 terminals {
-    top 2
+    top 1
     left 1
     left middle a
     right middle result
-    fill "#64748B"
+    fill "#686B9E"
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {

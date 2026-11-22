@@ -11,9 +11,9 @@ terminals {
     left 1
     left middle x
     right middle result
-    fill "#64748B"
+    fill "#7F7464"
 }
 
 outline {
-    template d
+    template primitive
 }

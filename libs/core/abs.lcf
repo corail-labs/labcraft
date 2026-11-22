@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "abs")
 fn abs<N: Number>(x: N) -> (result: N)
 
 terminals {
-    top 2
+    top 1
     left 1
     left middle x
     right middle result
@@ -15,12 +15,12 @@ terminals {
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {
-    path "M7.833 7.833v16.333" width 3.5
-    path "M24.167 7.833v16.333" width 3.5
-    path "M12.5 12.5l7 7" width 3.5
-    path "M19.5 12.5l-7 7" width 3.5
+    path "M5.5 10v12" width 2.5
+    path "M18.5 10v12" width 2.5
+    path "M9.75 13.75l4.5 4.5" width 2.5
+    path "M14.25 13.75l-4.5 4.5" width 2.5
 }

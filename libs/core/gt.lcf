@@ -7,16 +7,16 @@ extern rust(crate: "labcraft-runtime", function: "gt")
 fn gt<N: Number>(a: N, b: N) -> (result: bool)
 
 terminals {
-    top 2
+    top 1
     left 3
     left 1 a
     left last b
     right middle result
-    fill "#64748B"
+    fill "#557F88"
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {

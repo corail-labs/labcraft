@@ -123,8 +123,41 @@ fn the_d_cuts_its_right_corners_by_the_chamfer_and_rounds_its_six_corners_by_2()
 }
 
 #[test]
+fn the_primitive_leaves_4_of_the_box_above_and_below_from_32_high() {
+    // The path of spec 11.4, written out: 32 high or more, the body of `template primitive` leaves 4 of the box above
+    // and below.
+    let path = "    path (0, 4) round 2 (w - 8, 4) round 2 (w, 12) round 2 (w, h - 12) round 2 (w - 8, h - 4) round 2 (0, h - 4) round 2";
+    let found = drawn("    template primitive", &split());
+    assert_eq!(found, drawn(path, &split()));
+    // Rounded: no point on a corner; the box 48 wide, the body from 4 to 44.
+    for corner in [(0, 4 * U), (40 * U, 4 * U), (48 * U, 12 * U), (48 * U, 36 * U), (40 * U, 44 * U), (0, 44 * U)] {
+        assert!(!found.points.contains(&corner), "{corner:?}");
+    }
+    let xs = found.points.iter().map(|point| point.0);
+    let ys = found.points.iter().map(|point| point.1);
+    assert_eq!((xs.clone().min(), xs.max(), ys.clone().min(), ys.max()), (Some(0), Some(48 * U), Some(4 * U), Some(44 * U)));
+    // `x` on the straight left edge; `b` and `c` on the straight right edge, from 12.83 to 35.17. `a`, at 8, on the
+    // middle of the cut from (40, 4) to (48, 12), straight there: 44, 4 inside the box.
+    assert_eq!(found.starts, [(0, 24 * U), (44 * U, 8 * U), (48 * U, 16 * U), (48 * U, 24 * U)]);
+}
+
+#[test]
+fn the_primitive_below_three_places_is_the_d() {
+    // 24 high, two places: no inset, the D, its cut from (w - 8, 0).
+    let two = Frame {
+        width: 16 * U,
+        height: 24 * U,
+        terminals: vec![at(BlockSide::Left, 8, "a", false), at(BlockSide::Right, 16, "result", true)],
+        chamfer: 8 * U,
+    };
+    let path = "    path (0, 0) round 2 (w - 8, 0) round 2 (w, 8) round 2 (w, h - 8) round 2 (w - 8, h) round 2 (0, h) round 2";
+    assert_eq!(drawn("    template primitive", &two), drawn(path, &two));
+    assert_eq!(drawn("    template primitive", &two), drawn("    template d", &two));
+}
+
+#[test]
 fn the_d_at_twice_the_chamfer_high_has_one_tip() {
-    // A unary primitive, 24 × 16 (visual notation 3.2): the two cuts meet at (w, 8).
+    // A unary primitive of 24 × 16, as a conversion (visual notation 3.2): the two cuts meet at (w, 8).
     let unary = Frame {
         width: 24 * U,
         height: 16 * U,

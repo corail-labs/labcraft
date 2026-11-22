@@ -241,6 +241,7 @@ impl BlockPane {
         let shown = match &written.outline {
             None => follow.to_owned(),
             Some(OutlineChoice::Template(name)) if name == "d" => "D".to_owned(),
+            Some(OutlineChoice::Template(name)) if name == "primitive" => "Primitive".to_owned(),
             Some(OutlineChoice::Template(name)) if name == "block" => "Ordinary".to_owned(),
             Some(OutlineChoice::Template(name)) => format!("template {name}"),
             Some(OutlineChoice::Path) => "Drawn in the text".to_owned(),
@@ -258,6 +259,9 @@ impl BlockPane {
             }
             if ui.selectable_label(written.outline == Some(OutlineChoice::Template("d".to_owned())), "D").clicked() {
                 chosen = Some(Some("template d"));
+            }
+            if ui.selectable_label(written.outline == Some(OutlineChoice::Template("primitive".to_owned())), "Primitive").clicked() {
+                chosen = Some(Some("template primitive"));
             }
             if written.outline == Some(OutlineChoice::Path) {
                 ui.add_enabled(false, egui::Button::selectable(true, "Drawn in the text"));

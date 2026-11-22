@@ -7,20 +7,20 @@ extern rust(crate: "labcraft-runtime", function: "ne")
 fn ne<T>(a: T, b: T) -> (result: bool)
 
 terminals {
-    top 2
+    top 1
     left 3
     left 1 a
     left last b
     right middle result
-    fill "#64748B"
+    fill "#557F88"
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {
-    path "M10.556 14.444h10.889" width 2.333
-    path "M10.556 17.556h10.889" width 2.333
-    path "M10.556 21.444l10.889 -10.889" width 2.333
+    path "M10 12.5h12" width 2.5
+    path "M10 19.5h12" width 2.5
+    path "M11.5 23.5l9 -15" width 2.5
 }

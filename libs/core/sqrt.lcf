@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "sqrt")
 fn sqrt<N: Number, R: Number>(x: N) -> (result: R)
 
 terminals {
-    top 2
+    top 1
     left 1
     left middle x
     right middle result
@@ -15,7 +15,7 @@ terminals {
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {

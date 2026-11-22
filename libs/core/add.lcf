@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "add")
 fn add<N: Number>(a: N, b: N) -> (result: N)
 
 terminals {
-    top 2
+    top 1
     left 3
     left 1 a
     left last b
@@ -16,7 +16,7 @@ terminals {
 }
 
 outline {
-    template d
+    template primitive
 }
 
 icon 32 {

@@ -23,6 +23,10 @@ const MAX_ROUND: u32 = 16;
 pub const CHAMFER: i64 = 8 * UNIT;
 /// The rounding of every corner of `template d`, the corners of its cut included (11.4).
 const D_ROUND: i64 = 2 * UNIT;
+/// From this height, three places on a side, the body of `template primitive` leaves this much of the box above and
+/// below (11.4).
+const D_TALL: i64 = 32 * UNIT;
+const D_INSET: i64 = 4 * UNIT;
 /// A unit, in hundredths.
 const UNIT: i64 = 100;
 /// How far a piece reaches out or in, and along its place, in units.
@@ -47,8 +51,9 @@ pub type Problem = (Code, String, Id);
 pub enum Read {
     /// `template block`, or a section that cannot be read as one.
     Block,
-    /// `template d`, by its item.
-    D(Id),
+    /// `template d`, by its item; `template primitive`, `trimmed`, its body 4 inside the box above and below from 32
+    /// high.
+    D { id: Id, trimmed: bool },
     /// A body and its pieces.
     Path { id: Id, corners: Vec<Corner>, pieces: Vec<Piece> },
 }
@@ -178,8 +183,8 @@ pub fn read(section: &Outline, names: &Interner) -> (Read, Vec<Problem>) {
         (Some((id, _)), None) if !pieces.is_empty() => {
             problems.push((Code::Lc5016, "a `template` stands alone in its section: pieces need a `path` (11.4)".to_owned(), id));
         }
-        (Some((id, name)), None) if name != "d" && name != "block" => {
-            let message = format!("`template {}`: the templates are `d` and `block` (11.4)", cut_text(name));
+        (Some((id, name)), None) if !["d", "primitive", "block"].contains(&name) => {
+            let message = format!("`template {}`: the templates are `d`, `primitive` and `block` (11.4)", cut_text(name));
             problems.push((Code::Lc5016, message, id));
         }
         (None, None) => {
@@ -193,7 +198,8 @@ pub fn read(section: &Outline, names: &Interner) -> (Read, Vec<Problem>) {
         return (Read::Block, problems);
     }
     let read = match (template, path) {
-        (Some((id, "d")), _) => Read::D(id),
+        (Some((id, "d")), _) => Read::D { id, trimmed: false },
+        (Some((id, "primitive")), _) => Read::D { id, trimmed: true },
         (Some(_), _) | (None, None) => Read::Block,
         (None, Some((id, corners))) => {
             let coordinate = |coordinate: Coordinate| {
@@ -309,10 +315,12 @@ pub fn draw(read: &Read, frame: &Frame<'_>) -> Result<Option<Drawn>, Vec<Problem
     let (w, h) = (frame.width, frame.height);
     let (id, body, pieces): (Id, Vec<Rounded>, &[Piece]) = match read {
         Read::Block => return Ok(None),
-        Read::D(id) => {
-            let cut = frame.chamfer.min(h / 2).min(w / 2);
+        Read::D { id, trimmed } => {
+            let inset = if *trimmed && h >= D_TALL { D_INSET } else { 0 };
+            let (top, bottom) = (inset, h - inset);
+            let cut = frame.chamfer.min((bottom - top) / 2).min(w / 2);
             // One point where the two cuts meet, at twice the chamfer high, and none where the chamfer is 0.
-            let corners = [(0, 0), (w - cut, 0), (w, cut), (w, h - cut), (w - cut, h), (0, h)];
+            let corners = [(0, top), (w - cut, top), (w, top + cut), (w, bottom - cut), (w - cut, bottom), (0, bottom)];
             let mut body: Vec<Rounded> = corners.into_iter().map(|corner| (corner, D_ROUND)).collect();
             body.dedup();
             (*id, body, &[])

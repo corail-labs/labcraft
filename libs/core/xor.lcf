@@ -1,0 +1,26 @@
+labcraft 1
+
+/// Whether `a` or `b` is true, not both; on integers, bit by bit.
+/// The block of a primitive of `core` (appendix A.1): this file gives its terminals and its outline; its signature
+/// is that of appendix A.1, which this one follows as far as the grammar writes it.
+extern rust(crate: "labcraft-runtime", function: "xor")
+fn xor<B: Bits>(a: B, b: B) -> (result: B)
+
+terminals {
+    top 1
+    left 3
+    left 1 a
+    left last b
+    right middle result
+    fill "#686B9E"
+}
+
+outline {
+    template primitive
+}
+
+icon 32 {
+    circle (16, 16) 6.222 width 2.333
+    path "M16 9.778v12.444" width 2.333
+    path "M9.778 16h12.444" width 2.333
+}
