@@ -110,29 +110,31 @@ pub struct Glide {
 
 impl Glide {
     /// Nothing when no node moved.
+    #[cfg(test)]
     pub fn between(old: &Drawing, new: &Drawing) -> Option<Glide> {
-        Glide::after_move(old, new, &[], (0, 0))
+        Glide::after_move(old, new, &[], (0, 0), labcraft_diagram::shift_between(old, new))
     }
 
     /// As [`Glide::between`], the nodes `moved` of the old drawing (by their index in it) standing `by` from their place,
-    /// in hundredths, as a drag left them: they do not glide to where the move put them (architecture 12.4).
-    pub fn after_move(old: &Drawing, new: &Drawing, moved: &[usize], by: (i64, i64)) -> Option<Glide> {
-        // From the frame of the function, which the canvas keeps in place (`shift_of_frame`).
-        let (dx, dy) = shift_of_frame(old, new);
-        let before: HashMap<&str, (i64, i64)> = old
-            .placed
-            .iter()
-            .enumerate()
-            .map(|(at, placed)| {
-                let shift = if moved.contains(&at) { by } else { (0, 0) };
-                (placed.key.as_str(), (placed.x + shift.0 + dx, placed.y + shift.1 + dy))
-            })
-            .collect();
+    /// in hundredths, as a drag left them: they do not glide to where the move put them (architecture 12.4). `shift`:
+    /// that of the whole drawing, which the canvas keeps in place (`labcraft_diagram::shift_between`).
+    pub fn after_move(old: &Drawing, new: &Drawing, moved: &[usize], by: (i64, i64), (dx, dy): (i64, i64)) -> Option<Glide> {
+        // Where each node stood, found by its key; those of the drag where it left them, each once.
+        let mut before: HashMap<&str, (i64, i64)> =
+            old.placed.iter().filter(|placed| !placed.key.is_empty()).map(|placed| (placed.key.as_str(), (placed.x, placed.y))).collect();
+        let mut moved = moved.to_vec();
+        moved.sort_unstable();
+        moved.dedup();
+        for placed in moved.iter().filter_map(|&at| old.placed.get(at)) {
+            if let Some(at) = before.get_mut(placed.key.as_str()) {
+                *at = (at.0 + by.0, at.1 + by.1);
+            }
+        }
         let from: Vec<Vec2> = new
             .placed
             .iter()
             .map(|placed| match before.get(placed.key.as_str()) {
-                Some(&(x, y)) => Vec2::new((x - placed.x) as f32, (y - placed.y) as f32) / 100.0,
+                Some(&(x, y)) => Vec2::new((x + dx - placed.x) as f32, (y + dy - placed.y) as f32) / 100.0,
                 None => Vec2::ZERO,
             })
             .collect();
@@ -157,15 +159,6 @@ impl Glide {
         let left = 1.0 - self.progress;
         let eased = left * left * left;
         self.from.iter().map(|offset| *offset * eased).collect()
-    }
-}
-
-/// How far the frame of the function moved from one drawing to the next, in hundredths: a node that the file places above
-/// it or left of it moves the whole drawing (spec 11), which the canvas follows so that nothing seems to move but what did.
-pub fn shift_of_frame(old: &Drawing, new: &Drawing) -> (i64, i64) {
-    match (old.bodies.first(), new.bodies.first()) {
-        (Some(old), Some(new)) => (new.origin.0 - old.origin.0, new.origin.1 - old.origin.1),
-        _ => (0, 0),
     }
 }
 

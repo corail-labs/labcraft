@@ -90,7 +90,11 @@ are the nodes that a `layout` section does not place (spec 11).
   change moves what depends on it, as far as the rules below allow. For each example and each data wire
   between two nodes, CI inserts a neutral node on the wire (`core.select(true, v, v)`, which passes the
   value on unchanged), compares the drawing with the drawing before, and reports how many other nodes
-  change place. M0 reports the figure, without a threshold; M1 sets one, on measures of the editor, where a
+  change place. A shift of the whole drawing is not a change: when a function is drawn again, the editor scrolls by
+  it, so that what the screen shows stays in place (decision of the owner, 2026-11-23, #266). Down, it is the shift
+  that the most nodes share, as when the placement grows upward, counted only on the nodes whose `layout` entry did
+  not change: a node that the file moves (a drag, an undo, an agent) moved, even when it is the only one; across, that
+  of the frame of the function, which a node that the file places left of it moves (spec 11). M0 reports the figure, without a threshold; M1 sets one, on measures of the editor, where a
   node the user places stays in `layout` (owner, 2026-11-14).
 - **Columns.** The flow goes left to right: a node stands in the column after the last of the nodes
   that feed it, and a node fed only by the inputs of the function in the first column. Nodes with no

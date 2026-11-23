@@ -4,8 +4,9 @@
 //! - its size, and the zoom at which it fits whole in the canvas of the window of M0v, 1340 × 560 units;
 //! - the figure of stability: on each data wire between two nodes, a neutral node `core.select(true, v, v)` is put, the
 //!   drawing is compared with the one before, and two counts are kept: the nodes whose place changes, which glide on
-//!   screen, and the nodes whose column holds other nodes, or in another order, than before (a column that only moves
-//!   across as a whole does not count).
+//!   screen (a shift of the whole drawing, which the canvas follows, is not a change: #266), and the nodes whose
+//!   column holds other nodes, or in another order, than before (a column that only moves across as a whole does not
+//!   count).
 //!
 //! `cargo xtask figures` runs it and writes its table in Markdown, which the workflow `checks` adds to its summary.
 
@@ -13,7 +14,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use labcraft_check::{Checked, Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
-use labcraft_diagram::{DiagramLimits, Drawn, Placed, ViewState, data_wires, draw};
+use labcraft_diagram::{DiagramLimits, Drawing, Drawn, Placed, ViewState, data_wires, draw, shift_between};
 use labcraft_graph::Decl;
 use labcraft_harness::PROGRAMS;
 use labcraft_types::{Interner, Limits};
@@ -55,9 +56,13 @@ fn examples(replaced: Option<(&str, &str)>) -> LibrarySource {
     root
 }
 
-fn placed(checked: &Checked, file: usize, names: &Interner) -> Option<HashMap<String, Placed>> {
+fn drawn(checked: &Checked, file: usize, names: &Interner) -> Option<Drawing> {
     let Drawn::Drawing(drawing) = draw(checked, file, names, &ViewState::default(), &DiagramLimits::default()) else { return None };
-    Some(drawing.placed.into_iter().map(|placed| (placed.key.clone(), placed)).collect())
+    Some(drawing)
+}
+
+fn by_key(drawing: &Drawing) -> HashMap<&str, &Placed> {
+    drawing.placed.iter().map(|placed| (placed.key.as_str(), placed)).collect()
 }
 
 /// The text with a neutral node on the wire that `line:column` to `end` reads, put on the line before its reader.
@@ -80,10 +85,13 @@ fn probed(text: &str, read: (u32, u32, u32), reader_line: u32) -> Option<String>
     Some(lines.join("\n"))
 }
 
-/// The nodes that moved, and those whose column changed, between two drawings of a function.
-fn changes(before: &HashMap<String, Placed>, after: &HashMap<String, Placed>) -> (usize, usize) {
+/// The nodes that moved, and those whose column changed, between two drawings of a function. A shift of the whole
+/// drawing, which the canvas follows (`shift_between`), is not a move: the screen does not show it (#266).
+fn changes(old: &Drawing, new: &Drawing) -> (usize, usize) {
+    let (dx, dy) = shift_between(old, new);
+    let (before, after) = (by_key(old), by_key(new));
     let kept = |placed: &Placed| !placed.key.rsplit('/').next().is_some_and(|last| last == PROBE);
-    let columns = |drawing: &HashMap<String, Placed>| -> HashMap<(usize, u32), Vec<(u32, String)>> {
+    let columns = |drawing: &HashMap<&str, &Placed>| -> HashMap<(usize, u32), Vec<(u32, String)>> {
         let mut columns: HashMap<(usize, u32), Vec<(u32, String)>> = HashMap::new();
         for placed in drawing.values().filter(|placed| kept(placed)) {
             columns.entry((placed.body, placed.column)).or_default().push((placed.rank, placed.key.clone()));
@@ -93,18 +101,18 @@ fn changes(before: &HashMap<String, Placed>, after: &HashMap<String, Placed>) ->
         }
         columns
     };
-    let (old, new) = (columns(before), columns(after));
+    let (old_columns, new_columns) = (columns(&before), columns(&after));
     let mates = |columns: &HashMap<(usize, u32), Vec<(u32, String)>>, placed: &Placed| -> Vec<String> {
         columns.get(&(placed.body, placed.column)).map_or_else(Vec::new, |column| column.iter().map(|(_, key)| key.clone()).collect())
     };
     let (mut moved, mut reordered) = (0, 0);
-    for (key, was) in before {
+    for (key, was) in &before {
         let Some(now) = after.get(key) else { continue };
-        if (was.x, was.y) != (now.x, now.y) {
+        if (was.x + dx, was.y + dy) != (now.x, now.y) {
             moved += 1;
         }
         // The body of a node can shift when the probe is a line of its own body: compare by the keys.
-        if mates(&old, was) != mates(&new, now) {
+        if mates(&old_columns, was) != mates(&new_columns, now) {
             reordered += 1;
         }
     }
@@ -123,7 +131,6 @@ fn the_figures_of_the_examples() {
             continue;
         }
         let Drawn::Drawing(drawing) = draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) else { continue };
-        let before: HashMap<String, Placed> = drawing.placed.iter().map(|placed| (placed.key.clone(), placed.clone())).collect();
         let zoom = (CANVAS.0 * 100 / drawing.width.max(1)).min(CANVAS.1 * 100 / drawing.height.max(1)).min(100);
         let text = PROGRAMS
             .iter()
@@ -145,12 +152,12 @@ fn the_figures_of_the_examples() {
             let mut probe_names = Interner::new();
             let probed_checked = check(examples(Some((&file.shown.replace('\\', "/"), &changed))), &Shipped, &mut probe_names, &limits);
             let probed_file = probed_checked.files.iter().position(|other| other.shown == file.shown);
-            let after = probed_file.filter(|&at| probed_checked.counts_of(at).errors == 0).and_then(|at| placed(&probed_checked, at, &probe_names));
+            let after = probed_file.filter(|&at| probed_checked.counts_of(at).errors == 0).and_then(|at| drawn(&probed_checked, at, &probe_names));
             let Some(after) = after else {
                 failed += 1;
                 continue;
             };
-            let (m, r) = changes(&before, &after);
+            let (m, r) = changes(&drawing, &after);
             probes += 1;
             moved += m;
             reordered += r;

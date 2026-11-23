@@ -587,17 +587,16 @@ impl Canvas {
             Some(moving) => (None, self.drawing.as_ref().and_then(|old| moving.again(old, &drawing))),
             None => (None, None),
         };
-        self.glide = match (&self.drawing, glide && !self.reduced_motion) {
-            (Some(old), true) => match &moved {
-                Some((nodes, by)) => Glide::after_move(old, &drawing, nodes, (by.0 * 100, by.1 * 100)),
-                None => Glide::between(old, &drawing),
-            },
+        // The viewport follows the whole drawing, when the same function is drawn again: what the file places above or
+        // left of the frame (spec 11), and a placement that grows upward (#266), move it, not what the canvas shows.
+        // The glide counts from the same shift.
+        let (nodes, by) = moved.as_ref().map_or((&[][..], (0, 0)), |(nodes, by)| (nodes.as_slice(), (by.0 * 100, by.1 * 100)));
+        let shift = self.drawing.as_ref().filter(|_| glide).map(|old| labcraft_diagram::shift_between(old, &drawing));
+        self.glide = match (&self.drawing, shift) {
+            (Some(old), Some(shift)) if !self.reduced_motion => Glide::after_move(old, &drawing, nodes, by, shift),
             _ => None,
         };
-        // The viewport follows the frame of the function, when the same function is drawn again: what the file places
-        // above or left of it moves the whole drawing, not what the canvas shows (spec 11).
-        if glide && let Some(old) = &self.drawing {
-            let (dx, dy) = view::shift_of_frame(old, &drawing);
+        if let Some((dx, dy)) = shift {
             self.viewport.origin += Vec2::new(dx as f32, dy as f32) / 100.0;
         }
         self.context = None;
