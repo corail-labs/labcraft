@@ -2987,3 +2987,81 @@ fn g(x: f64, y: bool) -> (n: i64) {
     assert!(coloured.contains("var(--type-number)") && coloured.contains("var(--type-boolean)"), "{coloured}");
     assert!(!plain.contains("type-"), "{plain}");
 }
+
+/// #274: nodes that the file places close together, as in the issue: `open` ends at 139, the first `query_f64` starts
+/// at 163 and ends at 203, the second starts at 243. A wire between two terminals at one height with nothing between
+/// them is straight, and a wire that must bend does so in the gap: never past the terminal it reaches and back. With
+/// the first `query_f64` at 128, its block starting at 147, the gap of 8 is narrower than a vertical and its margins,
+/// and the vertical comes closer to the blocks, still between them. At 120, its block starts at 139, where that of `open`
+/// ends: the vertical runs along the two edges, inside neither block.
+#[test]
+fn wires_between_nodes_placed_close_together_take_the_gaps() {
+    let main = |first: i64| {
+        format!(
+            "labcraft 1
+
+use dev
+
+fn main(resource: string, err: error = none) -> (err: error) {{
+                 s, e1 = dev.open(resource, err: err)
+    _, s2, e2 = dev.query_f64(s, \"A\", err: e1)
+                 _, _, e3 = dev.query_f64(s2, \"B\", err: e2)
+    err = e3
+}}
+
+layout {{
+    frame size (400, 120)
+                 node s at (80, 24)
+    node s2 at ({first}, 24)
+    node e3 at (224, 24)
+}}
+"
+        )
+    };
+    for first in [144, 128, 120] {
+        let text = main(first);
+        let mut files = BENCH;
+        files[0] = ("main.lcf", &text);
+        let drawing = drawing_with(&files);
+        for value in ["s2", "e2", "e1"] {
+            let found = branches(wire_of(&drawing, value));
+            assert!(found.iter().all(|branch| branch.len() == 2 && branch[0].1 == branch[1].1), "{first}: {value}: {found:?}");
+        }
+        let found = branches(wire_of(&drawing, "s"));
+        let [branch] = found.as_slice() else { panic!("{found:?}") };
+        let (from, to) = (branch[0].0, branch[branch.len() - 1].0);
+        assert!(branch.iter().all(|&(x, _)| from <= x && x <= to), "{first}: {branch:?}");
+        if first == 120 {
+            assert!(branch.iter().all(|&(x, _)| x == from), "{first}: {branch:?}");
+        } else {
+            assert!(branch.len() == 4 && from < branch[1].0 && branch[1].0 < to, "{first}: {branch:?}");
+        }
+    }
+}
+
+/// #192, point 3: a node that the file places over the name of the terminal on the left of the frame, at 26 in the
+/// frame, 45 in the drawing (whose frame starts at 19, as the wires of its terminals do): the wire of `x` bends before
+/// the block, not inside it.
+#[test]
+fn a_wire_bends_before_a_node_placed_over_the_names_of_the_frame() {
+    let main = "labcraft 1
+
+use core
+
+fn main(x: f64) -> (y: f64) {
+    a = core.add(x, x)
+    b = core.add(a, x)
+                    c = core.add(b, a)
+    y = c
+}
+
+layout {
+    node a at (26, 60)
+}
+";
+    let drawing = drawing_of(main);
+    let found = branches(wire_of(&drawing, "x"));
+    let into: Vec<_> = found.iter().filter(|branch| branch.last().is_some_and(|&(x, _)| x == 4500)).collect();
+    assert!(!into.is_empty(), "{found:?}");
+    assert!(into.iter().all(|branch| branch.iter().all(|&(x, _)| x <= 4500)), "{found:?}");
+}

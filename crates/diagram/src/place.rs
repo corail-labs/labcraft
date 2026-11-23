@@ -1042,33 +1042,33 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         }
     }
     // A node that the file places is, for the routes, in the column where it stands: its wires take the channels beside
-    // it and go round it there, not where the automatic placement had put it (the owner's trial, 2026-11-17). Column `c`
-    // reaches from the start of the channel before it to the start of the channel after it.
-    let routed: Vec<usize> = (0..count)
-        .map(|local| {
-            let column = columns.get(local).copied().unwrap_or(0);
-            let fixed = nodes.get(local).and_then(|&node| graph.nodes.get(node)).is_some_and(|node| node.at.is_some());
-            let (Some(sized), Some((_, at))) = (body.sized.get(local), placed.get(local)) else { return column };
-            if !fixed || column_count == 0 {
-                return column;
-            }
-            let centre = at.x + sized.width / 2;
-            (0..column_count).find(|&other| centre < channel_at.get(other + 2).copied().unwrap_or(i64::MAX)).unwrap_or(column_count - 1)
-        })
-        .collect();
-    let ends = wire_ends(&body, frame, &routed, column_count, &xs, &ys, &left_at, &right_at, width);
-    let placed_blocks = column_blocks(&body, &routed, column_count, &ys);
+    // it and go round it there, not where the automatic placement had put it (the owner's trial, 2026-11-17). Then the
+    // columns of the routes are those the nodes make where they stand, and each channel the gap between two of them.
+    let fixed = nodes.iter().any(|&node| graph.nodes.get(node).is_some_and(|node| node.at.is_some()));
+    let (routed, route_columns, channel_at, room) =
+        if fixed { stood(&body, &placed, left_zone) } else { (columns, column_count, channel_at, Vec::new()) };
+    let mut ends = wire_ends(&body, frame, &routed, route_columns, &xs, &ys, &left_at, &right_at, width);
+    let placed_blocks = column_blocks(&body, &routed, route_columns, &ys);
     let axis = has_axis.then_some(shift);
     let plan = route::plan(&route::BodyIn {
         ends: &ends,
         sources: &sources,
-        columns: column_count,
+        columns: route_columns,
         blocks: &placed_blocks,
         axis,
         vias: &vias,
         origin: shift,
     });
-    let routes = route::geometry(&plan, &ends, &channel_at);
+    // The last channel of the routes, before the terminals on the right, as wide as its slots: the plan reads only the
+    // heights of the ends, so the terminals on the right move out with the frame and the plan stays.
+    if fixed && let Some(&last) = channel_at.get(route_columns + 1) {
+        let wide = size::up(last + plan.channel(route_columns + 1) + right_zone);
+        if wide > width {
+            width = wide;
+            ends = wire_ends(&body, frame, &routed, route_columns, &xs, &ys, &left_at, &right_at, width);
+        }
+    }
+    let routes = route::geometry(&plan, &ends, &channel_at, &room);
     if let Some(track) = plan.highest {
         highest = highest.min(track - style::track_room());
     }
@@ -1091,7 +1091,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         axis: has_axis.then_some(shift),
         rise,
         routes,
-        from_file: nodes.iter().any(|&node| graph.nodes.get(node).is_some_and(|node| node.at.is_some())),
+        from_file: fixed,
     }
 }
 
@@ -1140,6 +1140,67 @@ fn wire_right<'f>(frame: &'f BodyOf, wire: &crate::graph::Wire) -> Option<&'f Fr
         End::Right(at) => frame.right.get(at),
         _ => None,
     }
+}
+
+/// Across, what a node or a column of the routes reaches: its blocks, and its names on either side.
+#[derive(Clone, Copy)]
+struct Span {
+    left: i64,
+    right: i64,
+    names_left: i64,
+    names_right: i64,
+}
+
+impl Span {
+    fn join(&mut self, other: Span) {
+        self.left = self.left.min(other.left);
+        self.right = self.right.max(other.right);
+        self.names_left = self.names_left.min(other.names_left);
+        self.names_right = self.names_right.max(other.names_right);
+    }
+}
+
+/// The columns of the routes of a body where the file places a node: the nodes whose blocks overlap across, left to
+/// right, each with the nodes it overlaps; by node its column, how many there are, where each channel starts (after the
+/// names on the right of the column before it) and its [`route::Room`] up to the column after it. Channel 0 is never
+/// used and the last one, to the right edge of the frame, has no room: it is as wide as its slots.
+fn stood(body: &Body<'_>, placed: &[(usize, NodeAt)], left_zone: i64) -> (Vec<usize>, usize, Vec<i64>, Vec<Option<route::Room>>) {
+    let mut spans: Vec<(usize, Span)> = placed
+        .iter()
+        .enumerate()
+        .filter_map(|(local, (_, at))| {
+            let sized = body.sized.get(local)?;
+            let right = at.x + sized.width;
+            Some((local, Span { left: at.x, right, names_left: at.x - sized.left, names_right: right + sized.right }))
+        })
+        .collect();
+    spans.sort_by_key(|(_, span)| span.left);
+    let mut columns = vec![0usize; placed.len()];
+    let mut reach: Vec<Span> = Vec::new();
+    for (local, span) in spans {
+        match reach.last_mut() {
+            Some(last) if span.left < last.right => last.join(span),
+            _ => reach.push(span),
+        }
+        if let Some(column) = columns.get_mut(local) {
+            *column = reach.len().saturating_sub(1);
+        }
+    }
+    // Channel `k` lies between columns `k - 1` and `k` of the routes, counted from 1: `reach[k - 2]` before it,
+    // `reach[k - 1]` after it; channel 1 starts where the automatic placement starts it, after the names of the frame.
+    let before = |channel: usize| channel.checked_sub(2).and_then(|column| reach.get(column));
+    // Where the wires of the widest terminal on the left of the frame start, past its name: `left_zone` keeps a grid after it.
+    let frame_wires = if left_zone > 0 { left_zone - style::grid() + style::padding() } else { 0 };
+    let channel_at: Vec<i64> = (0..reach.len() + 2).map(|channel| before(channel).map_or(left_zone, |column| column.names_right)).collect();
+    let room = (0..reach.len() + 2)
+        .map(|channel| {
+            let after = reach.get(channel.checked_sub(1)?)?;
+            let start = channel_at.get(channel).copied().unwrap_or(left_zone);
+            let blocks_start = before(channel).map_or(frame_wires.min(after.left), |column| column.right);
+            Some(route::Room { names: after.names_left - start, blocks_start, blocks: after.left - blocks_start })
+        })
+        .collect();
+    (columns, reach.len(), channel_at, room)
 }
 
 /// The top and the bottom of each node that each column holds, what is above it included, by column from the left edge

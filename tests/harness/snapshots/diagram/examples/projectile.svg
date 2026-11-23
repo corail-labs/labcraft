@@ -40,35 +40,32 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <rect x="19" y="16" width="1296" height="608" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn projectile</text>
 <g data-wire="drag" data-from="fn.drag" data-to="k.a">
-<path d="M19 536 L173.75 536 Q179.75 536 179.75 542 L179.75 562 Q179.75 568 185.75 568 L203 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 536 L163.75 536 Q169.75 536 169.75 542 L169.75 562 Q169.75 568 175.75 568 L203 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="mass" data-from="fn.mass" data-to="k.b">
-<path d="M19 512 L181.75 512 Q187.75 512 187.75 518 L187.75 586 Q187.75 592 193.75 592 L203 592" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 512 L168.75 512 Q174.75 512 174.75 518 L174.75 586 Q174.75 592 180.75 592 L203 592" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="vx0" data-from="fn.vx0" data-to="flight_time.vx">
-<path d="M19 352 L357.75 352 Q361.75 352 361.75 356 L361.75 356 Q361.75 360 365.75 360 L459 360" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="401.34" y="357" font-size="10" style="fill: var(--ink-muted)">vx0</text>
+<path d="M19 352 L378 352 Q382 352 382 356 L382 356 Q382 360 386 360 L459 360" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="vy0" data-from="fn.vy0" data-to="flight_time.vy">
-<path d="M19 376 L357.75 376 Q361.75 376 361.75 380 L361.75 380 Q361.75 384 365.75 384 L459 384" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="401.34" y="381" font-size="10" style="fill: var(--ink-muted)">vy0</text>
+<path d="M19 376 L378 376 Q382 376 382 380 L382 380 Q382 384 386 384 L459 384" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="flight_time" data-from="flight_time.flight_time" data-to="fn.flight_time">
-<path d="M1187 168 L1146.81 168 Q1142.81 168 1142.81 164 L1142.81 164 Q1142.81 160 1146.81 160 L1315 160" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1187 168 L1191 168 Q1195 168 1195 164 L1195 164 Q1195 160 1199 160 L1315 160" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="range" data-from="flight_time.range" data-to="fn.range">
-<path d="M1187 280 L1146.81 280 Q1142.81 280 1142.81 276 L1142.81 276 Q1142.81 272 1146.81 272 L1315 272" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1187 280 L1191 280 Q1195 280 1195 276 L1195 276 Q1195 272 1199 272 L1315 272" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="apex" data-from="flight_time.apex" data-to="fn.apex">
-<path d="M1187 408 L1146.81 408 Q1142.81 408 1142.81 404 L1142.81 404 Q1142.81 400 1146.81 400 L1315 400" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1187 408 L1191 408 Q1195 408 1195 404 L1195 404 Q1195 400 1199 400 L1315 400" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
-<path d="M19 560 L165.75 560 Q171.75 560 171.75 554 L171.75 510 Q171.75 504 177.75 504 L355.75 504 Q361.75 504 361.75 498 L361.75 462 Q361.75 456 367.75 456 L459 456" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="260.73" y="501" font-size="10" style="fill: var(--ink-muted)">dt</text>
+<path d="M19 560 L158.75 560 Q164.75 560 164.75 554 L164.75 510 Q164.75 504 170.75 504 L376 504 Q382 504 382 498 L382 462 Q382 456 388 456 L459 456" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="267.35" y="501" font-size="10" style="fill: var(--ink-muted)">dt</text>
 </g>
 <g data-wire="g" data-from="g.value" data-to="flight_time.g">
-<path d="M272.98 412 L355.75 412 Q361.75 412 361.75 418 L361.75 426 Q361.75 432 367.75 432 L459 432" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="407.36" y="429" font-size="10" style="fill: var(--ink-muted)">g</text>
+<path d="M272.98 412 L376 412 Q382 412 382 418 L382 426 Q382 432 388 432 L459 432" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="k" data-from="k.result" data-to="flight_time.k">
 <path d="M371 568 L413 568 Q419 568 419 562 L419 486 Q419 480 425 480 L459 480" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

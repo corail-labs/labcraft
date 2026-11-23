@@ -175,6 +175,13 @@ are the nodes that a `layout` section does not place (spec 11).
   it leads to, and a margin of 8 on each side: 16 with no vertical segment or one, 8 more for each other. The
   pills stand just before the block they lead to, in the room that its inline constants take (3.2). The name of a
   wire never widens it (section 4), nor does a value of a run (6.1): they take the room that is there, or none.
+- **Where the file places a node** (#274, decision of the owner, 2026-11-23). The columns of the routes of its body
+  are those its nodes make where they stand, placed or not: nodes whose blocks overlap across share a column, and
+  each channel is the gap between two columns. A channel too narrow for its vertical segments, 8 apart with their
+  margins, between the names of the terminals of its two columns takes the gap between their blocks, across those
+  names; narrower still, its vertical segments come closer than 8, on the grid of one unit, down to the edges of two
+  blocks that touch. What the file writes wins over "never crosses a label" and "8 units apart" (2.1), never over
+  "never crosses a node".
 - **The numbers of routing** *(proposed)*. The wires of one value (its readers, an `after:` that names it) are one
   net: from its source, a vertical in the channel after it reaches the readers of the next column and goes to its
   track, which drops in the channel before each column further on. The track runs at the height nearest its source
