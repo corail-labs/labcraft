@@ -110,7 +110,8 @@ are the nodes that a `layout` section does not place (spec 11).
   lines. Below the axis, apart from the lower edge of the nodes on the chain, there are only error wires
   that leave the main chain (`e2` in `check_voltage` leaves it at `query` and joins `handle e2`). A
   function with no error pair at all (`projectile`) has no axis: its nodes stack upward from the bottom
-  of the frame, by the same rules.
+  of the frame, by the same rules, and the first node of a column may go below it to straighten its wire ("The
+  numbers").
 - **Error pairs of structures.** A `loop` or a `for` with an error register has the two boxes of the
   register as its pair. A `match` or a `handle` whose arms take an outer error and yield an error output
   has a pair too: that error, entering by its notch or as the selector of a `handle`, on the bottom line
@@ -125,7 +126,14 @@ are the nodes that a `layout` section does not place (spec 11).
 - **The numbers** *(proposed)*. In a column, the blocks are aligned on their left edge, and the column is as
   wide as its widest node. Two nodes stacked are 24 apart, plus what a label adds above the lower one (a band is inside its block, 3.2);
   a column with no node of the chain starts 40 above the axis. The order in a column comes from four sweeps of
-  barycentres each way, the order that makes the wires the shortest kept. A channel is as wide as
+  barycentres each way, the order that makes the wires the shortest kept. Then the wires between neighbours are
+  straightened (#279, decision of the owner, 2026-11-23), column by column from the left, each column from the bottom:
+  a node moves to the height where the wire into its first input that a node feeds is straight, when the column keeps
+  its order and its gaps, nothing goes below its node of the chain or into the 40 above the axis, and the column, with
+  the nodes above it stacked on it, goes at most 48 past the height that the whole body takes as stacked, up or down
+  (`place.straighten`): a move inside that height costs nothing (decision of the owner, 2026-11-23); otherwise it stays
+  stacked. Of two nodes of a column that want one height, the
+  lower takes it; the node of the chain never moves for it. A channel is as wide as
   its wires need (2.2). A frame has a header of 24 for its title and 16 inside around what it holds; a
   `match` or a `handle` unfolded stacks its arms 16 apart, 16 below its header, each with a title of 24, all as wide
   as the widest; the error enters and leaves it on the axis of its last arm, whichever arm reads it.
@@ -195,8 +203,9 @@ are the nodes that a `layout` section does not place (spec 11).
   track, which drops in the channel before each column further on. The track runs at the height nearest its source
   that is 16 from every node of the columns it passes over (what is above a node included), 8 from every other
   track over them, 8 from where another wire ends in the channel where it starts or the one where it ends, and 8
-  above the main chain: at the height of its source when that one is free, with no vertical; otherwise on the grid
-  of 8, the upper one on a tie. That grid, and the one of the jogs below, starts on the main chain of the body (or
+  above the main chain: at the height of its source when that one is free, with no vertical; otherwise at the height
+  where it reaches its readers past the next column, when they all are at one and it is free, as long and with one bend
+  fewer (#279, decision of the owner, 2026-11-23); otherwise on the grid of 8, the upper one on a tie. That grid, and the one of the jogs below, starts on the main chain of the body (or
   where it would run), so that they keep their place against its nodes wherever the body lies. Two nodes stacked 24 apart leave no lane between them; above them all is always free.
   The shortest tracks are laid first. In a body so large that the searches for lanes would read more than its budget
   (architecture 11.3), the tracks laid past it go over the nodes. A wire that goes back to the left runs over the
@@ -1585,6 +1594,7 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `standard.width` | 112 units | 40 to 448 | 3.1 | The least width of a node in standard view. |
 | `place.stack` | 24 units | 0 to 96 | 2.1 | Between nodes stacked in a column. |
 | `place.off_axis` | 40 units | 0 to 160 | 2.1 | Between the error chain and the nodes above it. |
+| `place.straighten` | 48 units | 0 to 192 | 2.1 | The most a body grows, up or down, to straighten the wires between neighbours; 0 straightens none. |
 | `place.slot` | 24 units | 12 to 96 | 2.1 | Between two terminals of a frame, and above the error chain. |
 | `place.label_start` | 12 units | 0 to 48 | 2.1 | From a terminal of a frame to its label. |
 | `place.label_above` | 4 units | 0 to 16 | 2.1 | Between the label of a structure and its frame. |

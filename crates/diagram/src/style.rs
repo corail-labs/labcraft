@@ -111,6 +111,7 @@ numbers! {
 
     stack: "place"."stack" = 2400, Length, 0..=9600, "2.1", "Between nodes stacked in a column.";
     off_axis: "place"."off_axis" = 4000, Length, 0..=16000, "2.1", "Between the error chain and the nodes above it.";
+    straighten: "place"."straighten" = 4800, Length, 0..=19200, "2.1", "The most a body grows, up or down, to straighten the wires between neighbours; 0 straightens none.";
     slot: "place"."slot" = 2400, Length, 1200..=9600, "2.1", "Between two terminals of a frame, and above the error chain.";
     label_start: "place"."label_start" = 1200, Length, 0..=4800, "2.1", "From a terminal of a frame to its label.";
     label_above: "place"."label_above" = 400, Length, 0..=1600, "2.1", "Between the label of a structure and its frame.";

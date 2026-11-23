@@ -336,7 +336,15 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
                 source
             } else if work.saturating_add(cost) <= budget {
                 work += cost;
-                lane(body, columns, &laid, ends, index, source)
+                // The height where the readers past the next column are reached, when they all are at one.
+                let mut heights = net
+                    .wires
+                    .iter()
+                    .filter(|&&wire| reach(wire).is_some_and(|column| column > from_column + 1))
+                    .filter_map(|&wire| body.ends.get(wire).copied().flatten())
+                    .map(|ends| ends.to.approach);
+                let reader = heights.next().filter(|&first| heights.all(|other| other == first));
+                lane(body, columns, &laid, ends, index, source, reader)
             } else if source <= limit && alone(from_column + 1, source, index) {
                 source
             } else {
@@ -430,11 +438,20 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
 /// body, and a little more, so that routing stays linear; past it, a track goes over the nodes.
 const LANE_WORK: (usize, usize) = (4096, 64);
 
-/// The height of the track of net `net` over columns `columns.0..=columns.1`: the free height nearest its source,
-/// `source`, itself when it is free. Free is 16 from every node of those columns, 8 from every track laid over them and
-/// from the end of another net in the channel where the track starts or the one where it ends, and above the main chain
-/// by 8: a lane between the nodes when there is one across them all, otherwise over them.
-fn lane(body: &BodyIn<'_>, columns: (usize, usize), laid: &[(usize, usize, i64)], ends: [&[(i64, usize)]; 2], net: usize, source: i64) -> i64 {
+/// The height of the track of net `net` over columns `columns.0..=columns.1`: the height of its source, `source`, when it
+/// is free; else that of its readers further on, `reader`, when they all have one and it is free; else the free height
+/// nearest its source. Free is 16 from every node of those columns, 8 from every track laid over them and from the end of
+/// another net in the channel where the track starts or the one where it ends, and above the main chain by 8: a lane
+/// between the nodes when there is one across them all, otherwise over them.
+fn lane(
+    body: &BodyIn<'_>,
+    columns: (usize, usize),
+    laid: &[(usize, usize, i64)],
+    ends: [&[(i64, usize)]; 2],
+    net: usize,
+    source: i64,
+    reader: Option<i64>,
+) -> i64 {
     let clear = style::clear();
     // The positions of the skylines that the track runs over: from the channel after the source to the last one.
     let (start, end) = (2 * columns.0, 2 * (columns.1 + 1));
@@ -457,8 +474,9 @@ fn lane(body: &BodyIn<'_>, columns: (usize, usize), laid: &[(usize, usize, i64)]
     if let Some(axis) = body.axis {
         block(&mut blocked, axis - style::wire_gap() + 1, i64::MAX / 4);
     }
-    let held = blocked.range(..=source).next_back().is_some_and(|(_, &end)| end >= source);
-    if held { nearest_free(&blocked, source, body.origin) } else { source }
+    let held = |y: i64| blocked.range(..=y).next_back().is_some_and(|(_, &end)| end >= y);
+    // The readers' height is as long as the nearest free one, with one bend fewer: the track reaches them straight.
+    [Some(source), reader].into_iter().flatten().find(|&y| !held(y)).unwrap_or_else(|| nearest_free(&blocked, source, body.origin))
 }
 
 /// Wires that cross in a channel so that each must stand left of the next, round a cycle (an entry of each within 8 of
@@ -1378,7 +1396,7 @@ mod tests {
             let laid: Vec<(usize, usize, i64)> = laid.iter().map(|&(start, end, height)| (start, end, height * U)).collect();
             let ends: Vec<(i64, usize)> = ends.iter().map(|&(height, net)| (height * U, net)).collect();
             let body = BodyIn { ends: &[], sources: &[], columns: 2, blocks: &blocks, axis: axis.map(|axis| axis * U), vias: &[], origin: 0 };
-            lane(&body, (1, 2), &laid, [ends.as_slice(), &[]], 0, source * U) / U
+            lane(&body, (1, 2), &laid, [ends.as_slice(), &[]], 0, source * U, None) / U
         }
         // Column 1: a node from -32 to 0 and one 24 above it, from -88 to -56; column 2: a node from -32 to 0. Blocked:
         // -103.99 to 15.99. From -40, up to -104 is 64, down to 16 is 56: below.
@@ -1397,6 +1415,28 @@ mod tests {
         assert_eq!(at(&gap_32, None, &[], &[(-44, 1)], -40), 16);
         // The end of its own net does not.
         assert_eq!(at(&gap_32, None, &[], &[(-44, 0)], -40), -48);
+    }
+
+    /// #279 (notation 2.2): a source whose height is held, and readers further on all at one free height: the track runs
+    /// at theirs, as long as at the free height nearest the source and with one bend fewer. Held readers, or a source that
+    /// is free, change nothing. Blocked as in `a_track_takes_the_free_lane_nearest_its_source`, gap of 32: -47.99 to
+    /// 15.99 and -111.99 to -48.01.
+    #[test]
+    fn a_track_takes_the_height_of_its_readers_when_it_is_free() {
+        const U: i64 = 100;
+        let blocks: Vec<Vec<(i64, i64)>> = [vec![], vec![(-32, 0), (-96, -64)], vec![(-32, 0)], vec![]]
+            .iter()
+            .map(|list| list.iter().map(|&(top, bottom)| (top * U, bottom * U)).collect())
+            .collect();
+        let body = BodyIn { ends: &[], sources: &[], columns: 2, blocks: &blocks, axis: None, vias: &[], origin: 0 };
+        let at = |source: i64, reader: Option<i64>| lane(&body, (1, 2), &[], [&[], &[]], 0, source * U, reader.map(|reader| reader * U)) / U;
+        // Held source, free readers below or above: theirs, not the nearest free height (-48).
+        assert_eq!(at(-40, Some(24)), 24);
+        assert_eq!(at(-40, Some(-120)), -120);
+        // Held readers: the nearest free height.
+        assert_eq!(at(-40, Some(-8)), -48);
+        // A free source: its own height.
+        assert_eq!(at(-120, Some(24)), -120);
     }
 
     /// A body moved down, with its origin, has the same plan moved: as many slots in each channel, the same jogs and
