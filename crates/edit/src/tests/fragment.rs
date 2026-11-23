@@ -157,3 +157,17 @@ fn a_line_of_a_loop_goes_with_its_loop() {
     let fragment = "labcraft 1\n\nuse core\n\nfn g(a: f64) -> () {\n    next a = core.abs(a)\n}\n";
     assert_eq!(refused(TWO, paste(fragment, 0, 0), "params.invalid").parameter, Some("text"));
 }
+
+#[test]
+fn a_paste_does_not_name_a_value_after_a_library_that_it_imports() {
+    // The fragment brings `use visa` and a value `visa`: in the file that now imports `visa`, the value cannot bear its
+    // name (R-1, `LC2014`), so it takes a suffix (N-14), as a name already taken does; a hole stays a hole, as `b2` above.
+    let fragment = "labcraft 1\n\nuse core\nuse visa\n\nfn clipboard() -> () {\n    visa = core.abs(?)\n    s, _ = visa.open(?)\n}\n";
+    let before = "use core\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n";
+    let edited = gives(
+        before,
+        paste(fragment, 0, 0),
+        "use core\nuse visa\n\nfn f(x: f64) -> (y: f64) {\n    s, _ = visa.open(?)\n    visa2 = core.abs(?)\n    y = x\n}\n",
+    );
+    assert_eq!(edited.renamed, renamed(&[("visa", "visa2")]));
+}

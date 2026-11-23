@@ -39,6 +39,7 @@ impl Judge for Table {
             "core.abs" => function(Some("core"), vec![input("x", true)], &["result"]),
             "visa.open" => function(Some("visa"), vec![input("resource", true), input("err", false)], &["session", "err"]),
             "sound.beep" => function(Some("sound"), vec![input("err", false)], &[]),
+            "array.repeat" => function(Some("array"), vec![input("item", true), input("count", true), input("err", false)], &["array", "err"]),
             "time.now" => function(Some("time"), Vec::new(), &["timestamp"]),
             "string.format" => function(Some("string"), vec![input("template", true), input("values", false)], &["text"]),
             "string.concat" => function(
@@ -153,6 +154,17 @@ fn a_node_is_named_from_its_output_and_numbered_when_taken() {
         add("core.add"),
         "use core\n\nfn f(sum: f64) -> (y: f64) {\n    sum2 = core.add()\n    y = sum\n}\n",
     );
+}
+
+#[test]
+fn a_node_is_not_named_after_the_library_whose_use_the_command_adds() {
+    // `array.repeat` names its output `array` (spec A.2), and the same command writes `use array`: a value cannot bear
+    // the name of a library that its file imports (R-1, `LC2014`), so the node is numbered (N-14), as when the file
+    // already imports it.
+    let after = "use array\n\nfn f(x: f64) -> (y: f64) {\n    array2, _ = array.repeat()\n    y = x\n}\n";
+    let edited = gives(EMPTY, add("array.repeat"), after);
+    assert_eq!(edited.names.get("node").map(String::as_str), Some("array2"));
+    gives("use array\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n", add("array.repeat"), after);
 }
 
 #[test]
