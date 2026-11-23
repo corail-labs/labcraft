@@ -35,7 +35,9 @@ pub(crate) fn node(
                 .expecting(nearest));
         }
     };
-    let taken = taken(edit);
+    // The `use` that this command adds takes the name of its library too (R-1), as one already in the file does.
+    let mut taken = taken(edit);
+    taken.extend(callable.library.clone());
     let path = path_of(edit, &segments);
     let id = edit.id();
     let mut statement = Statement {
