@@ -307,6 +307,28 @@ fn changed_lines(before: &str, after: &str) -> (Vec<String>, Vec<String>) {
     (added, removed)
 }
 
+/// One slot of the wires in a channel, in hundredths: 8 (notation 2.2).
+const SLOT: i64 = 800;
+
+/// The pairs of nodes of one body whose boxes overlap, leaving out two that the file places. Touching edges are not an
+/// overlap.
+fn covered_nodes(drawing: &labcraft_diagram::Drawing) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (index, one) in drawing.placed.iter().enumerate() {
+        for other in drawing.placed.iter().skip(index + 1) {
+            if one.body != other.body {
+                continue;
+            }
+            let apart =
+                one.x + one.width <= other.x || other.x + other.width <= one.x || one.y + one.height <= other.y || other.y + other.height <= one.y;
+            if !apart && (one.at.is_none() || other.at.is_none()) {
+                found.push((one.key.clone(), other.key.clone()));
+            }
+        }
+    }
+    found
+}
+
 /// Scenario 5 of `docs/acceptance-m1.md`, point 1: moving one node of a function of `examples/` (and of the wiring cases) changes its entry of
 /// `layout` alone, or adds it, with the section when the file had none; a node that the section cannot name gets its
 /// label first (commands.md 6.7, `node.move`). And where it goes is where it was in its frame, plus the move (spec 11):
@@ -372,19 +394,37 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
                         let (x1, y1) = after.in_frame(now).unwrap();
                         assert_eq!((unit(x1), unit(y1)), (unit(x) + by.0, unit(y) + by.1), "{function}, {}", placed.name);
                         assert_eq!(after.placed[now].at, Some(((unit(x) + by.0) * 100, (unit(y) + by.1) * 100)));
+                        // No node covers another, the frame that a structure grows upward included (#192), except two that
+                        // the file places, which `LC7005` names.
+                        let covered = covered_nodes(&after);
+                        assert!(covered.is_empty(), "{function}, {}: {covered:?}", placed.name);
                         // And on the screen: its frame stays where it was from the frame of the function, which the canvas
                         // keeps in place, so the node goes where it is dropped (a frame that its structure moved back over
-                        // it would bring it back: decision of the owner, 2026-11-17).
-                        let from_function = |drawing: &labcraft_diagram::Drawing| {
+                        // it would bring it back: decision of the owner, 2026-11-17). Or where the canvas shows it when it
+                        // follows the shift of the whole drawing (`shift_between`, #266): a frame that grows upward, and a
+                        // header that rises with it (#192), move down what is below their new top.
+                        let from_function = |drawing: &labcraft_diagram::Drawing, dy: i64| {
                             let (frame, function) = (drawing.bodies[placed.body].origin, drawing.bodies[0].origin);
-                            (frame.0 - function.0, frame.1 - function.1)
+                            (frame.0 - function.0, frame.1 - function.1 - dy)
+                        };
+                        let shift = labcraft_diagram::shift_between(&before, &after);
+                        let was = from_function(&before, 0);
+                        let landed = match from_function(&after, 0) {
+                            raw if raw.1 == was.1 => raw,
+                            _ => from_function(&after, shift.1),
                         };
                         // A node that got its label shows it above itself, which can move what is around it by the height
-                        // of a line: counted, not held.
-                        if labelled {
-                            frames_moved += usize::from(from_function(&after) != from_function(&before));
+                        // of a line: counted, not held. The header of an unfolded `match` that rose takes its selector
+                        // with it (notation 5.2), whose wire can need one more slot before the structure: across by a slot
+                        // of 8 at most, counted, not held (decision of the owner, 2026-11-23, #192).
+                        let risen = |drawing: &labcraft_diagram::Drawing| {
+                            drawing.bodies[placed.body].owner.and_then(|owner| drawing.placed.get(owner)).map_or(0, |owner| owner.over)
+                        };
+                        let header_rose = risen(&after) > risen(&before) && was.1 == landed.1 && (landed.0 - was.0).abs() <= SLOT;
+                        if labelled || header_rose {
+                            frames_moved += usize::from(landed != was);
                         } else {
-                            assert_eq!(from_function(&after), from_function(&before), "{function}, {}: its frame moved", placed.name);
+                            assert_eq!(landed, was, "{function}, {}: its frame moved", placed.name);
                         }
                         ok(&mut session, "history.undo", json!({}));
                         session.files_changed();
