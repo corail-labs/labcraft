@@ -182,4 +182,5 @@ fn the_bytes_of_the_hostile_files_are_stored_as_they_are() {
     assert!(fs::read(hostile.join("encoding-crlf/f.lcf")).unwrap().windows(2).any(|pair| pair == b"\r\n"));
     assert!(fs::read(hostile.join("encoding-bom/f.lcf")).unwrap().starts_with(b"\xef\xbb\xbf"));
     assert!(fs::read(hostile.join("encoding-binary/f.lcf")).unwrap().starts_with(b"\x00\xff"));
+    assert!(fs::read(hostile.join("semantics-core-block-with-a-bom/pow.lcf")).unwrap().starts_with(b"\xef\xbb\xbf"));
 }

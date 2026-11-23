@@ -1,0 +1,25 @@
+﻿labcraft 1
+
+/// x to the power `exponent`, a constant.
+/// The block of a primitive of `core` (appendix A.1): this file gives its terminals and its outline; its signature
+/// is that of appendix A.1, which this one follows as far as the grammar writes it.
+extern rust(crate: "labcraft-runtime", function: "pow")
+fn pow<N: Number>(x: N, exponent: i32) -> (result: N)
+
+terminals {
+    top 1
+    left 3
+    left 1 x
+    left last exponent
+    right middle result
+    fill "#64748B"
+}
+
+outline {
+    template primitive
+}
+
+icon 32 {
+    text "x" at (13, 23) size 15
+    text "y" at (22.5, 14) size 10
+}
