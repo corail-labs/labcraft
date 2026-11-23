@@ -44,13 +44,15 @@ pub const FILES: &[(&str, &str)] = &[
     ("xor", include_str!("../../../libs/core/xor.lcf")),
 ];
 
-/// Whether a file is one of these, as embedded, by its name and its bytes: `check` reads it as the block of a primitive,
-/// not as a program (spec A.1), so that `libs/core` says nothing of them, whatever folder is given. A file changed in any
-/// way, or under another name, is a program again, and is judged as one.
-pub fn is_block_file(shown: &str, bytes: &[u8]) -> bool {
+/// Whether a file is one of these, by its name and its canonical form, which is the embedded file byte for byte: `check`
+/// reads it as the block of a primitive, not as a program (spec A.1), so that `libs/core` says nothing of them, whatever
+/// folder is given. A change that `fmt` undoes (a byte order mark, CR LF, the layout) changes nothing; a file changed in
+/// any other way, or under another name, is a program again, and is judged as one.
+pub fn is_block_file(shown: &str, bytes: &[u8], limits: &Limits) -> bool {
     let name = shown.rsplit(['/', '\\']).next().unwrap_or(shown);
     let Some(stem) = name.strip_suffix(".lcf") else { return false };
-    FILES.iter().any(|&(listed, text)| listed == stem && text.as_bytes() == bytes)
+    let Some(&(_, text)) = FILES.iter().find(|&&(listed, _)| listed == stem) else { return false };
+    text.as_bytes() == bytes || labcraft_format::format(bytes, &mut Interner::new(), limits).text.as_deref() == Some(text)
 }
 
 /// What a file of `libs/core` gives: its block, and the icon of its glyph with the names of its file.
@@ -157,16 +159,44 @@ mod tests {
         assert_eq!(found, listed);
     }
 
-    /// A file of `libs/core` is known by its name and its bytes, not by one of them.
+    /// A file of `libs/core` is known by its name and its text, not by one of them.
     #[test]
     fn a_block_file_is_known_whole() {
         let Some(&(_, add)) = FILES.iter().find(|&&(name, _)| name == "add") else { panic!() };
-        assert!(is_block_file("libs/core/add.lcf", add.as_bytes()));
-        assert!(is_block_file("add.lcf", add.as_bytes()));
-        assert!(is_block_file("core\\add.lcf", add.as_bytes()));
-        assert!(!is_block_file("libs/core/sub.lcf", add.as_bytes()));
-        assert!(!is_block_file("libs/core/add.lct", add.as_bytes()));
-        assert!(!is_block_file("libs/core/add.lcf", format!("{add}\n").as_bytes()));
+        assert!(is_block_file("libs/core/add.lcf", add.as_bytes(), &Limits::default()));
+        assert!(is_block_file("add.lcf", add.as_bytes(), &Limits::default()));
+        assert!(is_block_file("core\\add.lcf", add.as_bytes(), &Limits::default()));
+        assert!(!is_block_file("libs/core/sub.lcf", add.as_bytes(), &Limits::default()));
+        assert!(!is_block_file("libs/core/add.lct", add.as_bytes(), &Limits::default()));
+    }
+
+    /// What `fmt` undoes leaves a file of `libs/core` a block file, so that `check` says the same before and after `fmt`:
+    /// a byte order mark, CR LF, another layout. Any other change makes it a program.
+    #[test]
+    fn a_block_file_is_known_by_its_canonical_form() {
+        let Some(&(_, pow)) = FILES.iter().find(|&&(name, _)| name == "pow") else { panic!() };
+        let known = |text: &str| is_block_file("libs/core/pow.lcf", text.as_bytes(), &Limits::default());
+        assert!(known(&format!("\u{FEFF}{pow}")), "a byte order mark");
+        assert!(known(&pow.replace('\n', "\r\n")), "CR LF");
+        assert!(known(&pow.replacen("x: N, exponent", "x: N,  exponent", 1)), "a space more");
+        assert!(known(&format!("{pow}\n")), "a line feed more at the end");
+        assert!(!known(&pow.replacen("exponent: i32", "exponent: f64", 1)), "another type");
+        assert!(!known(&pow.replacen("a constant.", "a constant!", 1)), "another comment");
+        assert!(!known(&pow.replacen("labcraft 1", "labcraft 2", 1)), "a file that does not read");
+        assert!(!is_block_file("libs/core/sub.lcf", format!("\u{FEFF}{pow}").as_bytes(), &Limits::default()), "under another name");
+    }
+
+    /// The canonical form is that of the limits of the command, which `fmt` takes too: under a limit of the size of a
+    /// file that the file goes over, it has none, and the file is a program, as `fmt` leaves it.
+    #[test]
+    fn the_canonical_form_takes_the_limits_of_the_command() {
+        let Some(&(_, pow)) = FILES.iter().find(|&&(name, _)| name == "pow") else { panic!() };
+        let spaced = format!("{pow}\n\n\n");
+        let large = Limits::default();
+        let mut small = Limits::default();
+        small.max_file_size = pow.len() as u64;
+        assert!(is_block_file("pow.lcf", spaced.as_bytes(), &large));
+        assert!(!is_block_file("pow.lcf", spaced.as_bytes(), &small));
     }
 
     /// Only the primitives drawn as a D have a file (A.1): every one of `core` but `call`, which has the ordinary block.

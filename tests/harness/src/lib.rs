@@ -91,7 +91,7 @@ mod tests {
     /// What `fmt` expects of every stored case.
     #[test]
     fn the_stored_hostile_files_give_what_fmt_expects() {
-        assert_eq!(HOSTILE.len(), 31);
+        assert_eq!(HOSTILE.len(), 32);
         for case in HOSTILE {
             let expected: serde_json::Value = serde_json::from_str(case.expected).unwrap();
             let expected = &expected["fmt"];

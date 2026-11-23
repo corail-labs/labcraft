@@ -2359,8 +2359,10 @@ file declares the terminals of the primitive,
 types that the grammar writes: the signature that counts is the one above, whose `A·B`, `√N` and `unit: kind unit`
 no file writes (a type variable stands for them, and `unit`, which is no terminal, is left out). These files are no
 library: `use core` names the primitives, and `check` says nothing of them, since a file of `libs/core` as LabCraft
-embeds it, by its name and its bytes, is the block of a primitive and no program; changed in any way, it is judged as
-any program (decisions of the owner, 2026-11-20). Two values in, on the first and the last
+embeds it, known by its name and its canonical form (5.2, under the limits of the command) in whatever folder `check`
+is given, is the block of a primitive and no program: a change that `fmt` undoes (a byte order mark, CR LF, the layout)
+changes nothing, and changed in any other way, it is judged as any program (decisions of the owner, 2026-11-20 and
+2026-11-23). Two values in, on the first and the last
 place, for `add`, `sub`, `mul`, `div`, `pow`, `min`, `max`, the comparisons, `and`, `or`, `xor`, `shl`, `shr`,
 `quotient` and `remainder`, a block of 16 × 32 (the `fill` of the family of each; `pow`, `shl` and `shr` name their
 inputs `x` and `exponent` or `count`):

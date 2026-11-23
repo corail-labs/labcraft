@@ -124,13 +124,15 @@ fn lines_of_the_declaration(mut file: File, names: &Interner) -> Vec<String> {
     lines
 }
 
-/// Each comment with its count, in its one spelling: moving them is allowed, and losing one is not.
+/// Each comment with its count, in its one spelling: moving them is allowed, and losing one is not. A byte order mark
+/// at the start is no text, as for the reader (spec, section 2).
 fn comments_of(bytes: &[u8]) -> BTreeMap<String, usize> {
     let mut names = Interner::new();
     let mut report = Report::new(1000);
-    let text = String::from_utf8_lossy(bytes).into_owned();
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(&text);
     let mut comments = BTreeMap::new();
-    for token in Lexer::new(&text, &mut names, &mut report).flatten() {
+    for token in Lexer::new(text, &mut names, &mut report).flatten() {
         if let TokenKind::Comment(comment) | TokenKind::Doc(comment) = token.kind {
             *comments.entry(comment.trim_matches([' ', '\t']).to_owned()).or_insert(0) += 1;
         }

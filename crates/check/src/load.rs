@@ -195,7 +195,7 @@ impl Loader<'_> {
         // The blocks of the primitives of `libs/core` (spec A.1) are no program: they say nothing here.
         let files: Vec<SourceFile> = files
             .into_iter()
-            .filter(|file| !matches!(&file.content, Content::Bytes(bytes) if crate::core_blocks::is_block_file(&file.shown, bytes)))
+            .filter(|file| !matches!(&file.content, Content::Bytes(bytes) if crate::core_blocks::is_block_file(&file.shown, bytes, self.limits)))
             .collect();
         let mut sink = Report::for_limits(self.limits);
         if checked {

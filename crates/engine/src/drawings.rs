@@ -78,13 +78,16 @@ pub fn load(ws: &dyn Workspace, shipped: &Shipped, folder: &Path, lib_paths: &[P
     let checked = match library_of(ws, &root.real, &root.shown, &mut walked, limits, None) {
         Some(source) => {
             crate::folders::hash_files(&source, &mut hashes);
-            // The blocks of the primitives of `libs/core` are no program (spec A.1): nothing to draw of them.
-            let mut blocks = HashSet::new();
-            block_files(&source, &mut blocks);
-            functions.retain(|function| !blocks.contains(&function.shown));
-            let work = || check(source, &host, &mut names, limits);
+            // The blocks of the primitives of `libs/core` are no program (spec A.1): nothing to draw of them. Knowing one
+            // formats it, so it is under the same net as `check`.
+            let work = || {
+                let mut blocks = HashSet::new();
+                block_files(&source, &mut blocks, limits);
+                (blocks, check(source, &host, &mut names, limits))
+            };
             match panic::catch_unwind(AssertUnwindSafe(work)) {
-                Ok(mut checked) => {
+                Ok((blocks, mut checked)) => {
+                    functions.retain(|function| !blocks.contains(&function.shown));
                     report.merge(std::mem::replace(&mut checked.report, Report::for_limits(limits)));
                     for dependency in std::mem::take(&mut checked.dependencies) {
                         report.merge(dependency.report);
@@ -126,16 +129,16 @@ fn functions_of(root: &Path, walked: &walk::Walked) -> Vec<Function> {
 
 /// The files of a folder and its sub-libraries that `check` reads as the blocks of the primitives, by their name in
 /// reports.
-fn block_files(source: &labcraft_check::LibrarySource, found: &mut HashSet<String>) {
+fn block_files(source: &labcraft_check::LibrarySource, found: &mut HashSet<String>, limits: &Limits) {
     for file in &source.files {
         if let labcraft_check::Content::Bytes(bytes) = &file.content
-            && labcraft_check::core_blocks::is_block_file(&file.shown, bytes)
+            && labcraft_check::core_blocks::is_block_file(&file.shown, bytes, limits)
         {
             found.insert(file.shown.clone());
         }
     }
     for sub in &source.sub_libraries {
-        block_files(sub, found);
+        block_files(sub, found, limits);
     }
 }
 
