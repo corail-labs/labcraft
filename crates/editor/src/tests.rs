@@ -41,6 +41,14 @@ fn drawing(text: &str, view: &ViewState) -> Arc<Drawing> {
     drawing_of(&[("main.lcf", text)], view)
 }
 
+/// The drawing of `text` stacked as before #279, with no wire straightened (`place.straighten` at 0): the wires that the
+/// tests of rerouting and of values move or cover keep their bends.
+fn stacked(text: &str) -> Arc<Drawing> {
+    let mut style = labcraft_diagram::style::Style::default();
+    style.numbers.straighten = 0;
+    labcraft_diagram::style::scope(&Arc::new(style), || drawing(text, &ViewState::default()))
+}
+
 /// The drawing of `main.lcf` among `files`; a path `dev/open.lcf` puts a file in the sub-library `dev`.
 fn drawing_of(files: &[(&str, &str)], view: &ViewState) -> Arc<Drawing> {
     let mut names = Interner::new();
@@ -815,7 +823,7 @@ fn the_bubble_of_another_wire_stays_under_a_value_at_an_input() {
     let ctx = context();
     install_fonts(&ctx);
     let mut canvas = Canvas::new();
-    let drawn = drawing(CROSSED, &ViewState::default());
+    let drawn = stacked(CROSSED);
     canvas.set_drawing(drawn.clone(), false);
     canvas.set_viewport(1.0, Vec2::ZERO);
     // By hand: `x` 10.125, `a` 20.25, `b` 21.25, `c` 22.25, `y` 42.5, `z` 40.5.
@@ -1506,7 +1514,7 @@ fn alt_and_a_drag_on_a_segment_routes_the_wire() {
     let ctx = context();
     install_fonts(&ctx);
     let mut canvas = Canvas::new();
-    let drawn = drawing(CHAIN, &ViewState::default());
+    let drawn = stacked(CHAIN);
     canvas.set_drawing(drawn.clone(), false);
     canvas.set_viewport(1.0, Vec2::ZERO);
     let none = Shown::default();
@@ -1573,7 +1581,7 @@ fn a_segment_shared_moves_for_every_wire_along_it() {
     let ctx = context();
     install_fonts(&ctx);
     let mut canvas = Canvas::new();
-    let drawn = drawing(FORK, &ViewState::default());
+    let drawn = stacked(FORK);
     canvas.set_drawing(drawn.clone(), false);
     canvas.set_viewport(1.0, Vec2::ZERO);
     let none = Shown::default();
@@ -1627,15 +1635,15 @@ fn a_segment_shared_moves_for_every_wire_along_it() {
 /// A new drawing that draws the wire as it was does not end a segment being moved; one that draws it elsewhere does.
 #[test]
 fn a_segment_being_moved_goes_on_over_a_new_drawing() {
-    let drawn = drawing(CHAIN, &ViewState::default());
+    let drawn = stacked(CHAIN);
     let (path, _) = path_of(&drawn, "a");
     let group = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
     let on = units_of(((path[2].0 + path[3].0) / 2, path[2].1));
     let mut moving = rerouting::Rerouting::grab(&drawn, group, on, 1.0).unwrap();
     moving.by = 800;
-    let again = moving.again(&drawn, &drawing(CHAIN, &ViewState::default())).unwrap();
+    let again = moving.again(&drawn, &stacked(CHAIN)).unwrap();
     assert_eq!((again.segment, again.by), (moving.segment, 800));
-    let other = drawing(&CHAIN.replace("core.add(a, 1.0)", "core.add(1.0, a)"), &ViewState::default());
+    let other = stacked(&CHAIN.replace("core.add(a, 1.0)", "core.add(1.0, a)"));
     assert!(moving.again(&drawn, &other).is_none());
 }
 

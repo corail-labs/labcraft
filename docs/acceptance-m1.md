@@ -111,8 +111,9 @@ before the tag.
    and, since the primitives of 24 (#264), then the blocks of `core` (#305), no worse than there: their sizes changed
    the figures by design (decisions of the owner, 2026-11-20 and 2026-11-22); since #266, where a shift of the whole
    drawing, which the editor follows, stopped counting as a move, no worse than there (decision of the owner,
-   2026-11-23). That is the threshold the roadmap left to M1. It is a guard against a regression, not an expected
-   value: the figures are written once, by the code of the tag, then by that of #264, of #305 and of #266, into a file
+   2026-11-23); since #279, where the wires between neighbours are straightened, no worse than there (decision of the
+   owner, 2026-11-23: a better drawing for figures somewhat worse). That is the threshold the roadmap left to M1. It is a guard against a regression, not an expected
+   value: the figures are written once, by the code of the tag, then by that of #264, of #305, of #266 and of #279, into a file
    of `tests/figures/`, never again from the code under test.
 3. Resizing the frame, moving a terminal and routing a wire by hand each change one entry of `layout` (spec 11), as
    in point 1.

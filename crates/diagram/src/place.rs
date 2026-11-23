@@ -762,23 +762,28 @@ impl Body<'_> {
 
     /// Stacks a column from the bottom: its node of the chain, its pair on the axis, then the others in order.
     fn stack(&mut self, chain: Option<(usize, i64)>, members: &[usize], has_axis: bool) {
-        let mut limit = match chain {
-            Some((local, pair)) => {
-                let top = -pair;
-                if let Some(y) = self.y.get_mut(local) {
-                    *y = top;
-                }
-                top - self.above(local) - style::stack()
-            }
-            None if has_axis => -style::off_axis(),
-            None => 0,
-        };
+        if let Some((local, pair)) = chain
+            && let Some(y) = self.y.get_mut(local)
+        {
+            *y = -pair;
+        }
+        let mut limit = self.floor(chain, has_axis).unwrap_or(0);
         for &member in members {
             let top = limit - self.reach_down(member);
             if let Some(y) = self.y.get_mut(member) {
                 *y = top;
             }
             limit = top - self.above(member) - style::stack();
+        }
+    }
+
+    /// The lowest that the bottom of the first node stacked in a column may reach: 24 above its node of the chain, where
+    /// that one stands, or 40 above the axis; none in a function with no axis, where the stack starts at the bottom (0).
+    fn floor(&self, chain: Option<(usize, i64)>, has_axis: bool) -> Option<i64> {
+        match chain {
+            Some((local, _)) => Some(self.top(local) - self.above(local) - style::stack()),
+            None if has_axis => Some(-style::off_axis()),
+            None => None,
         }
     }
 
@@ -889,6 +894,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     }
     let members = best.1;
     stack_all(&mut body, &members);
+    straighten(&mut body, wires, &incoming, &columns, &members, &chain_of, has_axis);
     // The terminals of the frame, from the axis: each at the height of the first thing it meets.
     let mut left = vec![0i64; frame.left.len()];
     let mut right = vec![0i64; frame.right.len()];
@@ -1111,6 +1117,77 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         routes,
         from_file: fixed,
     }
+}
+
+/// Straightens the main wire of each node, column by column from the left (notation 2.1): a node moves to the height
+/// where the wire into its first input that a node feeds is straight, when its column has room for it. The stack keeps
+/// its order and its gaps; the node of the chain does not move, and nothing goes below it or into the gap above the axis;
+/// a move is kept only when the column, with the nodes above stacked on it, goes at most `place.straighten` past the
+/// height that the whole body takes as stacked: inside it, a move costs nothing. Bottom up, so that of two nodes of a
+/// column that want one height, the lower takes it.
+fn straighten(
+    body: &mut Body<'_>,
+    wires: &[crate::graph::Wire],
+    incoming: &[Vec<usize>],
+    columns: &[usize],
+    members: &[Vec<usize>],
+    chain_of: &[Option<(usize, i64)>],
+    has_axis: bool,
+) {
+    let budget = style::straighten();
+    if budget == 0 {
+        return;
+    }
+    // How far the body reaches up and down as stacked: a move inside it makes the drawing no taller.
+    let span = |body: &Body<'_>, local: usize| (body.top(local) - body.above(local), body.top(local) + body.reach_down(local));
+    let stacked = (0..body.y.len()).map(|local| span(body, local)).fold((i64::MAX, i64::MIN), |a, b| (a.0.min(b.0), a.1.max(b.1)));
+    for (column, list) in members.iter().enumerate() {
+        let chain = chain_of.get(column).copied().flatten();
+        // The lowest that the bottom of the next node may reach, as `Body::stack` starts: none in a function with no axis,
+        // before its first node, which may then go below the bottom.
+        let mut limit = body.floor(chain, has_axis);
+        // What the nodes above each one add to the column when they stack on it.
+        let mut rest = 0;
+        let mut rests = vec![0; list.len()];
+        for (index, &member) in list.iter().enumerate().rev() {
+            if let Some(at) = rests.get_mut(index) {
+                *at = rest;
+            }
+            rest += style::stack() + body.reach_down(member) + body.above(member);
+        }
+        for (&member, rest) in list.iter().zip(rests) {
+            let (above, below) = (body.above(member), body.reach_down(member));
+            let packed = limit.unwrap_or(0) - below;
+            // How far the column, with this node at `top` and the nodes above stacked on it, goes past the body as stacked.
+            let grown = |top: i64| (stacked.0 - (top - above - rest)).max(0) + (top + below - stacked.1).max(0);
+            let top = main_wire_top(body, wires, incoming, columns, member)
+                .filter(|&wanted| (limit.is_none() || wanted <= packed) && grown(wanted) <= budget)
+                .unwrap_or(packed);
+            if let Some(y) = body.y.get_mut(member) {
+                *y = top;
+            }
+            limit = Some(top - above - style::stack());
+        }
+    }
+}
+
+/// The top of a node at which the wire into its first input that a node of the body feeds is straight. An input fed by
+/// a terminal of the frame does not count: the terminal goes to the height of the first node it feeds (notation 2.1);
+/// nor does a node of a column that is not before it, which is not straightened yet.
+fn main_wire_top(body: &Body<'_>, wires: &[crate::graph::Wire], incoming: &[Vec<usize>], columns: &[usize], member: usize) -> Option<i64> {
+    let sized = body.sized.get(member)?;
+    let column = columns.get(member)?;
+    let before = |local: usize| columns.get(local).is_some_and(|other| other < column);
+    incoming
+        .get(member)?
+        .iter()
+        .filter_map(|&index| wires.get(index))
+        .filter_map(|wire| match (wire.from, wire.to) {
+            (End::Node { .. }, End::Node { terminal, .. }) if body.local_of(&wire.from).is_some_and(before) => Some((terminal, wire)),
+            _ => None,
+        })
+        .min_by_key(|(terminal, _)| *terminal)
+        .map(|(terminal, wire)| body.start_y(&wire.from) - input_y(sized, terminal))
 }
 
 /// The terminals of one edge at the heights that `fixed` gives (spec 11), and the others in their order, each where the

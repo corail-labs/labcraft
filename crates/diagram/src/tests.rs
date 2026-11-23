@@ -1085,16 +1085,19 @@ extern rust(crate: \"labcraft-dev\", function: \"step\")
 fn step(v: f64, err: error = none) -> (w: f64, err: error)
 ";
 
-/// S3 (notation 2.2): `k` skips the columns of `a` and `b` to reach `y`, at the height of its second input, which the
-/// D of `a` and `b` (two values in, 32 high, the same top) holds. Over them is 24 + 16 from there, under them 8 + 16: the track runs
-/// under them, 16 below their bottom, and nothing of `k` goes over them. Worked out from the rule, not from a drawing.
+/// S3 (notation 2.2): `k` skips the columns of `a` and `b` to reach `y`, at the height of its second input. `a`, `b` and
+/// `y` are D of 32 (two values in at 8 and 24, the output at 16), each 8 lower than the one before, so that the wire into
+/// its first input is straight (#279). `k` leaves its terminal at the height of that input, 24 below the top of `y` and
+/// so at the bottom of `b`, which holds it, as it holds the reader; over them is 40 + 16 from there, under them 16: the
+/// track runs under them, 16 below the bottom of `b`, and nothing of `k` goes over them. Worked out from the rule, not
+/// from a drawing.
 #[test]
 fn a_track_takes_a_lane_under_the_nodes_when_it_is_nearer() {
     let main = "labcraft 1\n\nuse core\n\nfn main(x: f64, k: f64) -> (y: f64) {\n    a = core.mul(x, x)\n    b = core.mul(a, a)\n    y = core.add(b, k)\n}\n";
     let (checked, names) = checked(&[("main.lcf", main)]);
     let placed = placed_of(&checked, &names, "main.lcf");
     let (a, b, y) = (&placed["a"], &placed["b"], &placed["y"]);
-    assert_eq!((a.y, b.y, a.height, b.height), (y.y, y.y, 3200, 3200));
+    assert_eq!((a.y, b.y, a.height, b.height), (y.y - 1600, y.y - 800, 3200, 3200));
     let drawing = drawing_of(main);
     let points: Vec<(i64, i64)> = branches(wire_of(&drawing, "k")).into_iter().flatten().copied().collect();
     // The horizontal that passes the columns of `a` and `b`.
@@ -1102,8 +1105,64 @@ fn a_track_takes_a_lane_under_the_nodes_when_it_is_nearer() {
         .windows(2)
         .find(|pair| pair[0].1 == pair[1].1 && pair[0].0.min(pair[1].0) < a.x && pair[0].0.max(pair[1].0) > b.x + b.width)
         .map(|pair| pair[0].1);
-    assert_eq!(under, Some(a.y + 3200 + 1600));
+    assert_eq!(under, Some(b.y + 3200 + 1600));
     assert!(points.iter().all(|&(_, height)| height >= a.y), "{points:?}");
+}
+
+/// The heights of a wire's points, each once.
+fn heights_of(drawing: &crate::Drawing, value: &str) -> std::collections::BTreeSet<i64> {
+    branches(wire_of(drawing, value)).into_iter().flatten().map(|&(_, y)| y).collect()
+}
+
+/// #279 (notation 2.1): `a`, a D of 16, its output at 8; `y`, a D of 32, its inputs at 8 and 24. Stacked, both end at the
+/// bottom of the frame (no error chain), so the wire `a` leaves at 8 above that bottom and reaches `y` at 24 above it:
+/// it bends. Straightened, `y` goes down by 16 so that its first input meets `a` at its height: 16 past the bottom of
+/// the body as stacked, within `place.straighten` (48), and the wire has one height. With `place.straighten` at 15, the
+/// move is refused whole, and `y` keeps its stacked place, as at 0; at 16, it is kept.
+#[test]
+fn the_wire_into_the_first_input_is_straightened() {
+    let main = "labcraft 1
+
+use core
+
+fn main(x: f64) -> (y: f64) {
+    a = core.neg(x)
+    y = core.add(a, x)
+}
+";
+    let drawing = drawing_of(main);
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    let (a, y) = (&placed["a"], &placed["y"]);
+    assert_eq!((a.height, y.height), (1600, 3200));
+    // The output of `a` at 8 from its top, the first input of `y` at 8 from its: one top.
+    assert_eq!(y.y, a.y);
+    assert_eq!(heights_of(&drawing, "a").len(), 1, "{:?}", heights_of(&drawing, "a"));
+    let with = |straighten: i64| {
+        let mut style = crate::style::Style::default();
+        style.numbers.straighten = straighten;
+        crate::style::scope(&std::sync::Arc::new(style), || {
+            let placed = placed_of(&checked, &names, "main.lcf");
+            (placed["y"].y - placed["a"].y, heights_of(&drawing_of(main), "a").len())
+        })
+    };
+    assert_eq!(with(0), (1600 - 3200, 2));
+    assert_eq!(with(1500), (1600 - 3200, 2));
+    assert_eq!(with(1600), (0, 1));
+}
+
+/// #279 (notation 2.1): of two nodes of a column that want one height, the lower takes it. `p` and `q` both read `a`
+/// first; the sweeps stack them, and the lower one, whichever it is, gets the straight wire; the other stays 24 above it.
+#[test]
+fn of_two_nodes_that_want_one_height_the_lower_takes_it() {
+    let main =
+        "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (p: f64, q: f64) {\n    a = core.neg(x)\n    p = core.add(a, x)\n    q = core.sub(a, x)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    let (a, p, q) = (&placed["a"], &placed["p"], &placed["q"]);
+    let (lower, upper) = if p.y > q.y { (p, q) } else { (q, p) };
+    assert_eq!(lower.y, a.y);
+    assert_eq!(upper.y, lower.y - 2400 - 3200);
 }
 
 /// A node stands in the column after the last node that feeds it; one fed only by the inputs of the function in the
