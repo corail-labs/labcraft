@@ -143,6 +143,20 @@ impl Plan {
     }
 }
 
+/// One unit of the drawing, in the hundredths that its lengths count: the grid of the slots of a channel too narrow for
+/// their gap.
+const UNIT: i64 = 100;
+
+/// How wide a channel is between two columns whose nodes the file places: from the names on the right of the column
+/// before it to those on the left of the column after it, and from the right of the blocks before it (`blocks_start`) to the
+/// left of the blocks after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Room {
+    pub names: i64,
+    pub blocks_start: i64,
+    pub blocks: i64,
+}
+
 /// A net routed: a polyline per wire, from its source to its reader, and the junction points of the net.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Routed {
@@ -836,10 +850,35 @@ pub fn assign_slots(intervals: &[(i64, i64)]) -> Vec<u32> {
 }
 
 /// The geometry of a body, once its channels are placed: `channels[k]` is where channel `k` starts.
-pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Routed> {
+///
+/// `room`, by channel, says how wide it is when the nodes around it stand where the file puts them (#274). A channel
+/// whose slots, 8 apart with a margin of 8 on each side, do not fit between the names of its two columns takes the gap
+/// between their blocks, across the names; when they do not fit there either, its slots come closer, on the grid of one
+/// unit while they are a unit apart or more, so that its verticals stay between the blocks rather than inside the next
+/// one; blocks that touch have them on their edge. A channel that `room` leaves out
+/// is as wide as its slots.
+pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64], room: &[Option<Room>]) -> Vec<Routed> {
+    // By channel: where its first slot counts from, and how far apart its slots are.
+    let placed: Vec<(i64, i64)> = channels
+        .iter()
+        .enumerate()
+        .map(|(channel, &start)| {
+            let slots = i64::from(plan.slots.get(channel).copied().unwrap_or(0));
+            let need = style::wire_gap() * (slots + 1);
+            match room.get(channel).copied().flatten().filter(|room| room.names < need) {
+                Some(room) if room.blocks < need => {
+                    let step = room.blocks.max(0) / (slots + 1);
+                    (room.blocks_start, if step >= UNIT { step / UNIT * UNIT } else { step })
+                }
+                Some(room) => (room.blocks_start, style::wire_gap()),
+                None => (start, style::wire_gap()),
+            }
+        })
+        .collect();
     let slot_x = |index: usize| -> Option<i64> {
         let vertical = plan.verticals.get(index)?;
-        Some(channels.get(vertical.channel)? + style::wire_gap() + style::wire_gap() * i64::from(vertical.slot))
+        let &(start, step) = placed.get(vertical.channel)?;
+        Some(start + step * (1 + i64::from(vertical.slot)))
     };
     // Into a vertical at the height `from`: by its lead first when it jogs.
     let enter = |index: usize, from: i64, points: &mut Vec<(i64, i64)>| {
@@ -1382,7 +1421,7 @@ mod tests {
             let blocks = [vec![], column.clone(), column.clone(), column, vec![]];
             let body = BodyIn { ends: &ends, sources: &sources, columns: 3, blocks: &blocks, axis: None, vias: &[None, None, None], origin };
             let plan = plan(&body);
-            let routes = geometry(&plan, &ends, &[0, 0, 6000, 16000, 26000]);
+            let routes = geometry(&plan, &ends, &[0, 0, 6000, 16000, 26000], &[]);
             (plan.slots, plan.highest.map(|track| track - dy), routes.into_iter().map(|routed| routed.moved(0, -dy)).collect::<Vec<_>>())
         };
         let at_rest = routed(0, 0);
@@ -1464,7 +1503,7 @@ mod tests {
             let body = BodyIn { ends: &ends, sources: &families, columns, blocks: &blocks, axis: axis.map(|axis| axis + dy), vias: &vias, origin };
             let plan = plan(&body);
             let channels: Vec<i64> = (0..columns as i64 + 2).map(|channel| 100_000 * channel).collect();
-            let routes = geometry(&plan, &ends, &channels).into_iter().map(|routed| routed.moved(0, -dy)).collect();
+            let routes = geometry(&plan, &ends, &channels, &[]).into_iter().map(|routed| routed.moved(0, -dy)).collect();
             (plan.slots, plan.highest.map(|track| track - dy), plan.lowest.map(|track| track - dy), routes)
         }
         let mut without_origin = 0;
