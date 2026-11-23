@@ -34,6 +34,7 @@ mod ports;
 mod preview;
 mod route;
 mod shape;
+mod shift;
 mod short;
 mod size;
 pub mod style;
@@ -54,6 +55,7 @@ pub use shape::{
     ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Colour, Corner, Detail, Drawing, Ground, Group, Hint, Holds, IconDrawing, IconDrawn, IconItem,
     IconShape, Mark, Paint, Pattern, Placed, Port, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
 };
+pub use shift::shift_between;
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
 pub use values::{
     Choice, Judged, Overlay, Sample, Selector, Series, Valued, expected, input_boxes, inputs_of, loops_inside, selected_node, selected_wire, series,

@@ -3065,3 +3065,59 @@ layout {
     assert!(!into.is_empty(), "{found:?}");
     assert!(into.iter().all(|branch| branch.iter().all(|&(x, _)| x <= 4500)), "{found:?}");
 }
+
+/// A neutral node taller than what stood above the error axis grows the placement upward: every node moves down by the
+/// same, and `shift_between` finds that shift, which the canvas follows and the figure of stability leaves out (#266).
+#[test]
+fn a_placement_that_grows_upward_shifts_the_whole_drawing() {
+    let drawn = |main: &str| {
+        let mut files = BENCH;
+        files[0].1 = main;
+        let (checked, names) = checked(&files);
+        let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+            panic!("not drawn")
+        };
+        drawing
+    };
+    let before = drawn(&MAIN.replace("core.add(raw, 1.5)", "core.abs(raw)"));
+    let after = drawn(&MAIN.replace("    value = core.add(raw, 1.5)", "    probe = core.select(true, raw, raw)\n    value = core.abs(probe)"));
+    let shifts: Vec<(String, i64, i64)> = before
+        .placed
+        .iter()
+        .filter_map(|was| after.placed.iter().find(|now| now.key == was.key).map(|now| (was.key.clone(), now.x - was.x, now.y - was.y)))
+        .filter(|(key, _, _)| !key.ends_with("value"))
+        .collect();
+    let dy = shifts.first().map(|shift| shift.2).unwrap();
+    assert!(dy > 0, "the placement grows upward: {shifts:?}");
+    assert!(shifts.iter().all(|shift| shift.2 == dy), "{shifts:?}");
+    assert_eq!(crate::shift_between(&before, &after), (0, dy));
+    assert_eq!(crate::shift_between(&before, &before), (0, 0));
+    let mut one_lower = before.clone();
+    one_lower.placed[0].y += 4000;
+    assert_eq!(crate::shift_between(&before, &one_lower), (0, 0), "one node of many is not the whole drawing");
+}
+
+/// A node that the file moves moved, even when it is the only one, or most of them: an undo, an agent, a `layout` entry
+/// written by hand does not scroll the canvas (#266).
+#[test]
+fn a_node_that_the_file_moves_is_not_a_shift_of_the_whole_drawing() {
+    let shift = |before: &str, after: &str| {
+        let main = |layout: &str| {
+            format!(
+                "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (c: f64, d: f64, e: f64) {{\n    c = core.add(a, b)\n    \
+                 d = core.mul(a, b)\n    e = core.sub(a, b)\n}}\n\nlayout {{\n{layout}}}\n"
+            )
+        };
+        let drawn = |layout: &str| {
+            let (checked, names) = checked(&[("main.lcf", &main(layout))]);
+            let file = index_of(&checked, "main.lcf");
+            assert_eq!(checked.counts_of(file).errors, 0);
+            let Drawn::Drawing(drawing) = draw(&checked, file, &names, &ViewState::default(), &DiagramLimits::default()) else { panic!("not drawn") };
+            drawing
+        };
+        crate::shift_between(&drawn(before), &drawn(after))
+    };
+    assert_eq!(shift("    node c at (200, 100)\n", "    node c at (200, 140)\n"), (0, 0), "the only node placed");
+    let all = |y: i64| format!("    node c at (200, {y})\n    node d at (200, {})\n    node e at (200, {})\n", y + 80, y + 160);
+    assert_eq!(shift(&all(100), &all(140)), (0, 0), "every node moved by the file");
+}

@@ -41,12 +41,22 @@ fn drawing(text: &str, view: &ViewState) -> Arc<Drawing> {
     drawing_of(&[("main.lcf", text)], view)
 }
 
-/// The drawing of `main.lcf` among `files`.
+/// The drawing of `main.lcf` among `files`; a path `dev/open.lcf` puts a file in the sub-library `dev`.
 fn drawing_of(files: &[(&str, &str)], view: &ViewState) -> Arc<Drawing> {
     let mut names = Interner::new();
     let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
     for (shown, text) in files {
-        root.files.push(SourceFile { shown: (*shown).to_owned(), content: Content::Bytes(Cow::Owned(text.as_bytes().to_vec())) });
+        let (library, shown) = shown.split_once('/').map_or((None, *shown), |(library, file)| (Some(library), file));
+        let file = SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(text.as_bytes().to_vec())) };
+        match library {
+            Some(library) => match root.sub_libraries.iter_mut().find(|sub| sub.name == library) {
+                Some(sub) => sub.files.push(file),
+                None => root
+                    .sub_libraries
+                    .push(LibrarySource { files: vec![file], ..LibrarySource::new(library.to_owned(), library.to_owned(), Origin::Project) }),
+            },
+            None => root.files.push(file),
+        }
     }
     let checked = check(root, &Nothing, &mut names, &Limits::default());
     let main = checked.files.iter().position(|file| file.shown == "main.lcf").unwrap();
@@ -1183,7 +1193,7 @@ fn the_nodes_moved_do_not_glide_to_the_new_drawing() {
     let mut after = (*before).clone();
     after.placed[b].x = x + 4_000;
     after.placed[b].y = y;
-    let glide = crate::view::Glide::after_move(&before, &after, &[b], (4_000, 0));
+    let glide = crate::view::Glide::after_move(&before, &after, &[b], (4_000, 0), labcraft_diagram::shift_between(&before, &after));
     assert!(glide.is_none(), "nothing glides: the node is where the drag left it");
     assert!(crate::view::Glide::between(&before, &after).is_some());
 }
@@ -2375,4 +2385,59 @@ fn a_highlight_fades_at_its_end_unless_motion_is_reduced() {
     assert_eq!(wait(10.5, true, false), 0.0);
     assert_eq!(wait(10.0 + HIGHLIGHT_SECONDS - 0.1, false, false), 0.0);
     assert!((wait(10.5, false, true) - (HIGHLIGHT_SECONDS - 0.5)).abs() < 1e-9, "with reduced motion, at its end");
+}
+
+/// A line that grows the placement upward moves the whole drawing down: the canvas scrolls by as much, so that the
+/// nodes stay where they were on the screen (#266, notation 2.1).
+#[test]
+fn a_placement_that_grows_upward_keeps_the_nodes_still_on_the_screen() {
+    let dev =
+        |name: &str, signature: &str| format!("labcraft 1\n\nextern rust(crate: \"labcraft-dev\", function: \"{name}\")\nfn {name}{signature}\n");
+    let (open, query, close) = (
+        dev("open", "(resource: string, err: error = none) -> (session: session, err: error)"),
+        dev("query_f64", "(session: session, command: string, err: error = none) -> (value: f64, session: session, err: error)"),
+        dev("close", "(session: session, err: error = none) -> (err: error)"),
+    );
+    let main = |last: &str| {
+        format!(
+            "labcraft 1\n\nuse core\nuse dev\n\nfn main(resource: string, err: error = none) -> (value: f64, err: error) {{\n    \
+             dmm, e1 = dev.open(resource, err: err)\n    raw, dmm2, e2 = dev.query_f64(dmm, \"MEAS:VOLT:DC?\", err: e1)\n    \
+             #close: e3 = dev.close(dmm2, err: e2)\n{last}    err = e3\n}}\n"
+        )
+    };
+    let drawn = |main: &str| {
+        let files = [
+            ("main.lcf", main),
+            ("dev/session.lct", "labcraft 1\n\ntype session = opaque\n"),
+            ("dev/open.lcf", open.as_str()),
+            ("dev/query_f64.lcf", query.as_str()),
+            ("dev/close.lcf", close.as_str()),
+        ];
+        drawing_of(&files, &ViewState::default())
+    };
+    let before = drawn(&main("    value = core.abs(raw)\n"));
+    let after = drawn(&main("    probe = core.select(true, raw, raw)\n    value = core.abs(probe)\n"));
+    let ctx = context();
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(before.clone(), true);
+    frame(&ctx, &mut canvas, &Shown::default(), input(0.0));
+    let on_screen = |canvas: &Canvas, drawing: &Drawing, key: &str| {
+        let (zoom, origin) = canvas.viewport();
+        let placed = drawing.placed.iter().find(|placed| placed.key == key).unwrap();
+        // In hundredths of a point of the screen, so that a rounding of the last bit does not count.
+        (((Vec2::new(placed.x as f32, placed.y as f32) / 100.0 - origin) * zoom) * 100.0).round()
+    };
+    // `e3` is the output of the node `#close`.
+    let keys = ["dmm", "raw", "#close"];
+    let was: Vec<Vec2> = keys.iter().map(|key| on_screen(&canvas, &before, key)).collect();
+    let moved = |key: &str| {
+        let [old, new] = [&before, &after].map(|drawing| drawing.placed.iter().find(|placed| placed.key == key).map(|placed| placed.y));
+        old != new
+    };
+    assert!(keys.iter().all(|key| moved(key)), "the drawing moved down");
+    canvas.set_drawing(after.clone(), true);
+    let now: Vec<Vec2> = keys.iter().map(|key| on_screen(&canvas, &after, key)).collect();
+    // Each at the same height on the screen; `#close` alone moves across, one column on, since the probe takes one.
+    assert_eq!(was.iter().map(|at| at.y).collect::<Vec<_>>(), now.iter().map(|at| at.y).collect::<Vec<_>>());
+    assert_eq!(was[..2], now[..2]);
 }

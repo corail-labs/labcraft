@@ -89,7 +89,7 @@ fn wire_points(group: &Group) -> impl Iterator<Item = (i64, i64)> + '_ {
 
 /// What differs from `old` to `new`, the same function drawn again after an edit.
 pub fn touched(old: &Drawing, new: &Drawing) -> Touched {
-    let (dx, dy) = crate::view::shift_of_frame(old, new);
+    let (dx, dy) = labcraft_diagram::shift_between(old, new);
     let (old_groups, new_groups) = (groups_by_node(old), groups_by_node(new));
     let by_key: HashMap<&str, usize> = old.placed.iter().enumerate().map(|(at, placed)| (placed.key.as_str(), at)).collect();
     let mut touched = Touched::default();
