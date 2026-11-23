@@ -226,6 +226,12 @@ pub struct Sized {
 }
 
 impl Sized {
+    /// How far the node reaches above the corner of its block: its label, and what the frame of a structure grows
+    /// upward.
+    pub fn reach_up(&self) -> i64 {
+        self.above + self.over
+    }
+
     pub fn new(width: i64, height: i64, shapes: Vec<Shape>) -> Sized {
         Sized {
             width,

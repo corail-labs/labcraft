@@ -353,34 +353,44 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &mut [BodyPlace], offs
             let header_width = titles.structures.get(&node).copied().unwrap_or(0);
             let widest = found.bodies.iter().filter_map(|&body| bodies.get(body)).map(|placed| placed.width).max().unwrap_or(0);
             let width = size::up(widest.max(header_width));
-            // A height asked for: what the arms lack goes to the last one.
-            let mut y = style::frame_header() + style::frame_pad();
-            for &body in &found.bodies {
-                let Some(placed) = bodies.get(body) else { continue };
-                y += placed.rise + placed.height + style::arm_gap();
-            }
-            let natural = (y - style::arm_gap() + style::frame_pad()).max(style::frame_header() + 2 * style::frame_pad());
+            // A height asked for: what the arms lack goes to the last one. What an arm grows upward does not count: the
+            // height is measured from the origin (spec 11).
+            let first = style::frame_header() + style::frame_pad();
+            let stacked = |bodies: &[BodyPlace]| {
+                found.bodies.iter().filter_map(|&body| bodies.get(body)).fold(first, |y, placed| y + placed.height + style::arm_gap())
+            };
+            let framed = |stack: i64| (stack - style::arm_gap() + style::frame_pad()).max(style::frame_header() + 2 * style::frame_pad());
+            let natural = framed(stacked(bodies));
             if let Some((_, asked)) = found.size
                 && let Some(last) = found.bodies.last().and_then(|&body| bodies.get_mut(body))
             {
                 last.height += (asked - natural).max(0);
             }
-            let mut y = style::frame_header() + style::frame_pad();
-            let mut arms = Vec::new();
-            let mut corners = Vec::new();
-            for &body in &found.bodies {
-                let Some(placed) = bodies.get(body) else { continue };
-                let corner = y + placed.rise;
+            let bodies: &[BodyPlace] = bodies;
+            let mut y = stacked(bodies);
+            let height = framed(y);
+            // Each arm at the corner it has when no arm grows upward, so that its origin stays (spec 11); an arm that grows
+            // upward pushes those above it up, as far as it needs, and the header with them (`Sized::over`). From the last.
+            let mut corners: Vec<(usize, i64)> = Vec::with_capacity(found.bodies.len());
+            let mut arms: Vec<(i64, &BodyPlace)> = Vec::with_capacity(found.bodies.len());
+            let mut floor = i64::MAX;
+            for (body, placed) in found.bodies.iter().rev().filter_map(|&body| Some((body, bodies.get(body)?))) {
+                y -= placed.height + style::arm_gap();
+                let corner = y.min(floor.saturating_sub(placed.height));
                 corners.push((body, corner));
                 arms.push((corner, placed));
-                y = corner + placed.height + style::arm_gap();
+                floor = corner - placed.rise - style::arm_gap();
             }
-            let height = (y - style::arm_gap() + style::frame_pad()).max(style::frame_header() + 2 * style::frame_pad());
+            corners.reverse();
+            arms.reverse();
+            // No arm: nothing above the header.
+            let over = if floor == i64::MAX { 0 } else { (first - style::arm_gap() - floor).max(0) };
             let mut block = Sized::new(0, height, Vec::new());
+            block.over = over;
             let last = arms.last();
             // The last arm is on the axis (notation 5.2): the error enters and leaves on that line, whichever arm reads it.
             let axis = last.and_then(|(y, placed)| placed.axis.map(|axis| y + axis));
-            block.inputs = frame_inputs(structure, found.inputs.len(), axis, height, |arm, left| {
+            block.inputs = frame_inputs(structure, found.inputs.len(), axis, (height, style::frame_header() / 2 - over), |arm, left| {
                 let (y, placed) = arms.get(arm)?;
                 Some(y + placed.left.get(left).copied()?)
             });
@@ -489,7 +499,7 @@ fn tabs_block(
     let last = arms.last();
     let mut block = Sized::new(0, height, Vec::new());
     block.over = over;
-    block.inputs = frame_inputs(structure, found.inputs.len(), axis, height, |arm, left| {
+    block.inputs = frame_inputs(structure, found.inputs.len(), axis, (height, style::frame_header() / 2 - over), |arm, left| {
         let (_, corner, placed) = arms.get(arm)?;
         Some(corner + placed.left.get(left).copied()?)
     });
@@ -558,12 +568,13 @@ fn tabs_block(
 /// Where the inputs of a `match` or `handle` stand on the left edge of its frame, unfolded or in tabs (notation 5.2):
 /// the one that carries the error on the axis, the selector on the top line (a `handle`, whose selector is an error: on
 /// the bottom line, the axis when there is one), the others at the notch of the last arm that reads them. `notch`
-/// gives the height of the notch `left` of the arm `arm`, from the top of the frame.
+/// gives the height of the notch `left` of the arm `arm`, from the top of the frame; `header`, the middle of its header,
+/// which stands higher when an arm grows upward (`Sized::over`).
 fn frame_inputs(
     structure: &crate::graph::Structure,
     count: usize,
     axis: Option<i64>,
-    height: i64,
+    (height, header): (i64, i64),
     notch: impl Fn(usize, usize) -> Option<i64>,
 ) -> Vec<(i64, i64)> {
     let entry = structure.pair.map(|(input, _)| input);
@@ -575,12 +586,12 @@ fn frame_inputs(
             if input == 0 {
                 let y = match structure.kind {
                     StructureKind::Handle => axis.unwrap_or(height - style::frame_pad()),
-                    _ => style::frame_header() / 2,
+                    _ => header,
                 };
                 return (0, y);
             }
             let at = structure.inputs_at.get(input).map_or(&[][..], Vec::as_slice);
-            (0, at.iter().rev().find_map(|&(arm, left)| notch(arm, left)).unwrap_or(style::frame_header() / 2))
+            (0, at.iter().rev().find_map(|&(arm, left)| notch(arm, left)).unwrap_or(header))
         })
         .collect()
 }
@@ -735,6 +746,12 @@ impl Body<'_> {
 
     fn above(&self, local: usize) -> i64 {
         self.sized.get(local).map_or(0, |sized| sized.above)
+    }
+
+    /// How far a node reaches above the corner of its block: its label, and what the frame of a structure grows upward
+    /// (`Sized::over`), which its column and the routes go round.
+    fn reach_up(&self, local: usize) -> i64 {
+        self.sized.get(local).map_or(0, |sized| sized.reach_up())
     }
 
     /// How far a node reaches below the corner of its block: its block, and what it draws under it, the label of a block
@@ -935,7 +952,8 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     // The plan of the wires, on the heights alone: how wide each channel must be (notation 2.2).
     let sources: Vec<(End, crate::graph::Family)> = wires.iter().map(|wire| (wire.from, wire.family)).collect();
     let ys: Vec<i64> = (0..count).map(|local| body.top(local)).collect();
-    let blocks = column_blocks(&body, &columns, column_count, &ys);
+    // The automatic placement does not count what a frame grows upward: it makes room for it after (`keep_placed`).
+    let blocks = column_blocks(&body, &columns, column_count, &ys, false);
     let ends = wire_ends(&body, frame, &columns, column_count, &vec![0; count], &ys, &left, &right, 0);
     let axis = has_axis.then_some(0);
     let vias: Vec<Option<Vec<(i64, i64)>>> = (0..wires.len()).map(|wire| graph.vias.get(&(index, wire)).cloned()).collect();
@@ -1016,7 +1034,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         placed.push((node, NodeAt { x: x_of.get(local).copied().unwrap_or(0), y: body.top(local) + shift, column: column as u32, rank }));
     }
     let mut width = width;
-    keep_placed(graph, &body, &mut placed, &members);
+    keep_placed(graph, &body, &mut placed, &members, &chain_of, &columns);
     let mut highest = header + style::frame_pad();
     for (local, (_, at)) in placed.iter().enumerate() {
         let Some(sized) = body.sized.get(local) else { continue };
@@ -1025,7 +1043,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         let after = columns.get(local).map_or(0, |&column| plan.channel(column + 2)).max(style::min_channel());
         width = width.max(size::up(at.x + sized.width + sized.right + after + right_zone));
         height = height.max(at.y + sized.height + sized.below + style::frame_pad());
-        highest = highest.min(at.y - sized.above - sized.over);
+        highest = highest.min(at.y - sized.reach_up());
     }
     // The wires, where the nodes ended.
     let xs: Vec<i64> = placed.iter().map(|(_, at)| at.x).collect();
@@ -1048,7 +1066,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let (routed, route_columns, channel_at, room) =
         if fixed { stood(&body, &placed, left_zone) } else { (columns, column_count, channel_at, Vec::new()) };
     let mut ends = wire_ends(&body, frame, &routed, route_columns, &xs, &ys, &left_at, &right_at, width);
-    let placed_blocks = column_blocks(&body, &routed, route_columns, &ys);
+    let placed_blocks = column_blocks(&body, &routed, route_columns, &ys, true);
     let axis = has_axis.then_some(shift);
     let plan = route::plan(&route::BodyIn {
         ends: &ends,
@@ -1204,12 +1222,14 @@ fn stood(body: &Body<'_>, placed: &[(usize, NodeAt)], left_zone: i64) -> (Vec<us
 }
 
 /// The top and the bottom of each node that each column holds, what is above it included, by column from the left edge
-/// (0) to the right edge (`n + 1`): node `local` from `ys[local]`.
-fn column_blocks(body: &Body<'_>, columns: &[usize], column_count: usize, ys: &[i64]) -> Vec<Vec<(i64, i64)>> {
+/// (0) to the right edge (`n + 1`): node `local` from `ys[local]`; with `risen`, what the frame of a structure grows
+/// upward too.
+fn column_blocks(body: &Body<'_>, columns: &[usize], column_count: usize, ys: &[i64], risen: bool) -> Vec<Vec<(i64, i64)>> {
     let mut blocks: Vec<Vec<(i64, i64)>> = vec![Vec::new(); column_count + 2];
     for (local, &column) in columns.iter().enumerate() {
         if let (Some(&y), Some(list)) = (ys.get(local), blocks.get_mut(column + 1)) {
-            list.push((y - body.above(local), y + body.reach_down(local)));
+            let up = if risen { body.reach_up(local) } else { body.above(local) };
+            list.push((y - up, y + body.reach_down(local)));
         }
     }
     blocks
@@ -1534,12 +1554,22 @@ pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool], caps: &[Option<i6
 }
 
 /// The nodes that the `layout` section places keep their place; a node that it does not place, and that would cover
-/// one, moves up above it, and those above it in its column as far as needed (notation 2.1).
-fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)], members: &[Vec<usize>]) {
+/// one, moves up above it, and those above it in its column as far as needed (notation 2.1). So does a node that would
+/// cover what the frame of a structure below it in its column grows upward (`Sized::over`), which the automatic
+/// placement does not count, so that the frame that holds them keeps its origin and grows upward too (spec 11).
+fn keep_placed(
+    graph: &Graph<'_>,
+    body: &Body<'_>,
+    placed: &mut [(usize, NodeAt)],
+    members: &[Vec<usize>],
+    chain_of: &[Option<(usize, i64)>],
+    columns: &[usize],
+) {
     let fixed: Vec<usize> = (0..placed.len())
         .filter(|&local| body.nodes.get(local).and_then(|&node| graph.nodes.get(node)).is_some_and(|node| node.at.is_some()))
         .collect();
-    if fixed.is_empty() {
+    let risen = body.sized.iter().any(|sized| sized.over > 0);
+    if fixed.is_empty() && !risen {
         return;
     }
     let mut is_fixed = vec![false; placed.len()];
@@ -1558,7 +1588,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
     let span = |local: usize, placed: &[(usize, NodeAt)]| -> Option<(i64, i64, i64, i64)> {
         let sized = body.sized.get(local)?;
         let at = placed.get(local)?.1;
-        Some((at.x - sized.left, at.x + sized.width + sized.right, at.y - sized.above, at.y + sized.height + sized.below))
+        Some((at.x - sized.left, at.x + sized.width + sized.right, at.y - sized.reach_up(), at.y + sized.height + sized.below))
     };
     // Across, from the left: the placed nodes that reach into each column, found in one sweep, so that the work follows
     // the overlaps rather than the columns times the placed nodes.
@@ -1592,7 +1622,15 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
         let mut obstacles: Vec<(i64, i64)> = reaching.iter().map(|Reverse((_, y0, y1))| (y0 - style::stack(), y1 + style::stack())).collect();
         obstacles.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
         let mut next = 0;
-        let mut limit = i64::MAX;
+        // Above the node of the chain at the bottom of the column, all of it: what its frame grows upward included. One
+        // that the file places is an obstacle above, where it stands across.
+        let mut limit = chain_of
+            .get(column)
+            .copied()
+            .flatten()
+            .filter(|&(local, _)| columns.get(local) == Some(&column) && !is_fixed.get(local).copied().unwrap_or(false))
+            .and_then(|(local, _)| Some(placed.get(local)?.1.y - body.reach_up(local) - style::stack()))
+            .unwrap_or(i64::MAX);
         for &local in list {
             if is_fixed.get(local).copied().unwrap_or(false) {
                 continue;
@@ -1601,7 +1639,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
             // Its label below it counts, as its label above does (notation 3.2).
             let mut bottom = (at.y + sized.height + sized.below).min(limit);
             while let Some(&(top_of, bottom_of)) = obstacles.get(next) {
-                let top = bottom - sized.below - sized.height - sized.above;
+                let top = bottom - sized.below - sized.height - sized.reach_up();
                 if top_of >= bottom {
                     // Below: never in the way again, since what follows is higher.
                     next += 1;
@@ -1616,7 +1654,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
             if let Some(slot) = placed.get_mut(local) {
                 slot.1.y = y;
             }
-            limit = y - sized.above - style::stack();
+            limit = y - sized.reach_up() - style::stack();
         }
     }
 }
@@ -1638,7 +1676,8 @@ pub fn overlaps(graph: &Graph<'_>, sized: &[Sized], placement: &Placement) -> Ve
                 graph.nodes.get(node)?.at?;
                 let at = placement.nodes.get(node).copied().flatten()?;
                 let block = sized.get(node)?;
-                (block.width > 0 && block.height > 0).then_some((at.x, at.y, at.x + block.width, at.y + block.height, node))
+                // What the frame of a structure grows upward is part of its box (`Sized::over`).
+                (block.width > 0 && block.height > 0).then_some((at.x, at.y - block.over, at.x + block.width, at.y + block.height, node))
             })
             .collect();
         if blocks.len() < 2 {

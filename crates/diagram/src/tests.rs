@@ -3121,3 +3121,147 @@ fn a_node_that_the_file_moves_is_not_a_shift_of_the_whole_drawing() {
     let all = |y: i64| format!("    node c at (200, {y})\n    node d at (200, {})\n    node e at (200, {})\n", y + 80, y + 160);
     assert_eq!(shift(&all(100), &all(140)), (0, 0), "every node moved by the file");
 }
+
+/// The pairs of nodes of one body whose boxes overlap, the frame that a structure grows upward included, leaving out
+/// two that the file places (`LC7005` says so). Touching edges are not an overlap.
+fn covered(drawing: &crate::Drawing) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (index, one) in drawing.placed.iter().enumerate() {
+        for other in drawing.placed.iter().skip(index + 1) {
+            let apart =
+                one.x + one.width <= other.x || other.x + other.width <= one.x || one.y + one.height <= other.y || other.y + other.height <= one.y;
+            if one.body == other.body && !apart && (one.at.is_none() || other.at.is_none()) {
+                found.push((one.key.clone(), other.key.clone()));
+            }
+        }
+    }
+    found
+}
+
+/// #192, point 1: a node moved 60 up in a loop grows its frame upward, above the block of the loop; the free node
+/// stacked above the loop in its column, the loop being on the error chain, moves up out of the way of that overhang,
+/// rather than being covered.
+#[test]
+fn a_free_node_moves_up_out_of_the_way_of_a_frame_grown_upward() {
+    let main = "labcraft 1
+
+use core
+
+fn main(a: f64, b: f64, err: error = none) -> (r: f64, s: f64, err: error) {
+    s = core.add(a, b)
+    r, e = loop
+        carry v = a,
+        carry e0 = err
+    {
+        w, e1 = step(v, err: e0)
+        next v = w
+        next e0 = e1
+        until true
+    }
+    err = e
+}
+";
+    let drawn = |main: &str| drawing_with(&[("main.lcf", main), ("step.lcf", STEP)]);
+    let before = drawn(main);
+    let found = |drawing: &crate::Drawing, key: &str| drawing.placed.iter().find(|placed| placed.key == key).cloned().unwrap();
+    let (r, s) = (found(&before, "r"), found(&before, "s"));
+    assert_eq!((r.over, r.x), (0, s.x), "one column");
+    assert!(s.y + s.height <= r.y, "`s` above the loop");
+    assert_eq!(covered(&before), [], "automatic");
+    let after = drawn(&format!("{main}\nlayout {{\n    node w at (40, -60)\n}}\n"));
+    let (r, s) = (found(&after, "r"), found(&after, "s"));
+    assert!(r.over > 0, "the frame of the loop grows upward");
+    // `s` is 24 above the risen frame (notation 2.1, the stacking of a column).
+    assert_eq!(s.y + s.height + 2400, r.y);
+    assert_eq!(covered(&after), [], "nothing under the risen frame");
+}
+
+/// A node of the chain that the file moves away, up and to the right, in a loop, leaves the free node that stood above it
+/// where it was: nothing is in its way any more (notation 2.1, the others move apart only as far as needed). In the
+/// frame of the function, the axis would follow it (notation 2.1): a loop, whose axis stays.
+#[test]
+fn a_free_node_stays_when_the_chain_node_below_it_moves_away() {
+    let main = "labcraft 1
+
+use core
+
+fn main(a: f64, b: f64, err: error = none) -> (r: f64, err: error) {
+    r, e = loop
+        carry v = a,
+        carry e0 = err
+    {
+        s = core.add(v, b)
+        w, e1 = step(v, err: e0)
+        t = core.add(s, w)
+        next v = t
+        next e0 = e1
+        until true
+    }
+    err = e
+}
+";
+    let drawn = |main: &str| drawing_with(&[("main.lcf", main), ("step.lcf", STEP)]);
+    let in_frame =
+        |drawing: &crate::Drawing, key: &str| drawing.in_frame(drawing.placed.iter().position(|placed| placed.key.ends_with(key)).unwrap()).unwrap();
+    let before = drawn(main);
+    let after = drawn(&format!("{main}\nlayout {{\n    node w at (400, -200)\n}}\n"));
+    assert_eq!(in_frame(&after, "/s"), in_frame(&before, "/s"));
+}
+
+/// #192, point 2: in a `match` unfolded, an arm that grows upward keeps its origin (spec 11), and pushes the arm above
+/// it and the header up: a node moved 60 up shows 60 up, from the structure as from its frame.
+#[test]
+fn an_unfolded_arm_that_grows_upward_keeps_its_origin() {
+    let main = "labcraft 1
+
+use core
+
+fn main(x: f64, c: i32) -> (v: f64) {
+    v = match c {
+        1 => yield 1.0
+        _ => {
+            w = core.neg(x)
+            yield w
+        }
+    }
+}
+";
+    let structure_of = |drawing: &crate::Drawing| drawing.placed.iter().position(|placed| !placed.holds.is_empty()).unwrap();
+    let parts = |drawing: &crate::Drawing| {
+        let structure = structure_of(drawing);
+        let corner = (drawing.placed[structure].x, drawing.placed[structure].y + drawing.placed[structure].over);
+        let arms: Vec<&crate::BodyDrawn> = drawing.bodies.iter().filter(|body| body.owner == Some(structure)).collect();
+        let w = drawing.placed.iter().position(|placed| placed.key.ends_with('w')).unwrap();
+        let from_structure = |(x, y): (i64, i64)| (x - corner.0, y - corner.1);
+        let w_at = (drawing.placed[w].x, drawing.placed[w].y);
+        (
+            drawing.in_frame(w).unwrap(),
+            from_structure(w_at),
+            arms.iter().map(|arm| from_structure(arm.origin)).collect::<Vec<_>>(),
+            arms.iter().map(|arm| arm.frame).collect::<Vec<_>>(),
+        )
+    };
+    let (in_frame, from_structure, origins, _) = parts(&drawing_of(main));
+    let (x, y) = (in_frame.0 / 100, in_frame.1 / 100 - 60);
+    let moved = drawing_of(&format!("{main}\nlayout {{\n    node w at ({x}, {y})\n}}\n"));
+    let (in_frame_after, from_structure_after, origins_after, frames) = parts(&moved);
+    assert!(y * 100 < 0, "the node goes above the corner of its arm: {y}");
+    assert_eq!(in_frame_after, (x * 100, y * 100));
+    // The second arm keeps its origin, from the corner of the block of the structure; its node moved by the move alone.
+    assert_eq!(origins_after[1], origins[1]);
+    // (Across, the entry rounds it to a whole unit.)
+    assert_eq!(from_structure_after, (from_structure.0 + x * 100 - in_frame.0, from_structure.1 - 6000));
+    // The first arm went up, 16 above the risen frame of the second (spec 11, the gap between unfolded arms).
+    let (first, second) = (frames[0], frames[1]);
+    assert_eq!(first.1 + first.3 + 1600, second.1);
+    assert!(origins_after[0].1 < origins[0].1);
+    assert_eq!(covered(&moved), []);
+    // The selector stays at the level of the header, which went up: 12 below the top of the frame drawn, the middle of
+    // a header of 24 (notation 5.2).
+    let selector = |drawing: &crate::Drawing| {
+        let structure = structure_of(drawing);
+        let top = drawing.placed[structure].y;
+        drawing.ports.iter().filter(|port| port.placed == Some(structure) && port.input).map(|port| port.y - top).min().unwrap()
+    };
+    assert_eq!((selector(&drawing_of(main)), selector(&moved)), (1200, 1200));
+}

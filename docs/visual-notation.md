@@ -137,8 +137,12 @@ are the nodes that a `layout` section does not place (spec 11).
   on its way still has its straight line.
 - **A partial `layout` section.** The nodes it places never move. A frame grows upward to hold the nodes that
   they push out of it *(proposed)*; the positions of the file are still measured from the corner it has without
-  them. Without a `frame … size` entry, the body of a structure is as high as a whole number of gaps between
-  wires (8 by default), then up to the grid, so that a wire that goes over the structure rises with it when a node
+  them. What it grows upward stands above the block of its structure: a node that it would cover moves up out of its
+  way, as out of the way of a placed node, and in a `match` or a `handle` unfolded, the arm that grows keeps its
+  origin while the arms above it and the header, with the selector, move up, as far apart as arms are (decision of the
+  owner, 2026-11-23).
+  Without a `frame … size` entry, the body of a structure is as high as a whole number of gaps between wires (8 by
+  default), then up to the grid, so that a wire that goes over the structure rises with it when a node
   inside moves, and the frame stays where it was (decision of the owner,
   2026-11-22). A node that it does not place goes into
   free space between what it connects: right of what feeds it, left of what it feeds, above the error
