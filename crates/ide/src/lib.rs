@@ -2778,6 +2778,7 @@ fn canvas_shown(window: &WindowShown, settings: &Values) -> Shown {
         mark_fixed: settings.mark_fixed,
         replace_with_alt: settings.replace_with_alt,
         accept_mismatch: settings.accept_mismatch,
+        branch_on_drag: settings.branch_on_drag,
         route_with_shift_alt: settings.route_with_shift_alt,
         into_wire: settings.into_wire,
     }

@@ -1507,10 +1507,10 @@ fn units_of((x, y): (i64, i64)) -> Pos2 {
     Pos2::new(x as f32 / 100.0, y as f32 / 100.0)
 }
 
-/// Alt and a drag on a segment moves it across, on the grid of 8 of its frame, and the drop asks for `wire.route` with
-/// the points that give that route: a jog 16 from each terminal it leaves (notation 2.4, 2.6).
+/// A drag on a segment moves it across, on the grid of 8 of its frame, and the drop asks for `wire.route` with the
+/// points that give that route: a jog 16 from each terminal it leaves (notation 2.4, 2.6).
 #[test]
-fn alt_and_a_drag_on_a_segment_routes_the_wire() {
+fn a_drag_on_a_segment_routes_the_wire() {
     let ctx = context();
     install_fonts(&ctx);
     let mut canvas = Canvas::new();
@@ -1524,24 +1524,41 @@ fn alt_and_a_drag_on_a_segment_routes_the_wire() {
     assert_eq!(path.len(), 4, "{path:?}");
     let (p1, p2, p3) = (path[1], path[2], path[3]);
     let on = units_of(((p2.0 + p3.0) / 2, p2.1));
-    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(5.0, 21.0)), 0.2, egui::Modifiers::ALT, &none);
+    let intents = drag_with(&ctx, &mut canvas, (on, on + Vec2::new(5.0, 21.0)), 0.2, &none);
     // Down by 21, to the nearest line of the grid of 8 that starts at the origin of the frame; the vertical before it
     // stretches, and the segment jogs 16 before `y`, which it reaches at its height.
     let moved = oy + ((p2.1 + 2_100 - oy) as f64 / 800.0).round() as i64 * 800;
     let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
     let via = vec![(unit(p1.0 - ox), unit(moved - oy)), (unit(p3.0 - 1_600 - ox), unit(p3.1 - oy))];
     assert_eq!(intents.last(), Some(&Intent::Route(vec![("a -> y.a".to_owned(), via)])), "{intents:?}");
-    // With the setting, Alt alone draws a branch instead, and Shift+Alt moves the segment.
-    let shifted = Shown { route_with_shift_alt: true, ..Shown::default() };
+    let routed = |intents: &[Intent]| intents.iter().any(|intent| matches!(intent, Intent::Route(_)));
+    // Alt and a drag draw a branch instead.
+    let (alt, shift_alt) = (egui::Modifiers::ALT, egui::Modifiers::ALT | egui::Modifiers::SHIFT);
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 1.0, alt, &none);
+    assert!(!routed(&intents), "{intents:?}");
+    // The setting "drag on a wire" on `branch` swaps them: Alt moves the segment, a plain drag draws a branch.
+    let branch = Shown { branch_on_drag: true, ..Shown::default() };
     canvas.cancel_wire();
-    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 2.0, egui::Modifiers::ALT | egui::Modifiers::SHIFT, &shifted);
-    assert!(intents.iter().any(|intent| matches!(intent, Intent::Route(_))), "{intents:?}");
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 2.0, alt, &branch);
+    assert!(routed(&intents), "{intents:?}");
+    canvas.cancel_wire();
+    let intents = drag_with(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 3.0, &branch);
+    assert!(!routed(&intents), "{intents:?}");
+    // With Shift+Alt in place of Alt, Shift+Alt is the modifier, and Alt alone is a plain drag.
+    let shifted = Shown { branch_on_drag: true, route_with_shift_alt: true, ..Shown::default() };
+    canvas.cancel_wire();
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 4.0, shift_alt, &shifted);
+    assert!(routed(&intents), "{intents:?}");
+    canvas.cancel_wire();
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 5.0, alt, &shifted);
+    assert!(!routed(&intents), "{intents:?}");
 }
 
-/// A plain drag on a wire draws a branch of its value from a junction on the grid of 8 on the wire; dropped on an
-/// input of its frame, it asks for the wire and its junction in one step (notation 2.4, 2.5).
+/// Alt and a drag on a wire draw a branch of its value from a junction on the grid of 8 on the wire; dropped on an
+/// input of its frame, it asks for the wire and its junction in one step (notation 2.4, 2.5). With the setting "drag on
+/// a wire" on `branch`, a plain drag does.
 #[test]
-fn a_drag_on_a_wire_draws_a_branch_from_a_junction() {
+fn alt_and_a_drag_on_a_wire_draw_a_branch_from_a_junction() {
     let ctx = context();
     install_fonts(&ctx);
     let mut canvas = Canvas::new();
@@ -1557,7 +1574,7 @@ fn a_drag_on_a_wire_draws_a_branch_from_a_junction() {
     let jx = ox + ((press.0 - ox) as f64 / 800.0).round() as i64 * 800;
     let input = drawn.ports.iter().find(|port| port.name == "y.b").unwrap();
     let target = units_of((input.x, input.y));
-    let intents = drag_with(&ctx, &mut canvas, (units_of(press), target), 0.2, &none);
+    let intents = drag_holding(&ctx, &mut canvas, (units_of(press), target), 0.2, egui::Modifiers::ALT, &none);
     let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
     let wired = Intent::Wire {
         from: "a".to_owned(),
@@ -1569,6 +1586,52 @@ fn a_drag_on_a_wire_draws_a_branch_from_a_junction() {
         through: Vec::new(),
     };
     assert_eq!(intents.last(), Some(&wired), "{intents:?}");
+    canvas.cancel_wire();
+    let branch = Shown { branch_on_drag: true, ..Shown::default() };
+    let intents = drag_with(&ctx, &mut canvas, (units_of(press), target), 1.0, &branch);
+    assert_eq!(intents.last(), Some(&wired), "{intents:?}");
+}
+
+/// The Alt that started a branch, held to the drop, does not count there: with "replace only with Alt", the input that
+/// holds a constant refuses the branch; Alt let go and pressed again before the drop replaces it (notation 2.4).
+#[test]
+fn the_alt_that_starts_a_branch_is_not_read_at_its_drop() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(CHAIN, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let replacing = Shown { replace_with_alt: true, ..Shown::default() };
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &replacing);
+    let (path, _) = path_of(&drawn, "a");
+    let ((sx, sy), (rx, _)) = (path[0], path[1]);
+    let from = units_of((sx + (rx - sx) / 2 + 300, sy + 200));
+    // `y.b` holds the constant `1.0`. The drag starts at the first move, Alt down.
+    let input = drawn.ports.iter().find(|port| port.name == "y.b").unwrap();
+    let to = units_of((input.x, input.y));
+    let wired = |intents: &[Intent]| intents.iter().any(|intent| matches!(intent, Intent::Wire { replace: true, .. }));
+    let alt = egui::Modifiers::ALT;
+    let intents = drag_holding(&ctx, &mut canvas, (from, to), 0.2, alt, &replacing);
+    assert!(!wired(&intents), "{intents:?}");
+    canvas.cancel_wire();
+    let button = |at, pressed, modifiers| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers };
+    let none = egui::Modifiers::NONE;
+    let mut intents = Vec::new();
+    for (at, events) in [
+        vec![egui::Event::ModifiersChanged(alt), egui::Event::PointerMoved(from), button(from, true, alt)],
+        vec![egui::Event::PointerMoved(from + (to - from) / 4.0)],
+        vec![egui::Event::ModifiersChanged(none), egui::Event::PointerMoved(from + (to - from) / 2.0)],
+        vec![egui::Event::ModifiersChanged(alt), egui::Event::PointerMoved(to)],
+        vec![egui::Event::PointerMoved(to), button(to, false, alt)],
+        vec![egui::Event::ModifiersChanged(none)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        intents.extend(frame_shown(&ctx, &mut canvas, 1.0 + at as f64 * 0.1, events, &replacing).2);
+    }
+    assert!(wired(&intents), "{intents:?}");
 }
 
 const FORK: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64, z: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n    z = core.add(a, 2.0)\n}\n";
@@ -1599,14 +1662,13 @@ fn a_segment_shared_moves_for_every_wire_along_it() {
     // Escape before the drop: nothing.
     let escaped = {
         let button =
-            |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::ALT };
+            |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
         let mut intents = Vec::new();
         for (at, events) in [
-            vec![egui::Event::ModifiersChanged(egui::Modifiers::ALT), egui::Event::PointerMoved(on), button(on, true)],
+            vec![egui::Event::PointerMoved(on), button(on, true)],
             vec![egui::Event::PointerMoved(on + Vec2::new(10.0, 0.0))],
             vec![key(egui::Key::Escape, egui::Modifiers::NONE)],
             vec![egui::Event::PointerMoved(on + Vec2::new(12.0, 0.0)), button(on + Vec2::new(12.0, 0.0), false)],
-            vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
         ]
         .into_iter()
         .enumerate()
@@ -1616,7 +1678,7 @@ fn a_segment_shared_moves_for_every_wire_along_it() {
         intents
     };
     assert!(!escaped.iter().any(|intent| matches!(intent, Intent::Route(_))), "{escaped:?}");
-    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 1.0, egui::Modifiers::ALT, &none);
+    let intents = drag_with(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 1.0, &none);
     let Some(Intent::Route(routes)) = intents.last() else { panic!("{intents:?}") };
     let names: Vec<&str> = routes.iter().map(|(name, _)| name.as_str()).collect();
     let (first, second) = if longer == 0 { ("a -> y.a", "a -> z.a") } else { ("a -> z.a", "a -> y.a") };
@@ -1625,10 +1687,10 @@ fn a_segment_shared_moves_for_every_wire_along_it() {
     let moved = ox + ((cx + 1_000 - ox) as f64 / 800.0).round() as i64 * 800;
     let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
     assert_eq!(routes[1].1.first(), Some(&(unit(moved - ox), unit(other[2].1 - oy))), "{routes:?}");
-    // With the setting, Alt alone draws a branch instead.
+    // With the setting "drag on a wire" on `branch`, a plain drag draws a branch instead.
     canvas.cancel_wire();
-    let shifted = Shown { route_with_shift_alt: true, ..Shown::default() };
-    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 3.0, egui::Modifiers::ALT, &shifted);
+    let branch = Shown { branch_on_drag: true, ..Shown::default() };
+    let intents = drag_with(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 3.0, &branch);
     assert!(!intents.iter().any(|intent| matches!(intent, Intent::Route(_))), "{intents:?}");
 }
 

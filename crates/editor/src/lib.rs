@@ -109,7 +109,10 @@ pub struct Shown {
     /// The setting "accept it" (notation 2.4): a wire of the wrong type is written, and `check` gives `LC3001`. Off by
     /// default.
     pub accept_mismatch: bool,
-    /// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt, for a
+    /// The setting "drag on a wire" on `branch` (notation 2.6): a plain drag on a wire starts a branch, and the modifier
+    /// with it moves its segment. Off by default: a plain drag moves the segment.
+    pub branch_on_drag: bool,
+    /// The modifier of a drag on a wire and on a terminal of a block (notation 2.6): Shift+Alt instead of Alt, for a
     /// desktop that keeps Alt and a drag to move windows. Off by default.
     pub route_with_shift_alt: bool,
     /// The setting "inserting into a wire" (notation 2.6): a function of the panel `Palette` dropped on a wire that it
@@ -305,6 +308,9 @@ pub struct Canvas {
     retract: Option<Retract>,
     /// A segment of a wire being moved, or asked of the host and not drawn yet.
     rerouting: Option<rerouting::Rerouting>,
+    /// Alt down since a branch started with it (notation 2.4, "Moving a wire"): its drop reads Alt only once Alt was let
+    /// go and pressed again, so that the Alt that started it changes neither the passage nor the replacement.
+    alt_held: bool,
     /// A frame resized by its edge (notation 2.6).
     resizing: Option<Resizing>,
     /// A terminal of the frame of the function moved along its edge, or asked of the host and not drawn yet (notation 2.4).
@@ -522,6 +528,7 @@ impl Canvas {
             rules: Rules::default(),
             retract: None,
             rerouting: None,
+            alt_held: false,
             resizing: None,
             sliding: None,
             block_drag: None,
@@ -715,6 +722,11 @@ impl Canvas {
         if self.sliding.as_ref().is_some_and(|sliding| sliding.state == edge::State::Asked) {
             self.sliding = None;
         }
+    }
+
+    /// The rules of a wire dropped with `alt` down: the Alt that started a branch, still held, does not count.
+    fn rules_with(&self, alt: bool) -> Rules {
+        Rules { alt: alt && !self.alt_held, ..self.rules }
     }
 
     /// The wire asked for failed: it goes, and the old wire it would have replaced stays.
@@ -1509,7 +1521,8 @@ impl Canvas {
             response.request_focus();
         }
         let reach = (5.0 / zoom).max(WIRE_REACH);
-        let rules = Rules { alt: modifiers.alt, ..self.rules };
+        self.alt_held &= modifiers.alt && self.wiring.is_some();
+        let rules = self.rules_with(modifiers.alt);
         if response.drag_started_by(PointerButton::Primary) && frame.offsets.is_none() {
             let from = ctx.input(|input| input.pointer.press_origin()).map(unit_of);
             // A drag from a terminal draws a wire; Ctrl with it takes the end of its wire (notation 2.6). A terminal of the
@@ -1614,8 +1627,8 @@ impl Canvas {
             }
             return;
         }
-        // A drag on a wire: with the modifier of the setting, its segment moves (`wire.route`); without, a branch starts at
-        // a junction on it (notation 2.6).
+        // A drag on a wire moves its segment (`wire.route`); with the modifier of the setting, a branch starts at a
+        // junction on it. The setting "drag on a wire" on `branch` swaps the two (notation 2.6).
         if response.drag_started_by(PointerButton::Primary)
             && frame.offsets.is_none()
             && self.wiring.is_none()
@@ -1623,11 +1636,14 @@ impl Canvas {
             && let Some(from) = ctx.input(|input| input.pointer.press_origin()).map(unit_of)
             && let Some(Hit::Wire(group)) = select::hit(drawing, &self.index, &frame.groups, from, reach, &visible)
         {
-            let reroute = modifiers.alt && (modifiers.shift || !shown.route_with_shift_alt);
-            if reroute {
+            let modified = modifiers.alt && (modifiers.shift || !shown.route_with_shift_alt);
+            if modified == shown.branch_on_drag {
                 self.rerouting = Rerouting::grab(drawing, group, from, reach);
-            } else {
+            }
+            // A wire whose segment cannot move starts a branch instead.
+            if self.rerouting.is_none() {
                 self.wiring = Wiring::branch(drawing, group, from, (5.0 / zoom).max(BRANCH_REACH));
+                self.alt_held = modifiers.alt && self.wiring.is_some();
             }
             if self.rerouting.is_some() || self.wiring.is_some() {
                 self.port_focus = None;
@@ -2593,7 +2609,7 @@ impl Canvas {
             }
         }
         let Some(wiring) = &self.wiring else { return };
-        let rules = Rules { alt: frame.ctx.input(|input| input.modifiers.alt), ..self.rules };
+        let rules = self.rules_with(frame.ctx.input(|input| input.modifiers.alt));
         let visible = |within: Option<usize>| frame.visible(within);
         for at in wiring.takers(drawing, rules, &visible) {
             if let Some(port) = drawing.ports.get(at) {
