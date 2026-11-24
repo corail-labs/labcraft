@@ -1,0 +1,66 @@
+<!--
+  The MSI of LabCraft for windows-x64 (#255), built by the job `build` of the workflow `release` from the folder of the
+  archive, so that both hold the same files (architecture.md 8):
+
+    wix build -arch x64 -d Version=0.4.0 -bindpath Stage=dist\labcraft-0.4.0-windows-x64 -o labcraft.msi labcraft.wxs
+
+  Per machine, in Program Files\LabCraft; a Start menu shortcut to `labcraft`; the folder added to the PATH of the
+  system, for `labcraft-cli`. The upgrade code never changes: a later version replaces an earlier one.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="LabCraft"
+      Manufacturer="LabCraft contributors"
+      Version="$(Version)"
+      UpgradeCode="DEA1A18D-F23E-404D-A4AB-FA49BC89229A"
+      Scope="perMachine">
+    <!-- The version drops its suffix (`0.4.0-dev` is built as 0.4.0): the same version replaces itself, never installs
+         beside itself. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of LabCraft is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/corail-labs/labcraft" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/corail-labs/labcraft/issues" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/corail-labs/labcraft/releases" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <!-- A file in use at the install (`labcraft-cli` run by an agent) never restarts the machine on its own. -->
+    <Property Id="REBOOT" Value="ReallySuppress" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="LabCraft" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="LabCraft">
+      <ComponentGroupRef Id="Programs" />
+      <ComponentGroupRef Id="Contents" />
+    </Feature>
+
+    <ComponentGroup Id="Programs" Directory="INSTALLFOLDER">
+      <Component>
+        <File Id="labcraft.exe" Source="!(bindpath.Stage)\labcraft.exe" KeyPath="yes" />
+      </Component>
+      <!-- A shortcut is not a file: Windows Installer wants a value of the registry for its key path (ICE43, ICE57). -->
+      <Component Id="StartMenu" Directory="ProgramMenuFolder">
+        <Shortcut
+            Id="StartMenu"
+            Name="LabCraft"
+            Description="The LabCraft IDE"
+            Target="[INSTALLFOLDER]labcraft.exe"
+            WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\LabCraft" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="labcraft_cli.exe" Source="!(bindpath.Stage)\labcraft-cli.exe" KeyPath="yes" />
+        <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" Permanent="no" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Everything else of the archive: licences, notices, the note, the examples, the simulated instruments. -->
+    <ComponentGroup Id="Contents" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.Stage)\**">
+        <Exclude Files="!(bindpath.Stage)\labcraft.exe" />
+        <Exclude Files="!(bindpath.Stage)\labcraft-cli.exe" />
+      </Files>
+    </ComponentGroup>
+  </Package>
+</Wix>

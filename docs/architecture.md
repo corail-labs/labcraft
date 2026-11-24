@@ -367,7 +367,7 @@ such as a file that cannot be written (the versions the Craft apps use). `serde`
 for the desktop viewer (section 11), `craft-keymap` for editing, `craft-i18n` for a translated interface. Messages of the tool stay in
 English (D-21). The reusable workflows of
 [`craft-common-actions`](https://github.com/storytold/craft-common-actions) (`gate`, `supply-chain`,
-`release`) are not used. An installer for Windows comes with release 0.4.0, signed from the first release after its certificate arrives (#255; the theme Distribution in
+`release`) are not used. An installer for Windows, an MSI, comes with release 0.4.0, signed from the first release after its certificate arrives (section 8; the theme Distribution in
 [roadmap.md](roadmap.md)). The first release, `v0.3.0-m0`, goes through a workflow of our own,
 `release` (section 8). `gate` was evaluated when the Rust CI started, and not adopted for now: it
 follows the `main` branch of another organization, and its job name would replace `checks`, the
@@ -450,7 +450,27 @@ notices. The last job, for a tag pushed only, makes a draft release with the arc
 pre-release when the version has a suffix (the tags up to `v0.3.0-m0`; from `v0.4.0` on, a release is a full one), and stops when a release of the tag exists already; the owner reads the
 draft and publishes it (decision of the owner, 2026-11-14). A pull request that changes the workflow or a note runs
 it without the release, and so does a run by hand; GitHub does not require it, and a red one stops the merge, as a
-red `windows` does. The binaries are not signed for the platforms: an installer for Windows comes with release 0.4.0 and is signed from the first release after its certificate arrives (#255), macOS later (the theme Distribution in
+red `windows` does.
+
+On Windows the job also builds an MSI, `labcraft-<version>-windows-x64.msi`, with WiX from the folder of the archive
+(`packaging/windows/labcraft.wxs`), so that both hold the same files; it goes in the draft and in `SHA256SUMS` with the
+archives, also as `labcraft-windows-x64.msi`, a name that does not change with the version, for a link or an update
+(#331). Its version is that of `Cargo.toml` without its suffix, since Windows Installer reads three numbers. It
+installs per machine in `Program Files\LabCraft`, with a Start menu shortcut to `labcraft` and the folder in the
+`PATH` of the system, for `labcraft-cli`; its upgrade code never changes, so that a later version replaces an earlier
+one, and the same version replaces itself (decisions of the owner, 2026-11-24); a file in use never restarts the
+machine. `wix build` and `wix msi validate` treat a warning as an error, but ICE61, which that replacement brings. `packaging/windows/try-msi.ps1` tries it on the runner: installed silently,
+`labcraft-cli version`, `check` of the installed examples and `labcraft --version` from the installed folder, the
+`PATH` and the shortcut, then uninstalled, leaving none of them.
+
+The binaries are not signed for the platforms yet. Windows is signed through SignPath (#255), on a tag pushed only,
+once the repository has the secret `SIGNPATH_API_TOKEN` and the variable `SIGNPATH_ORGANIZATION_ID`: the job sends
+`labcraft.exe` and `labcraft-cli.exe` first (artifact configuration `binaries` of the project `labcraft`, policy
+`release-signing`), so that the archive and the MSI are made from the signed binaries, then the MSI (configuration
+`msi`). The two configurations are kept in `packaging/windows/signpath/`, changed there first and pasted into
+SignPath; each request waits up to an hour for a maintainer to approve it there. The step `Signatures` reads the three files with `Get-AuthenticodeSignature`: `Valid` when signing ran,
+`NotSigned` otherwise, and fails on anything else. Without the secret (a fork, a pull request, a run by hand, until
+the certificate arrives) the steps of signing are skipped. macOS comes later (the theme Distribution in
 [roadmap.md](roadmap.md)).
 
 To release: the version in `Cargo.toml` (and both `Cargo.lock`), without its `-dev`, the note `docs/releases/v<version>.md`, merged

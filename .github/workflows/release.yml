@@ -53,7 +53,12 @@ jobs:
     name: build (${{ matrix.name }})
     needs: [version]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Windows waits up to an hour for each of its two requests of signing (below).
+    timeout-minutes: ${{ matrix.name == 'windows-x64' && 180 || 60 }}
+    # SignPath downloads the artifact to sign with the token of the job, which needs to read the artifacts.
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +78,9 @@ jobs:
       TARGET: ${{ matrix.target }}
       EXE: ${{ matrix.exe }}
       NAME: labcraft-${{ needs.version.outputs.version }}-${{ matrix.name }}
+      # Windows is signed through SignPath on a tag pushed, once the secret of its API token exists; without it (a fork, a
+      # pull request, a run by hand, today) the steps of signing are skipped and the files are built unsigned (#255).
+      SIGN: ${{ matrix.name == 'windows-x64' && github.event_name == 'push' && github.ref_type == 'tag' && secrets.SIGNPATH_API_TOKEN != '' }}
     defaults:
       run:
         shell: bash
@@ -86,6 +94,32 @@ jobs:
           rustup target add "$TARGET"
       - name: Build
         run: cargo build --release --locked --target "$TARGET" -p labcraft-cli -p labcraft
+      # Signed first, so that the archive and the MSI are made from the signed binaries.
+      - name: The binaries to sign
+        if: env.SIGN == 'true'
+        id: binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-binaries
+          path: |
+            target/${{ matrix.target }}/release/labcraft.exe
+            target/${{ matrix.target }}/release/labcraft-cli.exe
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign the binaries
+        if: env.SIGN == 'true'
+        uses: SignPath/github-action-submit-signing-request@a2c5b60d9c75f073142b653c354b632eedce097b # v3.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: labcraft
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ steps.binaries.outputs.artifact-id }}
+          wait-for-completion: true
+          # A release-signing request waits for a maintainer to approve it on SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: target/${{ matrix.target }}/release
       # The binaries; the licences and notices: ours, those of the fonts and the Unicode data where ATTRIBUTION.md names
       # them, those of the crates built in (`cargo xtask notices`); the programs of examples/ and the simulated
       # instruments of visa, to try them as the README and the note say.
@@ -118,12 +152,73 @@ jobs:
           ./labcraft-cli$EXE run --sim sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
           test -f examples/.labcraft/runs/check_voltage.trace.jsonl
           ./labcraft$EXE --version
+      # The MSI, from the folder of the archive (packaging/windows/labcraft.wxs). Its version has no suffix: Windows
+      # Installer reads three numbers, so `0.4.0-dev` is built as 0.4.0. WiX 5, under MS-RL alone: from 6 on, its
+      # releases come with the Open Source Maintenance Fee of FireGiant, and 7 asks to accept its EULA.
+      - name: MSI
+        if: matrix.name == 'windows-x64'
+        run: |
+          set -eu
+          dotnet tool install --global wix --version 5.0.2
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          wix build -wx -arch x64 -d "Version=${VERSION%%-*}" -bindpath "Stage=$(pwd -W)/dist/$NAME" \
+            -o "dist/$NAME.msi" packaging/windows/labcraft.wxs
+          # ICE61 warns of AllowSameVersionUpgrades, which is meant (labcraft.wxs); every other warning fails.
+          wix msi validate -wx -sice ICE61 "dist/$NAME.msi"
+          rm -f "dist/$NAME.wixpdb"
+      - name: The MSI to sign
+        if: env.SIGN == 'true'
+        id: msi
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-msi
+          path: dist/${{ env.NAME }}.msi
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign the MSI
+        if: env.SIGN == 'true'
+        uses: SignPath/github-action-submit-signing-request@a2c5b60d9c75f073142b653c354b632eedce097b # v3.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: labcraft
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: msi
+          github-artifact-id: ${{ steps.msi.outputs.artifact-id }}
+          wait-for-completion: true
+          # A release-signing request waits for a maintainer to approve it on SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: dist
+      # What the installer does on the runner: installed silently, the two programs run from the installed folder, the
+      # folder in the PATH of the system and the shortcut in the Start menu, then uninstalled, leaving none of them.
+      - name: Try the MSI
+        if: matrix.name == 'windows-x64'
+        shell: pwsh
+        run: packaging/windows/try-msi.ps1 -Msi "dist/$env:NAME.msi"
+      # Valid when signed, NotSigned otherwise; anything else, or NotSigned when signing ran, fails.
+      - name: Signatures
+        if: matrix.name == 'windows-x64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = "dist/$env:NAME.msi", "dist/$env:NAME/labcraft.exe", "dist/$env:NAME/labcraft-cli.exe"
+          $want = if ($env:SIGN -eq 'true') { 'Valid' } else { 'NotSigned' }
+          $bad = 0
+          foreach ($file in $files) {
+            $status = (Get-AuthenticodeSignature $file).Status
+            Write-Output "$file`: $status"
+            "- ``$file``: $status" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+            if ("$status" -ne $want) { $bad++ }
+          }
+          if ($bad) { Write-Output "::error::$bad file(s) not $want"; exit 1 }
       - name: Archive
         run: |
           set -eu
           cd dist
           if [ "$RUNNER_OS" = Windows ]; then
             7z a -tzip -bso0 "$NAME.zip" "$NAME"
+            # The MSI also under a name that does not change with the version, which a link or an update finds (#331).
+            if [ -f "$NAME.msi" ]; then cp "$NAME.msi" labcraft-windows-x64.msi; fi
           else
             tar -czf "$NAME.tar.gz" "$NAME"
           fi
