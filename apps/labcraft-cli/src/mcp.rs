@@ -7,6 +7,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use labcraft_engine::{Config, Session};
+use labcraft_runtime::io::Allowed;
 
 use crate::args::McpOptions;
 use crate::disk::Disk;
@@ -46,9 +47,16 @@ pub enum Started {
 /// that refuses the connection.
 pub fn start(options: &McpOptions) -> Result<Started, String> {
     let root = root_of(options)?;
+    // A right that does not read is wrong usage, attached or not.
+    let allowed = allowed(options)?;
     if let Some(entry) = crate::attach::find(&root) {
         match crate::attach::connect(&entry) {
-            Ok(stream) => return Ok(Started::Attached(stream)),
+            Ok(stream) => {
+                if !options.allow_hardware.is_empty() || !options.allow_paths.is_empty() {
+                    let _ = writeln!(std::io::stderr(), "{ASKED_IN_THE_WINDOW}");
+                }
+                return Ok(Started::Attached(stream));
+            }
             Err(crate::attach::NotAttached::Refused(why)) => {
                 let file = crate::attach::folder().map(|folder| crate::attach::file_of(&folder, &root));
                 let file = file.map_or_else(String::new, |file| format!(" (if no window of LabCraft shows it, remove `{}`)", file.display()));
@@ -59,8 +67,37 @@ pub fn start(options: &McpOptions) -> Result<Started, String> {
         }
     }
     let note = elsewhere(&root, &crate::attach::other_projects(&root));
-    session_at(options, root, true).map(|session| Started::Headless(Box::new(session), note))
+    let mut session = session_at(options, root, true)?;
+    session.allow_agents(allowed);
+    Ok(Started::Headless(Box::new(session), note))
 }
+
+/// What the human allows the runs of the agent (io.md 4): the endpoints of `--allow-hardware`, and the folders of
+/// `--allow-path` with their `..` and links resolved, each a folder that is not too wide for a project either: not the root
+/// of a drive, the home folder or a folder above it (decisions of the owner, 2026-11-24); no question, since no window
+/// asks. The message of a wrong usage otherwise (exit 2).
+fn allowed(options: &McpOptions) -> Result<Allowed, String> {
+    let home: Option<PathBuf> = std::env::home_dir().and_then(|home| std::fs::canonicalize(home).ok());
+    let mut paths = Vec::new();
+    for given in &options.allow_paths {
+        let folder = std::fs::canonicalize(given)
+            .map_err(|error| format!("--allow-path `{}` cannot be read: {}", given.display(), crate::walk::io_text(&error)))?;
+        if !folder.is_dir() {
+            return Err(format!("--allow-path takes a folder, and `{}` is a file", given.display()));
+        }
+        if let Some(why) = too_wide(&folder, home.as_deref()) {
+            return Err(format!("--allow-path `{}` {why}: an agent would reach every file under it; allow a folder of the bench", given.display()));
+        }
+        paths.push(folder);
+    }
+    Ok(Allowed { endpoints: options.allow_hardware.clone(), paths, consent: None, server: true })
+}
+
+/// What the server says on stderr when it attaches to a window although the human gave rights (decision of the owner,
+/// 2026-11-24): the window allows, endpoint by endpoint and folder by folder (io.md 4), the options are not used, and until
+/// the window asks (#239) an attached agent reaches none.
+const ASKED_IN_THE_WINDOW: &str = "labcraft-cli mcp: attached to the window of LabCraft, which allows real hardware and outside folders: \
+     --allow-hardware and --allow-path are not used, and until the window asks (issue #239) the runs of the agent reach none";
 
 /// What an agent is told when it works on a project that no window shows while windows show others (decision of the
 /// owner, 2026-11-22): its edits are not seen there, and how the user gives it the project they look at.

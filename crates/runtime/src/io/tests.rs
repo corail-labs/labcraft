@@ -57,7 +57,8 @@ fn open_real_follows_the_table_of_io_md_3() {
 
 #[test]
 fn an_agent_reaches_what_it_was_allowed_and_nothing_else() {
-    let allowed = Allowed { endpoints: ["tcp:10.0.0.5:502".to_owned()].into(), paths: vec![PathBuf::from("/data/bench")], consent: None };
+    let allowed =
+        Allowed { endpoints: ["tcp:10.0.0.5:502".to_owned()].into(), paths: vec![PathBuf::from("/data/bench")], consent: None, server: true };
     let context = agent(allowed);
     assert!(matches!(context.judge(&endpoint("tcp:10.0.0.5:502")), Judged::Allowed));
     // Names are exact (io.md 4): another port, or the same address by another name, is another endpoint.
@@ -74,6 +75,18 @@ fn an_agent_reaches_what_it_was_allowed_and_nothing_else() {
     assert!(message.contains("--allow-path"), "{message}");
     // The human has every right.
     assert!(matches!(Context::default().judge(&endpoint("tcp:10.0.0.6:1")), Judged::Allowed));
+}
+
+/// An agent attached to a window that does not ask yet reaches nothing, and is not told of options it was not started with
+/// (decision of the owner, 2026-11-24, until issue #239).
+#[test]
+fn an_agent_of_a_window_that_does_not_ask_is_told_so() {
+    for reach in [endpoint("tcp:10.0.0.5:502"), Reach::Path(PathBuf::from("/data/bench/run1.csv"))] {
+        let Judged::NotAllowed(outcome) = agent(Allowed::default()).judge(&reach) else { panic!("{reach:?}") };
+        assert_eq!(category(&outcome), ("io.not_allowed", 0));
+        let NativeOutcome::Fail { message, .. } = outcome else { panic!() };
+        assert!(message.contains("until the window asks") && !message.contains("--allow"), "{message}");
+    }
 }
 
 /// Answers the question as it is told, counting the questions; `panics` makes the host panic instead.

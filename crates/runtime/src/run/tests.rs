@@ -1192,7 +1192,7 @@ fn with_a_simulation_file_a_real_name_it_does_not_describe_is_not_found() {
 #[test]
 fn an_agent_without_the_right_gets_not_allowed() {
     let seen = Arc::default();
-    let ran = connect_in(real_time(0), agent(Allowed::default()), &seen);
+    let ran = connect_in(real_time(0), agent(Allowed { server: true, ..Allowed::default() }), &seen);
     // io.md 4: a run of an agent on `labcraft-cli mcp` with no `--allow-hardware`: `io.not_allowed`, code 0, on a wire, and
     // its message says how the endpoint is allowed.
     assert_eq!(ran.end.status, Status::Error);
@@ -1202,7 +1202,7 @@ fn an_agent_without_the_right_gets_not_allowed() {
     assert!(seen.lock().unwrap().reached.is_empty());
     // Allowed by name, it reaches it.
     let seen = Arc::default();
-    let allowed = Allowed { endpoints: ["tcp:10.0.0.5:5025".to_owned()].into(), ..Allowed::default() };
+    let allowed = Allowed { endpoints: ["tcp:10.0.0.5:5025".to_owned()].into(), server: true, ..Allowed::default() };
     let ran = connect_in(real_time(0), agent(allowed), &seen);
     assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.outputs);
     assert_eq!(seen.lock().unwrap().reached, ["tcp:10.0.0.5:5025"]);

@@ -57,7 +57,7 @@ impl Policy {
 
 /// Whether an effect runs a program: what `Edits` asks for (ide.md 8).
 pub fn runs(effect: Effect) -> bool {
-    matches!(effect, Effect::Run | Effect::Instruments)
+    matches!(effect, Effect::Run | Effect::Hardware)
 }
 
 /// What a question asks.

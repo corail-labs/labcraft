@@ -1,6 +1,7 @@
 //! The arguments of `fmt` and `check`, by hand, as in `gridcraft-cli` and `solidcraft-cli` (`docs/architecture.md`,
 //! section 6). An error here is wrong usage: nothing is read or written (`docs/cli.md`, section 1).
 
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::slice::Iter;
@@ -81,16 +82,41 @@ fn limit(option: &str, args: &mut Iter<'_, OsString>, limits: &mut Limits) -> Re
 }
 
 /// `labcraft-cli mcp` (`docs/mcp.md`, 1).
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct McpOptions {
     /// `--project`, or the current folder.
     pub project: Option<PathBuf>,
     pub lib_paths: Vec<PathBuf>,
     pub limits: Limits,
+    /// The endpoints of `--allow-hardware`, as io.md 2 writes them (`tcp:10.0.0.5:5025`), that the runs of the agent may
+    /// reach (io.md 4).
+    pub allow_hardware: BTreeSet<String>,
+    /// The folders of `--allow-path`, as given: the server resolves them as it starts, since one that does not exist is
+    /// wrong usage.
+    pub allow_paths: Vec<PathBuf>,
+}
+
+/// The endpoint of `--allow-hardware` (io.md 2 and 4): an endpoint, or a VISA name that reduces to one; exact, no wildcard.
+fn allowed_endpoint(given: Option<&OsString>) -> Result<String, String> {
+    let given = given.ok_or("--allow-hardware needs an endpoint: `tcp:HOST:PORT`, `udp:HOST:PORT` or `serial:PORT`")?;
+    let text = given.to_string_lossy();
+    // A serial name is compared exactly (io.md 2), so `serial:COM*` would allow no port: a wildcard, or a space at either end,
+    // is wrong usage here (decision of the owner, 2026-11-24), never in the name a program opens.
+    let endpoint = labcraft_runtime::io::endpoint::of_text(&text);
+    let serial = endpoint.as_deref().and_then(|endpoint| endpoint.strip_prefix("serial:"));
+    if let Some(port) = serial.filter(|port| port.contains(['*', '?']) || port.trim() != *port) {
+        return Err(format!("--allow-hardware takes an exact name, with no wildcard and no space at either end: `serial:{port}` is not one"));
+    }
+    endpoint.ok_or_else(|| {
+        format!(
+            "--allow-hardware takes an endpoint, `tcp:HOST:PORT`, `udp:HOST:PORT` or `serial:PORT`, or a VISA name that reduces to \
+             one (`TCPIP0::HOST::PORT::SOCKET`, `ASRL3::INSTR`), with no wildcard: `{text}` is neither"
+        )
+    })
 }
 
 pub fn parse_mcp(args: &[OsString]) -> Result<McpOptions, String> {
-    let mut options = McpOptions { project: None, lib_paths: Vec::new(), limits: Limits::default() };
+    let mut options = McpOptions::default();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let text = arg.to_string_lossy();
@@ -102,6 +128,10 @@ pub fn parse_mcp(args: &[OsString]) -> Result<McpOptions, String> {
                 options.project = Some(PathBuf::from(args.next().ok_or("--project needs a folder")?));
             }
             "--lib-path" => options.lib_paths.push(PathBuf::from(args.next().ok_or("--lib-path needs a folder")?)),
+            "--allow-hardware" => {
+                options.allow_hardware.insert(allowed_endpoint(args.next())?);
+            }
+            "--allow-path" => options.allow_paths.push(PathBuf::from(args.next().ok_or("--allow-path needs a folder")?)),
             _ if limit(&text, &mut args, &mut options.limits)? => {}
             _ if text.starts_with('-') => return Err(format!("unknown option `{text}`")),
             _ => return Err(format!("`mcp` takes no path but that of --project, not `{text}`")),
@@ -152,7 +182,7 @@ pub struct ExecOptions {
 }
 
 pub fn parse_exec(args: &[OsString]) -> Result<ExecOptions, String> {
-    let mut session = McpOptions { project: None, lib_paths: Vec::new(), limits: Limits::default() };
+    let mut session = McpOptions::default();
     let mut given: Vec<String> = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
