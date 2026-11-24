@@ -31,6 +31,7 @@ mod constant;
 mod delete;
 mod fragment;
 mod frame;
+mod imports;
 mod into;
 mod layout;
 mod model;
@@ -777,6 +778,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         return signature::rename_everywhere(files, path, text, terminal, name, judge, limits);
     }
     let mut edit = model::Edit::read(path, text, limits)?;
+    let imported = imports::imported(&edit);
     match op {
         Op::NodeAdd { call, at, name, within, .. } => {
             let body = frame::target(&edit, within, "inside", "arm")?;
@@ -849,6 +851,17 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::BlockSetOutline { outline, .. } => block::set_outline(&mut edit, outline.as_deref())?,
         Op::BlockReset { .. } => block::reset(&mut edit)?,
     }
+    // The name that the caller gave to what the command makes: a library that the command imports does not rename it.
+    let given = match op {
+        Op::StructureAddCarry { name, .. } => Some(name.as_str()),
+        Op::NodeAdd { name, .. }
+        | Op::ConstantAdd { name, .. }
+        | Op::StructureAddClause { name, .. }
+        | Op::StructureAddCollect { name, .. }
+        | Op::StructureAddLast { name, .. } => name.as_deref(),
+        _ => None,
+    };
+    imports::follow(&mut edit, &imported, given, &mut edited)?;
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {
         edited.texts.insert(path.to_owned(), new_text);

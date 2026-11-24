@@ -159,6 +159,29 @@ fn a_line_of_a_loop_goes_with_its_loop() {
 }
 
 #[test]
+fn a_paste_renames_a_value_of_the_file_named_after_a_library_that_it_imports() {
+    // #317: the file had a value `visa`; the fragment brings `use visa`. The value takes a suffix (N-14), its reader
+    // follows, and `renamed` says so. `s` comes before `visa2` (spec 5.2).
+    let fragment = "labcraft 1\n\nuse visa\n\nfn clipboard() -> () {\n    s, _ = visa.open(?)\n}\n";
+    let before = "use core\n\nfn f(x: f64) -> (y: f64) {\n    visa = core.abs(x)\n    y = visa\n}\n";
+    let edited = gives(
+        before,
+        paste(fragment, 0, 0),
+        "use core\nuse visa\n\nfn f(x: f64) -> (y: f64) {\n    s, _ = visa.open(?)\n    visa2 = core.abs(x)\n    y = visa2\n}\n",
+    );
+    assert_eq!(edited.renamed, renamed(&[("visa", "visa2")]));
+    // A constant of the fragment names the library (`visa.State.Open`): it stays. The value of the file takes a name that
+    // the fragment does not bring either: `visa2` is the fragment's, so `visa3`.
+    let fragment = "labcraft 1\n\nuse visa\n\nfn clipboard() -> () {\n    visa2 = visa.State.Open\n}\n";
+    let edited = gives(
+        before,
+        paste(fragment, 0, 0),
+        "use core\nuse visa\n\nfn f(x: f64) -> (y: f64) {\n    visa2 = visa.State.Open\n    visa3 = core.abs(x)\n    y = visa3\n}\n",
+    );
+    assert_eq!(edited.renamed, renamed(&[("visa", "visa3")]));
+}
+
+#[test]
 fn a_paste_does_not_name_a_value_after_a_library_that_it_imports() {
     // The fragment brings `use visa` and a value `visa`: in the file that now imports `visa`, the value cannot bear its
     // name (R-1, `LC2014`), so it takes a suffix (N-14), as a name already taken does; a hole stays a hole, as `b2` above.

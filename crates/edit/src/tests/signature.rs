@@ -326,6 +326,22 @@ fn a_caller_that_does_not_parse_stops_the_rename() {
     assert_eq!(edited.texts.len(), 1);
 }
 
+#[test]
+fn a_type_of_a_library_renames_a_value_named_after_it() {
+    // #317: `use visa` comes with the type, and the value `visa` takes a suffix (N-14), its reader following.
+    let before = "fn f(x: f64) -> (y: f64) {\n    visa = x\n    y = visa\n}\n";
+    let edited = gives(
+        before,
+        add(input("dmm"), "visa.session", None, None),
+        "use visa\n\nfn f(x: f64, dmm: visa.session) -> (y: f64) {\n    visa2 = x\n    y = visa2\n}\n",
+    );
+    let renamed: Vec<(&str, &str)> = edited.renamed.iter().map(|renamed| (renamed.from.as_str(), renamed.to.as_str())).collect();
+    assert_eq!(renamed, [("visa", "visa2")]);
+    // A terminal that would bear the name of the library is refused, new or not: the callers would change.
+    refused(SIMPLE, add(input("visa"), "visa.session", None, None), "name.taken");
+    refused("fn f(visa: f64) -> (y: f64) {\n    y = visa\n}\n", set_type(input("visa"), "visa.session"), "name.taken");
+}
+
 // signature.set_type and signature.set_default
 
 #[test]
