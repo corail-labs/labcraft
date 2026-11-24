@@ -561,6 +561,68 @@ fn a_text_field_keeps_its_keys_once_the_canvas_has_lost_the_focus() {
     assert_eq!(selection(&harness).nodes, ["a"], "Ctrl+A in the field selects no node");
 }
 
+/// A function that no longer draws keeps its last drawing, read only, under a band that names its first error and shows
+/// `Problems`; the band goes when it draws again (ide.md 3).
+#[test]
+fn a_function_that_no_longer_draws_keeps_its_drawing_under_a_band_until_it_draws_again() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let band = "Not drawn since the last change";
+    assert!(harness.query_by_label(band).is_none());
+    // `a` selected before: the session keeps it on the drawing kept.
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, egui::Modifiers::NONE);
+    assert_eq!(selection(&harness).nodes, ["a"]);
+    // `nowhere` is a value that nothing names, `LC2001`, which the drawing cannot get past (cli.md 7.1).
+    let broken = MAIN.replace("core.mul(x, 2.0)", "core.mul(nowhere, 2.0)");
+    harness.state().host.session.borrow_mut().execute("file.write", &json!({ "path": "main.lcf", "text": broken })).unwrap();
+    harness.state().host.session.borrow_mut().files_changed();
+    harness.run_steps(4);
+    assert!(harness.state().host.session.borrow().view().main.kept);
+    assert!(harness.query_by_label(band).is_some(), "the band");
+    // Its first error: the code and the place of `nowhere`, line 6, column 18 of the text written above.
+    assert!(harness.query_by_label_contains("LC2001  main.lcf 6:18  ·  unknown value `nowhere`").is_some(), "the first error");
+    // "Show in Problems" brings `Problems` forward, from behind `Run`, and back once closed.
+    click_role(&mut harness, "Run", egui::accesskit::Role::Tab);
+    assert!(harness.query_by_label("Errors only").is_none());
+    harness.query_by_label("Show in Problems ›").expect("the end of the band").click();
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Errors only").is_some(), "Problems in front");
+    shot(&mut harness, "kept");
+    run_in_palette(&mut harness, "view.toggle_panel {\"panel\": \"problems\", \"on\": false}");
+    harness.run_steps(3);
+    assert!(!harness.state().ide.prefs().layout.unwrap().layout.contains(&labcraft_ide::Pane::Problems));
+    harness.query_by_label("Show in Problems ›").expect("the end of the band").click();
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Errors only").is_some(), "Problems shown again");
+    // Read only: a click on a node of the drawing kept changes nothing, and Delete, from its key or the palette, on the
+    // selection kept, edits nothing.
+    let (on_y, _) = canvas_element(&harness, "y, core.add");
+    click_at(&mut harness, on_y, egui::Modifiers::NONE);
+    assert_eq!(selection(&harness).nodes, ["a"], "the drawing kept is not the file: no gesture on it");
+    harness.key_press(Key::Delete);
+    harness.run_steps(3);
+    // `ide.delete`: Delete from the palette, on the selection.
+    let delete = "ide.delete";
+    run_in_palette(&mut harness, delete);
+    harness.run_steps(3);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), broken, "nothing of the window edits it");
+    // Drawn again: the band goes, and the same command edits the file.
+    harness.state().host.session.borrow_mut().execute("file.write", &json!({ "path": "main.lcf", "text": MAIN })).unwrap();
+    harness.state().host.session.borrow_mut().files_changed();
+    harness.run_steps(4);
+    assert!(harness.query_by_label(band).is_none(), "the band goes");
+    // The palette stays open on the refusal.
+    harness.key_press(Key::Escape);
+    harness.run_steps(3);
+    let (on_y, _) = canvas_element(&harness, "y, core.add");
+    click_at(&mut harness, on_y, egui::Modifiers::NONE);
+    assert_eq!(selection(&harness).nodes, ["y"], "and the drawing can be edited again");
+    run_in_palette(&mut harness, delete);
+    harness.run_steps(3);
+    assert_ne!(text_of(&harness, "/p/main.lcf"), MAIN, "the command that was refused");
+}
+
 fn text_of(harness: &Harness<'_, State>, path: &str) -> String {
     String::from_utf8(harness.state().host.memory.get(path).unwrap()).unwrap()
 }

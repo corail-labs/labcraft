@@ -125,6 +125,18 @@ A value that the function does not write and the mask of its library gives is ma
 Each change is one command of [commands.md](commands.md) 9.4, one step of undo: the view has no command of its own. A
 function that the project does not hold, or an `extern`, is shown read only, with a line that says why.
 
+**A function that no longer draws** (decisions of the owner, 2026-11-06 and 2026-11-24): when its file holds an error
+that the drawing cannot get past (a value that nothing names, a name that a library takes…), the view `Diagram` keeps
+its last drawing ([architecture.md](architecture.md), the window), dimmed and read only, as the diagram of a text that
+does not parse ([commands.md](commands.md) 9.1): it is no longer the file, so what acts on it does not edit the function,
+neither a gesture on the canvas nor a command of a menu, a key or the inspector on what it shows; a command that names the
+file, typed in the command palette or sent by an agent, still edits it, as any file with errors ([commands.md](commands.md)
+9.2). A band across the top of the canvas, over the
+drawing, tinted with the colour of errors and a line of that colour under it, says "Not drawn since the last change",
+then the code, the place and the message of the first error of the file; "Show in Problems", at its end, brings the panel
+`Problems` forward. The band goes, and the drawing comes back, as soon as the function draws again. A function that has
+never drawn has no drawing to keep: its frame shows its name and lists its diagnostics instead.
+
 The view of each tab, and its split, are view state (spec 11): kept for the user, never in the file.
 
 **The toolbar of a tab**, one thin line above its views: the views first, as a group of icons of which one is on (a

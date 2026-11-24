@@ -1853,6 +1853,10 @@ impl Ide {
             }
             panels::Asked::Command(id, params) => self.run(CommandRef::with_params(id, params), host, view, outward),
             panels::Asked::Window(id) => self.run(CommandRef::new(id), host, view, outward),
+            // Unlike `view.toggle_panel` with `on`, a panel already there behind another tab comes forward too.
+            panels::Asked::Reveal(pane) => {
+                self.prefs_changed |= self.workspace.set_visible(pane, true, None, self.permissions()).is_ok();
+            }
             panels::Asked::PickType { file, terminal, default, add } => {
                 let purpose = if add { types::Purpose::Add { default } } else { types::Purpose::Set };
                 self.open_types(view, &file, &terminal, purpose);
@@ -1974,12 +1978,27 @@ impl Ide {
         self.values = Some(values::ValueList::new(function.to_owned(), file, kind, around, screen, seen, canvas));
     }
 
+    /// Why the window does not edit the function of `file` now, if it does not: its text does not parse, and nothing of
+    /// the window edits it (commands.md 9.1); or, for a command on what the canvas shows (`on_drawing`: the selection, the
+    /// function shown, the inspector), it no longer draws, and the drawing kept is not the file (ide.md 3).
+    fn diagram_locked(&self, view: &Published, file: &str, on_drawing: bool) -> Option<&'static str> {
+        if self.texts.get(file).is_some_and(text::Editing::locks_diagram) {
+            return Some(TEXT_LOCKED);
+        }
+        let kept = on_drawing
+            && view
+                .functions
+                .iter()
+                .filter(|listed| listed.file == file)
+                .any(|listed| view.window_of(&listed.function).is_some_and(|window| window.kept));
+        kept.then_some("This function does not draw now: its drawing is not the file, see Problems")
+    }
+
     /// An editing command on the file of `function`, one step: `params` with its `file`.
     fn send_edit(&mut self, host: &dyn Host, view: &Published, function: &str, id: &str, mut params: Value) {
         let Some(file) = file_of(view, function) else { return };
-        // Its text does not parse: nothing edits the function until it does (commands.md 9.1).
-        if self.texts.get(&file).is_some_and(text::Editing::locks_diagram) {
-            self.say("The text does not read: fix it in the view Text");
+        if let Some(why) = self.diagram_locked(view, &file, true) {
+            self.say(why);
             return;
         }
         if let Some(object) = params.as_object_mut() {
@@ -2204,14 +2223,15 @@ impl Ide {
                 | keys::CONTINUE_ON_ERROR
                 | keys::PARALLEL
                 | keys::INTO_WIRE
-                | keys::FIX_EVERY_NODE
                 | keys::MARK_FIXED
         ) || labcraft_engine::registry::command(&id)
             .is_some_and(|command| command.undoable && !command.window && !command.id.starts_with("history."));
-        let target =
-            params.get("file").and_then(Value::as_str).map(str::to_owned).or_else(|| shown.as_deref().and_then(|function| file_of(view, function)));
-        if edits && target.and_then(|file| self.texts.get(&file)).is_some_and(text::Editing::locks_diagram) {
-            self.say("The text does not read: fix it in the view Text");
+        // A command that names its file or the file it makes acts on the file; one that names none, on what is shown.
+        let named = params.get("file").or_else(|| params.get("path")).and_then(Value::as_str).map(str::to_owned);
+        let on_drawing = named.is_none();
+        let target = named.or_else(|| shown.as_deref().and_then(|function| file_of(view, function)));
+        if edits && let Some(why) = target.and_then(|file| self.diagram_locked(view, &file, on_drawing)) {
+            self.say(why);
             return;
         }
         match id.as_str() {
@@ -2680,6 +2700,54 @@ fn file_of(view: &Published, function: &str) -> Option<String> {
     view.functions.iter().find(|listed| listed.function == function).map(|listed| listed.file.clone())
 }
 
+/// The first error of a file in the report, which `Problems` lists in that order (after the error of a text typed that
+/// does not parse, which the file does not have).
+fn first_error<'a>(view: &'a Published, file: Option<&str>) -> Option<&'a labcraft_types::Diagnostic> {
+    let file = file?;
+    let diagnostics = view.report.as_ref().map_or(&[][..], |report| report.diagnostics());
+    diagnostics.iter().find(|diagnostic| diagnostic.file == file && diagnostic.severity() == labcraft_types::Severity::Error)
+}
+
+/// What the window says of a diagram whose text does not parse (commands.md 9.1).
+const TEXT_LOCKED: &str = "The text does not read: fix it in the view Text";
+
+/// The height of the band over a drawing kept.
+const BAND: f32 = 30.0;
+
+/// The band over the drawing kept of a function that no longer draws (ide.md 3), across the top of its canvas: tinted
+/// with the colour of errors, it names the first error of the file and ends with "Show in Problems". Whether that was
+/// clicked.
+fn kept_band(ui: &mut egui::Ui, canvas: egui::Rect, error: Option<&labcraft_types::Diagnostic>, theme: Theme) -> bool {
+    let band = egui::Rect::from_min_size(canvas.min, egui::vec2(canvas.width(), BAND));
+    let colour = ui.visuals().error_fg_color;
+    let painter = ui.painter_at(band);
+    painter.rect_filled(band, 0.0, theme.color("canvas.fill"));
+    painter.rect_filled(band, 0.0, colour.gamma_multiply(0.16));
+    painter.hline(band.x_range(), band.bottom() - 0.5, egui::Stroke::new(1.0, colour));
+    // A warning sign, painted: the fonts of the window may have no glyph for it.
+    let centre = egui::pos2(band.left() + 20.0, band.center().y);
+    let corners = vec![centre + egui::vec2(0.0, -7.0), centre + egui::vec2(8.0, 6.0), centre + egui::vec2(-8.0, 6.0)];
+    painter.add(egui::Shape::convex_polygon(corners, colour, egui::Stroke::NONE));
+    painter.text(centre + egui::vec2(0.0, 1.5), egui::Align2::CENTER_CENTER, "!", FontId::proportional(10.0), theme.color("canvas.fill"));
+    let inner = egui::Rect::from_min_max(egui::pos2(band.left() + 34.0, band.top()), egui::pos2(band.right() - 12.0, band.bottom()));
+    let mut clicked = false;
+    ui.scope_builder(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
+        let show = egui::Label::new(RichText::new("Show in Problems ›").color(colour).strong()).sense(egui::Sense::click());
+        clicked = ui.add(show).on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.label(RichText::new("Not drawn since the last change").color(colour).strong());
+            if let Some(error) = error {
+                // The place before the message, which the band may cut.
+                let at = error.span.map(|span| format!("{} {}:{}  ·  ", error.file, span.start.line, span.start.column)).unwrap_or_default();
+                let said = format!("{}  {at}{}", error.code().as_str(), error.message);
+                ui.add_space(12.0);
+                ui.add(egui::Label::new(RichText::new(said).monospace()).truncate());
+            }
+        });
+    });
+    clicked
+}
+
 /// The nodes named by their line that a command gave a label, from its result: each `@N` and its label (commands.md 9.3,
 /// `renamed`), in the result itself or in each command of a batch.
 fn renamed_nodes(result: &Value) -> Vec<(String, String)> {
@@ -3129,7 +3197,8 @@ impl Content<'_> {
         let view = self.view;
         let window = view.window_of(function);
         // Its text does not parse: the diagram shows the file, and cannot be edited (commands.md 9.1).
-        let locked = file_of(view, function).and_then(|file| self.ide.texts.get(&file)).is_some_and(text::Editing::locks_diagram);
+        let file = file_of(view, function);
+        let locked = file.as_ref().and_then(|file| self.ide.texts.get(file)).is_some_and(text::Editing::locks_diagram);
         let Some(drawn) = self.ide.drawn.get_mut(function) else {
             ui.centered_and_justified(|ui| ui.label(RichText::new("Click to show this function").weak()));
             return;
@@ -3140,12 +3209,18 @@ impl Content<'_> {
             return;
         }
         let shown = window.map(|window| canvas_shown(window, &self.ide.settings)).unwrap_or_default();
-        let response = if locked {
-            ui.label(RichText::new("The text does not read: fix it in the view Text").color(ui.visuals().warn_fg_color));
-            ui.add_enabled_ui(false, |ui| drawn.canvas.show(ui, theme, &shown)).inner
-        } else {
-            drawn.canvas.show(ui, theme, &shown)
-        };
+        // It no longer draws: its last drawing stays, dimmed and read only, under a band (ide.md 3).
+        let kept = window.is_some_and(|window| window.kept);
+        // Either way the drawing is not the file: no gesture edits it.
+        let read_only = locked || kept;
+        if locked {
+            ui.label(RichText::new(TEXT_LOCKED).color(ui.visuals().warn_fg_color));
+        }
+        let response =
+            if read_only { ui.add_enabled_ui(false, |ui| drawn.canvas.show(ui, theme, &shown)).inner } else { drawn.canvas.show(ui, theme, &shown) };
+        if kept && kept_band(ui, response.response.rect, first_error(view, file.as_deref()), theme) {
+            self.asked.push(panels::Asked::Reveal(Pane::Problems));
+        }
         if let Some(gesture) = response.gesture {
             self.ide.canvas_gesture = Some(engine_gesture(gesture));
         }
@@ -3154,7 +3229,11 @@ impl Content<'_> {
         } else if self.ide.canvas_focus.as_ref().is_some_and(|(focused, _)| focused == function) {
             self.ide.canvas_focus = None;
         }
-        if window.is_none() || locked {
+        // Where the lists of the canvas open, read only or not.
+        if view.main.function.as_deref() == Some(function) {
+            self.ide.canvas_rect = Some(response.response.rect);
+        }
+        if window.is_none() || read_only {
             return;
         }
         // A gesture asks for a selection: the session holds it (`view.select`), and the canvas shows what it holds.
@@ -3325,9 +3404,6 @@ impl Content<'_> {
                     None => drawn_canvas_refused(self.ide, function),
                 },
             }
-        }
-        if view.main.function.as_deref() == Some(function) {
-            self.ide.canvas_rect = Some(response.response.rect);
         }
         if let Some((structure, arm)) = response.tab {
             self.asked
