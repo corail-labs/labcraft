@@ -56,6 +56,7 @@ pub const FIX_EVERY_NODE: &str = "editor.fix_every_node";
 pub const MARK_FIXED: &str = "editor.mark_fixed";
 pub const REPLACE_WITH_ALT: &str = "editor.replace_with_alt";
 pub const ACCEPT_MISMATCH: &str = "editor.accept_mismatch";
+pub const DRAG_ON_WIRE: &str = "editor.drag_on_wire";
 pub const ROUTE_WITH_SHIFT_ALT: &str = "editor.route_with_shift_alt";
 pub const AUTOPATCH: &str = "editor.autopatch";
 pub const INTO_WIRE: &str = "editor.into_wire";
@@ -107,7 +108,14 @@ pub const KEYS: &[Key] = &[
         true,
     ),
     key(ACCEPT_MISMATCH, "Accept a wire of the wrong type", "The wire is written, and the check reports it.", Kind::Bool(false), true),
-    key(ROUTE_WITH_SHIFT_ALT, "Move a wire with Shift+Alt", "In place of Alt, for a desktop that keeps Alt+drag.", Kind::Bool(false), true),
+    key(
+        DRAG_ON_WIRE,
+        "Drag on a wire",
+        "Route: a drag moves its segment, and Alt with it starts a branch. Branch: the reverse.",
+        Kind::Choice(&["route", "branch"], "route"),
+        true,
+    ),
+    key(ROUTE_WITH_SHIFT_ALT, "Shift+Alt in place of Alt", "For a desktop that keeps Alt+drag.", Kind::Bool(false), true),
     key(AUTOPATCH, "Autopatch from the keyboard", "Quick insertion wires the new node to the selection.", Kind::Bool(true), true),
     key(INTO_WIRE, "Insert into a wire on a drop", "A node dropped on a wire goes into it.", Kind::Bool(true), true),
     key(RECORD_VALUES, "Record values", "A run records its values, its trace, for the wires.", Kind::Bool(false), false),
@@ -324,6 +332,7 @@ impl Stores {
             mark_fixed: on(MARK_FIXED),
             replace_with_alt: on(REPLACE_WITH_ALT),
             accept_mismatch: on(ACCEPT_MISMATCH),
+            branch_on_drag: named(DRAG_ON_WIRE) == "branch",
             route_with_shift_alt: on(ROUTE_WITH_SHIFT_ALT),
             autopatch: on(AUTOPATCH),
             into_wire: on(INTO_WIRE),
@@ -373,6 +382,8 @@ pub struct Values {
     pub mark_fixed: bool,
     pub replace_with_alt: bool,
     pub accept_mismatch: bool,
+    /// `editor.drag_on_wire` is `branch`: a plain drag on a wire starts a branch, and Alt with it moves its segment.
+    pub branch_on_drag: bool,
     pub route_with_shift_alt: bool,
     pub autopatch: bool,
     pub into_wire: bool,
@@ -667,6 +678,16 @@ mod tests {
             assert_eq!(key.refuses(&key.default_value()), None, "{}", key.id);
             assert_eq!(key.id.matches('.').count(), 1, "{}", key.id);
         }
+    }
+
+    /// `editor.drag_on_wire` on `branch` swaps the two drags on a wire (notation 2.6); `route` is the default.
+    #[test]
+    fn a_drag_on_a_wire_branches_only_on_branch() {
+        let mut stores = Stores::default();
+        assert!(!stores.values().branch_on_drag);
+        stores.project.insert(DRAG_ON_WIRE.to_owned(), json!("branch"));
+        assert!(stores.values().branch_on_drag);
+        assert!(find(DRAG_ON_WIRE).unwrap().refuses(&json!("both")).is_some());
     }
 
     #[test]

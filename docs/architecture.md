@@ -1968,7 +1968,8 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   (`diagram::wiring`), rings those that take it, snaps within 12 units, and paints it on the square route of a drag, or
   dashed in `mark.invalid` with the reason over one that refuses it. The settings "replace only with Alt" and "accept
   it" come from the host (`Shown`), and Alt is read at the drop: held when the drag starts, it moves a terminal of a
-  block (step 6). After the drop, the wire shows until the new drawing, or until the host says the command failed
+  block (step 6), and the Alt that starts a branch counts at its drop only once let go and pressed again
+  (`Canvas::alt_held`). After the drop, the wire shows until the new drawing, or until the host says the command failed
   (`Canvas::cancel_wire`), and the old wire that it replaced retracts. Enter on a node gives the focus to its terminals
   (`Canvas::port_focus`): the arrows go along a side and across, Enter on a wired one selects its wire, Escape goes
   back; Tab then goes through the terminals that take the wire, and Enter wires it. Each terminal of a node is an

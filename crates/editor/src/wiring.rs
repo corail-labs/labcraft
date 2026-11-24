@@ -160,8 +160,9 @@ impl Wiring {
         Some(Wiring { from, taken: Taken::Readers(readers), verdicts, at, over: None, state: State::Dragging, asked_at: None, branch: None })
     }
 
-    /// A plain drag on the wire of `group`, pressed at `at` within `reach` units of it (notation 2.5): a branch of its
-    /// value, from the nearest point of the grid of 8 on the wire. None for a value that no command wires from.
+    /// A drag on the wire of `group` that starts a branch (with the modifier, or plain on `branch`, notation 2.6),
+    /// pressed at `at` within `reach` units of it (notation 2.5): a branch of its value, from the nearest point of the
+    /// grid of 8 on the wire. None for a value that no command wires from.
     pub fn branch(drawing: &Drawing, group: usize, at: Pos2, reach: f32) -> Option<Wiring> {
         let wire = drawing.groups.get(group)?.wire.as_ref()?;
         let source = drawing.ports.iter().position(|port| !port.input && port.group == Some(group) && !port.name.is_empty())?;

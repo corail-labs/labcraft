@@ -995,7 +995,8 @@ saying so (decision of the owner, 2026-11-15).
 | `editor.mark_fixed` | boolean | `true` | no | A pin on each fixed node (visual notation 2.4) |
 | `editor.replace_with_alt` | boolean | `false` | yes | A wire dropped on an input that holds something replaces it only with Alt down (visual notation 2.4) |
 | `editor.accept_mismatch` | boolean | `false` | yes | A wire of the wrong type is written, and `check` gives `LC3001` (visual notation 2.4) |
-| `editor.route_with_shift_alt` | boolean | `false` | yes | Shift+Alt and a drag move a segment of a wire, in place of Alt (visual notation 2.6) |
+| `editor.drag_on_wire` | `route`, `branch` | `route` | yes | What a drag on a wire does: `route` moves its segment (`wire.route`), and Alt with it starts a branch; `branch` swaps the two (visual notation 2.6) |
+| `editor.route_with_shift_alt` | boolean | `false` | yes | Shift+Alt in place of Alt, for the drag on a wire with the modifier and on a terminal of a block (visual notation 2.6) |
 | `editor.autopatch` | boolean | `true` | yes | Autopatch from the keyboard (visual notation 2.6) |
 | `editor.into_wire` | boolean | `true` | yes | Inserting into a wire (visual notation 2.6) |
 | `run.record_values` | boolean | `false` | no | A run records its values, its trace, for the wires (ide.md 3) |

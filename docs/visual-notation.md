@@ -365,7 +365,8 @@ below.
   plain drag draws a wire, 2.6). The drop writes the line of the `terminals` section in the file of the function
   called, so every call to it changes, which a note says during the drag; it is one step of undo. Alt held when the
   drag starts moves the terminal; the setting "replace only with Alt" reads Alt when a wire is dropped, so the two
-  never meet. The free places
+  never meet. The Alt that starts a branch (below) is not read at its drop while it stays down: let go and pressed
+  again, it is. The free places
   light up while dragging. A function that the project does not hold (a library shipped with LabCraft or found with
   `--lib-path`) refuses the drop, and says why. "Reset the terminals of this block" removes the section. In the view
   `Block` of the function ([ide.md](ide.md) 3), a plain drag moves a terminal of its own block, and a drag of an edge
@@ -374,14 +375,20 @@ below.
   Alt".
 - **A wire of the wrong type** is refused by default, and the reason is shown where it is dropped. Setting: "accept
   it": the file then holds it, `check` gives `LC3001` and the wire is drawn broken (2.5).
-- **Moving a wire.** Alt and a drag on a segment moves it across, on the grid of 8, the segments on each side
-  following, and writes `wire a -> b via (…)`; a plain drag from a wire starts a branch instead. A segment that
-  leaves a terminal gets a jog 16 from it, so that the wire still leaves the terminal in its direction *(proposed)*.
-  A segment that several wires of the value share moves for all of them: the wire dragged gets the route, and each
-  other one that ran along the segment becomes its branch, its junction where it left it, in one step (decision of
-  the owner, 2026-11-17). Setting: "move a wire with Shift+Alt", for a desktop that keeps Alt and a drag to move
-  windows. "Arrange this wire" (its context menu, the inspector) removes its entry. The `via` points stay where they
-  are when a node moves (to confirm with use); a junction follows its trunk (2.5).
+- **Moving a wire.** A drag on a segment moves it across, on the grid of 8, the segments on each side following, and
+  writes `wire a -> b via (…)`; Alt and a drag on a wire start a branch instead (decision of the owner, 2026-11-22).
+  Setting: "drag on a wire", `route` by default; `branch` swaps the two, a plain drag starting the branch and Alt and a
+  drag moving the segment. A wire whose segment cannot move (the last vertical into a terminal on the top edge, a value
+  that no `wire` entry names) starts a branch instead (decision of the owner, 2026-11-24). The Alt that starts a branch,
+  held to the drop, changes neither the passage out of a loop (2.5) nor the replacement of an input ("replace only with
+  Alt"); let go and pressed again during the drag, it does (decision of the owner, 2026-11-24). A segment that leaves a
+  terminal gets a jog 16 from it, so that the wire still leaves the terminal in its direction *(proposed)*. A segment
+  that several wires of the value share moves for all of them: the wire dragged gets the route, and each other one that
+  ran along the segment becomes its branch, its junction where it left it, in one step (decision of the owner,
+  2026-11-17). Setting: "Shift+Alt in place of Alt", for a desktop that keeps Alt and a drag to move windows: it holds
+  for the drag with the modifier, whichever of the two it is. "Arrange this wire" (its context menu, the inspector)
+  removes its entry. The `via` points stay where they are when a node moves (to confirm with use); a junction follows
+  its trunk (2.5).
 - **A branch from a wire** is a wire from the same value: it starts at a junction where the wire was grabbed, and
   that junction follows the trunk. No syntax is added: the first `via` point of a branch that lies on a wire of the
   same value is its junction, a rule of the editor. Its tolerance, and what a junction does when an automatic trunk
@@ -474,7 +481,8 @@ list of diagnostics. The shape of a mark doubles its color (principle
   Elsewhere, a free node.
 - **A fixed node** (2.4): the pin (`pin` of Lucide) in `ink.muted`, 16 across, on the top-left corner of its body;
   its tooltip names the `node … at` entry it comes from. Its size is judged at the real scale, in the editor.
-- **A junction** (2.4): a plain drag that starts within 4 of a wire grabs it; the junction goes to the nearest point of
+- **A junction** (2.4): the drag that starts a branch (Alt and a drag, or a plain drag with the setting "drag on a
+  wire" on `branch`, 2.6) grabs a wire within 4 of it; the junction goes to the nearest point of
   the grid of 8 on that wire, drawn in `select.stroke` while the branch is drawn, then in the color of the wire. It
   follows its trunk: when the trunk moves, the junction keeps its distance from the start of its segment, cut to the
   length of the segment. If the trunk no longer has that segment (the route of an automatic trunk changed its bends),
@@ -526,8 +534,8 @@ in progress writes nothing (2.4).
 | Drag | an output | Draws a wire to an input (2.5): `wire.connect`. Released on the empty canvas, it opens quick insertion, filtered (below) |
 | Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
 | Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
-| Drag | a wire | Starts a branch at a junction (2.5) |
-| Alt+drag | a segment of a wire | `wire.route` (2.4). The modifier is a setting, Shift+Alt, for a desktop that keeps Alt+drag to move windows |
+| Drag | a segment of a wire | `wire.route` (2.4) |
+| Alt+drag | a wire | Starts a branch at a junction (2.5). The setting "drag on a wire" on `branch` swaps this row and the one above. The modifier is a setting, Shift+Alt, for a desktop that keeps Alt+drag to move windows |
 | Drag | the header or the left edge of a structure | `node.move`, as for a node |
 | Drag | the right edge, the bottom edge or the corner of the frame, or of a structure | `frame.resize`, with `inside` for a structure (2.4). Escape during the drag puts it back |
 | Drag | a terminal of the frame | `terminal.move`, at the drop, on the grid of 8 and at least 24 from the other terminals of its edge (2.4); a mark across the edge shows where it goes. Escape during the drag puts it back |
