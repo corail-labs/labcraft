@@ -109,6 +109,9 @@ impl ValueList {
         }
         self.chosen = self.chosen.min(count.saturating_sub(1));
         let mut clicked = None;
+        // The frame where the list opens still sees the click that opened it, on a menu item that may lie outside the
+        // list (#328): that click does not close it.
+        let first = !self.focused;
         let area =
             egui::Area::new(egui::Id::unique("labcraft-structure-value")).order(egui::Order::Foreground).fixed_pos(self.screen).show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -147,7 +150,7 @@ impl ValueList {
             return self.chosen_text(*row).map_or(Chosen::Cancelled, Chosen::Value);
         }
         let clicked_elsewhere = ctx.input(|input| input.pointer.any_click().then(|| input.pointer.interact_pos()).flatten());
-        if clicked_elsewhere.is_some_and(|at| !area.response.rect.contains(at)) {
+        if !first && clicked_elsewhere.is_some_and(|at| !area.response.rect.contains(at)) {
             return Chosen::Cancelled;
         }
         Chosen::Open
