@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The artifact configuration `msi` of the project `labcraft` on SignPath (architecture.md 8): what the step "Sign the
+     MSI" of the workflow `release` sends, the zip of `labcraft-<version>-windows-x64.msi`, whose name changes with each
+     version. This file is the reference; the configuration on SignPath is pasted from it, and changed here first. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <msi-file-set>
+      <include path="labcraft-*-windows-x64.msi" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </msi-file-set>
+  </zip-file>
+</artifact-configuration>
