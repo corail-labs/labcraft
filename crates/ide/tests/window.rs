@@ -627,6 +627,59 @@ fn text_of(harness: &Harness<'_, State>, path: &str) -> String {
     String::from_utf8(harness.state().host.memory.get(path).unwrap()).unwrap()
 }
 
+/// "Surround with ▸" of the context menu of a node, each kind in turn (notation 2.6, #328): the list of values stays open
+/// for the value typed, even when the item chosen lies outside it (`for` does here: without the fix of #328, its list
+/// closed in the frame it opened). The bodies written by hand from commands.md 9.6: the node
+/// in the first arm, which yields it under the name `a2` (N-14), the other arm a hole; a loop collects it, a `for` over a
+/// range names its clause `i`, a `loop` has `until ?`. The `layout` that follows is not read.
+#[test]
+fn surround_with_from_the_context_menu_makes_each_kind() {
+    use egui_kittest::kittest::NodeT as _;
+    let main =
+        "labcraft 1\n\nuse core\n\nfn main(x: f64, ok: bool, e: error = none) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n}\n";
+    let head = "labcraft 1\n\nuse core\n\nfn main(x: f64, ok: bool, e: error = none) -> (y: f64) {\n";
+    let inner = "            a2 = core.mul(x, 2.0)\n";
+    let cases = [
+        (
+            "match",
+            "ok",
+            format!("    a = match ok {{\n        true => {{\n{inner}            yield a2\n        }}\n        false => yield ?\n    }}\n"),
+        ),
+        ("handle", "e", format!("    a = handle e {{\n        ok => {{\n{inner}            yield a2\n        }}\n        _ => yield ?\n    }}\n")),
+        ("for", "0..3", "    a = for i in 0..3 {\n        a2 = core.mul(x, 2.0)\n        collect a2\n    }\n".to_owned()),
+        ("loop", "", "    a = loop {\n        a2 = core.mul(x, 2.0)\n        collect a2\n        until ?\n    }\n".to_owned()),
+    ];
+    for (kind, typed, body) in cases {
+        let mut harness = harness(fake_with(&[("/p/main.lcf", main)]));
+        harness.run_steps(4);
+        let (on_a, _) = canvas_element(&harness, "a, core.mul");
+        let button =
+            |pressed| egui::Event::PointerButton { pos: on_a, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
+        harness.input_mut().events.extend([egui::Event::PointerMoved(on_a), button(true)]);
+        harness.run_steps(1);
+        harness.input_mut().events.push(button(false));
+        harness.run_steps(3);
+        let submenu = harness.get_by_label("Surround with").rect().center();
+        harness.input_mut().events.push(egui::Event::PointerMoved(submenu));
+        harness.run_steps(4);
+        let item = harness
+            .query_all_by_label(kind)
+            .find(|node| node.accesskit_node().role() == egui::accesskit::Role::Button)
+            .unwrap_or_else(|| panic!("no item `{kind}` under Surround with"))
+            .rect()
+            .center();
+        click_at(&mut harness, item, egui::Modifiers::NONE);
+        if !typed.is_empty() {
+            shot(&mut harness, &format!("surround-{kind}"));
+            type_then_enter(&mut harness, typed);
+        }
+        let text = text_of(&harness, "/p/main.lcf");
+        let function = format!("{head}{body}    y = core.add(a, 1.0)\n}}\n");
+        let rest = text.strip_prefix(&function).unwrap_or_else(|| panic!("surround with {kind}:\n{text}"));
+        assert!(rest.is_empty() || rest.starts_with("\nlayout {"), "surround with {kind}:\n{text}");
+    }
+}
+
 /// A drag of the primary button from `from` to `to`, over a few frames.
 fn drag_from(harness: &mut Harness<'_, State>, from: egui::Pos2, to: egui::Pos2) {
     let button =
