@@ -143,6 +143,28 @@ fn a_match_on_an_enumeration_has_an_arm_per_variant_and_names_what_they_hold() {
 }
 
 #[test]
+fn a_match_on_an_enumeration_of_a_library_renames_a_value_named_after_it() {
+    // #317: the arms name the variants by their library, so the command adds `use visa`; the value `visa` takes a
+    // suffix (N-14). The line of the `match`, named by its label, comes before `visa2` (spec 5.2, by name).
+    let state = TypeKind::Enum {
+        library: Some("visa".to_owned()),
+        variants: vec![
+            VariantShape { path: "visa.State.Open".to_owned(), values: Vec::new() },
+            VariantShape { path: "visa.State.Closed".to_owned(), values: Vec::new() },
+        ],
+    };
+    let judge = typed(&[("r", state)]);
+    let before = "use core\n\nfn f(x: f64, r: visa.State) -> () {\n    visa = core.abs(x)\n    #beep: sound.beep()\n}\n";
+    let edited = gives_with(
+        &judge,
+        before,
+        with_selector(surround(StructureKind::Match, &["#beep"]), "r"),
+        "use core\nuse visa\n\nfn f(x: f64, r: visa.State) -> () {\n    #match_node: _ = match r {\n        visa.State.Open => {\n            #beep: sound.beep()\n        }\n        visa.State.Closed => {\n        }\n    }\n    visa2 = core.abs(x)\n}\n",
+    );
+    assert_eq!(renamed(&edited), [("visa".to_owned(), "visa2".to_owned())]);
+}
+
+#[test]
 fn a_selector_of_another_type_is_refused() {
     let judge = typed(&[("x", TypeKind::Other)]);
     let error = refused_with(&judge, CHAIN, with_selector(surround(StructureKind::Match, &["b"]), "x"), "wire.type_mismatch", "selector");

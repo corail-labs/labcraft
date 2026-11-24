@@ -69,8 +69,10 @@ pub(crate) fn node(
         Found::NextLine(_) | Found::NextBound { .. } => return Err(EditError::internal("a `next` refused above")),
     };
     // `add::node` refuses a call that names nothing, with the nearest names.
+    let imported = crate::imports::imported(&before);
     let mut edit = before;
     add::node(&mut edit, judge, call, at, name, &frame, edited)?;
+    let imports_a_library = crate::imports::imported(&edit) != imported;
     let Lookup::Found(callable) = judge.callable(path, call) else {
         return Err(EditError::internal(format!("`{call}` was found once and not again")));
     };
@@ -108,6 +110,10 @@ pub(crate) fn node(
             // A node folded into an output of the function bears its name now (notation 2.4): `names.node` says so.
             if let Some(renamed) = edited.renamed.iter().rev().find(|renamed| renamed.from == named) {
                 edited.names.insert("node", renamed.to.clone());
+            }
+            // The wires are judged with the names as the caller gave them; a value named after the library goes last.
+            if imports_a_library {
+                return crate::imports::follow_text(path, &text, &imported, limits, edited);
             }
             return Ok(text);
         }

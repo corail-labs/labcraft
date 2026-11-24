@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use labcraft_format::is_name;
-use labcraft_graph::{Arg, Function, LayoutKind, OrderRef, Target};
+use labcraft_graph::{Arg, ClauseKind, Function, LayoutKind, OrderRef, Pattern, Rhs, Statement, StatementKind, Target};
 use labcraft_types::Name;
 
 use crate::model::Edit;
@@ -29,9 +29,7 @@ pub(crate) fn taken(edit: &Edit) -> BTreeSet<String> {
     for (label, _) in scope::labels(function) {
         taken.insert(edit.text(label).to_owned());
     }
-    for library in &edit.file.uses {
-        taken.insert(edit.text(library.path.first).to_owned());
-    }
+    taken.extend(crate::imports::imported(edit));
     taken
 }
 
@@ -133,7 +131,7 @@ pub(crate) fn rename(edit: &mut Edit, value: &Value, to: Name) -> Result<(), Edi
     let after_readers: Vec<scope::Loc> = scope::all(&function).into_iter().filter(|reader| sees(&reader.body)).collect();
     let target_function: &mut Function = edit.body_function_mut()?;
     if let Some(statement) = scope::statement_mut(target_function, loc)
-        && let labcraft_graph::StatementKind::Binding { targets, .. } = &mut statement.kind
+        && let StatementKind::Binding { targets, .. } = &mut statement.kind
         && let Some(Target::Name(_, name)) = targets.get_mut(*target)
     {
         *name = to;
@@ -145,21 +143,106 @@ pub(crate) fn rename(edit: &mut Edit, value: &Value, to: Name) -> Result<(), Edi
     }
     for reader in after_readers {
         let Some(args) = scope::statement_mut(target_function, &reader).and_then(crate::places::args_mut) else { continue };
-        for arg in args.iter_mut() {
-            if let Arg::After { refs, .. } = arg {
-                for reference in refs.iter_mut() {
-                    if let OrderRef::Value(operand) = reference {
-                        rename_read(operand, from, to);
-                    }
-                }
-            }
-        }
+        rename_after(args, from, to);
     }
     let still_named = scope::values(edit.body_function()?).iter().any(|other| other.name == from);
     if !still_named {
         rename_in_layout(edit, from, to, false);
     }
     Ok(())
+}
+
+/// The `after:` of a call that wait for the value `from` wait for `to`.
+fn rename_after(args: &mut [Arg], from: Name, to: Name) {
+    for arg in args.iter_mut() {
+        if let Arg::After { refs, .. } = arg {
+            for reference in refs.iter_mut() {
+                if let OrderRef::Value(operand) = reference {
+                    rename_read(operand, from, to);
+                }
+            }
+        }
+    }
+}
+
+/// Renames every value of the function named `from`, wherever it is bound (a line, a pattern, an `in` clause, a carry
+/// and its `next` lines), with every reader of that name and the entries of `layout`, in one walk of the function. Only
+/// for a name that all its values give up for the same `to`: then no reader needs to know which value it sees, and
+/// what hid what still does (R-3). A path `from.x` is renamed as a read of the value, so a library must not bear the name
+/// in the function yet: `fragment.paste` renames before the fragment comes in. A read that reaches no value of the name
+/// (an error of `check`) is renamed too, and stays an error.
+pub(crate) fn rename_everywhere(edit: &mut Edit, from: Name, to: Name) -> Result<(), EditError> {
+    let function = edit.body_function_mut()?;
+    for loc in scope::all(function) {
+        let Some(statement) = scope::statement_mut(function, &loc) else { continue };
+        let read: Vec<crate::places::Slot> = slots(statement, &loc).into_iter().map(|(slot, _)| slot).collect();
+        for slot in read {
+            if let Some(operand) = crate::places::operand_mut(statement, slot) {
+                rename_read(operand, from, to);
+            }
+        }
+        if let Some(args) = crate::places::args_mut(statement) {
+            rename_after(args, from, to);
+        }
+        if let StatementKind::Binding { targets, .. } = &mut statement.kind {
+            for target in targets.iter_mut() {
+                if let Target::Name(_, name) = target
+                    && *name == from
+                {
+                    *name = to;
+                }
+            }
+        }
+        for sub in 0..scope::subs(statement).len() {
+            rename_head(statement, sub, from, to);
+        }
+    }
+    rename_in_layout(edit, from, to, false);
+    Ok(())
+}
+
+/// The name `from` that the head of the body `sub` of `statement` binds becomes `to`: in the patterns of an arm, or in the
+/// clauses of a loop and the `next` lines of its body.
+fn rename_head(statement: &mut Statement, sub: usize, from: Name, to: Name) {
+    let StatementKind::Binding { value, .. } = &mut statement.kind else { return };
+    let retarget = |name: &mut Name| {
+        if *name == from {
+            *name = to;
+        }
+    };
+    let (clauses, body) = match value {
+        Rhs::Match(branching) | Rhs::Handle(branching) => {
+            let Some(arm) = branching.arms.get_mut(sub) else { return };
+            for pattern in std::iter::once(&mut arm.pattern).chain(arm.others.iter_mut()) {
+                match pattern {
+                    Pattern::Variant { bindings, .. } => bindings.iter_mut().for_each(|binding| retarget(&mut binding.name)),
+                    Pattern::Wildcard { binding, .. } | Pattern::Category { binding, .. } | Pattern::Code { binding, .. } => {
+                        binding.iter_mut().for_each(|binding| retarget(&mut binding.name));
+                    }
+                    Pattern::Literal(_) | Pattern::Range { .. } | Pattern::Ok { .. } => {}
+                }
+            }
+            return;
+        }
+        Rhs::For(each) => (&mut each.clauses, &mut each.body),
+        Rhs::Loop(repeat) => (&mut repeat.clauses, &mut repeat.body),
+        Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => return,
+    };
+    for clause in clauses.iter_mut() {
+        match &mut clause.kind {
+            ClauseKind::In(each) => retarget(&mut each.name),
+            ClauseKind::Carry(carry) => retarget(&mut carry.name),
+        }
+    }
+    for line in &mut body.statements {
+        if let StatementKind::Binding { targets, .. } = &mut line.kind {
+            for target in targets.iter_mut() {
+                if let Target::Next(_, name) = target {
+                    retarget(name);
+                }
+            }
+        }
+    }
 }
 
 /// The entries of `layout` follow a rename (spec 11): the `node` line, and the `wire` lines that start or end there; of a

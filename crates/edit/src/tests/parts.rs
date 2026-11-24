@@ -201,6 +201,20 @@ fn a_carry_is_added_with_its_output() {
 }
 
 #[test]
+fn a_carry_of_a_type_of_a_library_renames_a_value_named_after_it_but_not_its_own_name() {
+    // #317: the type brings `use visa`, and the value `visa` takes a suffix (N-14, commands.md 9.2). The line of the loop
+    // is named `dmm`, its first output, so it comes before `visa2` (spec 5.2).
+    let before = "fn f(x: f64) -> () {\n    visa = x\n    #l: _ = loop {\n        until ?\n    }\n}\n";
+    gives(
+        before,
+        add_carry("dmm", None, Some("visa.session")),
+        "use visa\n\nfn f(x: f64) -> () {\n    #l: dmm = loop carry dmm: visa.session = ? {\n        until ?\n    }\n    visa2 = x\n}\n",
+    );
+    // A name that the caller gives is not renamed behind their back: it is refused, as `node.add` refuses it.
+    refused(LOOP, add_carry("visa", None, Some("visa.session")), "name.taken", "name");
+}
+
+#[test]
 fn a_carry_needs_a_type_a_new_name_and_a_loop_that_takes_it() {
     refused(LOOP, add_carry("acc", None, None), "params.invalid", "type");
     refused(LOOP, add_carry("x", Some("0"), None), "name.taken", "name");

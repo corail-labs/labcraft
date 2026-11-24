@@ -648,9 +648,9 @@ pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, f
             "a `next`, a `collect` or an `until` stands only in a loop body, so the body of a function holds none (R-6)",
         ));
     }
-    // A library that the paste may import takes its name too (R-1), as one already in the file does.
+    // A library that the paste may import takes its name too (R-1, `a` for `use a.b`), as one already in the file does.
     let mut taken = taken(edit);
-    taken.extend(fragment.uses.iter().map(|used| edit.text(used_as(used)).to_owned()));
+    taken.extend(fragment.uses.iter().map(|used| edit.text(used.path.first).to_owned()));
     let path = edit.path.clone();
     // The fragment is edited as the file of `edit`, in the names of the file, then the file comes back whatever happens.
     let own = std::mem::replace(&mut edit.file, fragment);
@@ -661,6 +661,17 @@ pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, f
     let (items, uses) = prepared?;
 
     let Decl::Function(pasted) = fragment.decl else { return Err(EditError::internal("the fragment lost its function")) };
+    // A value of the file named after a library that the paste imports takes a suffix (#317) before the fragment comes
+    // in: every `a.x` of the file reads that value then, while an `a.x` of the fragment names the library.
+    let before = crate::imports::imported(edit);
+    let imports: Vec<String> = uses.iter().map(|used| edit.text(used.path.first).to_owned()).filter(|library| !before.contains(library)).collect();
+    let brought: BTreeSet<String> = scope::values(&pasted)
+        .into_iter()
+        .map(|value| value.name)
+        .chain(scope::labels(&pasted).into_iter().map(|(label, _)| label))
+        .map(|name| edit.text(name).to_owned())
+        .collect();
+    crate::imports::rename_values(edit, &imports, None, &brought, edited)?;
     for used in uses {
         let same = |other: &Use| other.path.first == used.path.first && other.path.rest == used.path.rest;
         if !edit.file.uses.iter().any(same) {

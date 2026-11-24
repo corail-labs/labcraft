@@ -167,6 +167,84 @@ fn a_node_is_not_named_after_the_library_whose_use_the_command_adds() {
     gives("use array\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n", add("array.repeat"), after);
 }
 
+fn renamed_pairs(edited: &Edited) -> Vec<(&str, &str)> {
+    edited.renamed.iter().map(|renamed| (renamed.from.as_str(), renamed.to.as_str())).collect()
+}
+
+#[test]
+fn a_value_named_after_the_library_whose_use_the_command_adds_is_renamed() {
+    // #317: `use array` makes the name `array` a library's (R-1, `LC2014`). The new node is numbered first (`array2`,
+    // N-14), then the value takes the next free name, with its reader and its entries of `layout` (spec 11), and
+    // `renamed` says so (commands.md 9.2, 9.3). Lines in the order of spec 5.2: `array2`, `array3`, then `y`.
+    let before = "use core\n\nfn f(x: f64) -> (y: f64) {\n    array = core.abs(x)\n    y = array\n}\n\nlayout {\n    node array at (40, 80)\n    wire array -> y via (120, 80)\n}\n";
+    let edited = gives(
+        before,
+        add("array.repeat"),
+        "use array\nuse core\n\nfn f(x: f64) -> (y: f64) {\n    array2, _ = array.repeat()\n    array3 = core.abs(x)\n    y = array3\n}\n\nlayout {\n    node array3 at (40, 80)\n    wire array3 -> y via (120, 80)\n}\n",
+    );
+    assert_eq!(edited.names.get("node").map(String::as_str), Some("array2"));
+    assert_eq!(renamed_pairs(&edited), [("array", "array3")]);
+    // A file that imported the library already is not the command's doing: nothing more is renamed.
+    let edited = gives(
+        "use array\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n",
+        add("array.repeat"),
+        "use array\n\nfn f(x: f64) -> (y: f64) {\n    array2, _ = array.repeat()\n    y = x\n}\n",
+    );
+    assert!(edited.renamed.is_empty());
+}
+
+#[test]
+fn a_carry_and_the_outer_value_that_it_hides_take_the_same_new_name() {
+    // The outer `visa` and the carry `visa` that hides it in the loop (R-3) both become `visa2`: the initial value still
+    // reads the outer one, the `next` line and the reader in the body the carry. `visa2` is ready before `total`, which
+    // reads it (spec 5.2).
+    let before = "use core\n\nfn f(x: f64, xs: [f64]) -> (y: f64) {\n    visa = core.abs(x)\n    total = for item in xs, carry visa = visa {\n        next visa = core.add(visa, item)\n    }\n    y = total\n}\n";
+    let edited = gives(
+        before,
+        add("visa.open"),
+        "use core\nuse visa\n\nfn f(x: f64, xs: [f64]) -> (y: f64) {\n    session, _ = visa.open()\n    visa2 = core.abs(x)\n    total = for item in xs, carry visa2 = visa2 {\n        next visa2 = core.add(visa2, item)\n    }\n    y = total\n}\n",
+    );
+    assert_eq!(renamed_pairs(&edited), [("visa", "visa2")]);
+}
+
+#[test]
+fn an_in_clause_and_a_pattern_named_after_the_library_are_renamed() {
+    gives(
+        "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    y = for visa in xs {\n        a = core.abs(visa)\n        collect a\n    }\n}\n",
+        add("visa.open"),
+        "use core\nuse visa\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    session, _ = visa.open()\n    y = for visa2 in xs {\n        a = core.abs(visa2)\n        collect a\n    }\n}\n",
+    );
+    gives(
+        "fn f(r: Reading) -> (y: f64) {\n    y = match r {\n        Reading.Value(visa) => yield visa\n        Reading.Missing => yield 0.0\n    }\n}\n",
+        add("visa.open"),
+        "use visa\n\nfn f(r: Reading) -> (y: f64) {\n    session, _ = visa.open()\n    y = match r {\n        Reading.Value(visa2) => yield visa2\n        Reading.Missing => yield 0.0\n    }\n}\n",
+    );
+}
+
+#[test]
+fn an_input_or_an_output_named_after_the_library_refuses_the_command() {
+    // Renaming a terminal would change the callers: the command writes nothing, and `signature.rename` comes first
+    // (decision of the owner, 2026-11-23).
+    let error = refused("fn f(visa: f64) -> (y: f64) {\n    y = visa\n}\n", add("visa.open"), "name.taken");
+    assert!(error.message.contains("an input") && error.message.contains("signature.rename"), "{}", error.message);
+    let error = refused("fn f(x: f64) -> (visa: f64) {\n    visa = x\n}\n", add("visa.open"), "name.taken");
+    assert!(error.message.contains("an output"), "{}", error.message);
+}
+
+#[test]
+fn a_node_into_a_wire_renames_the_value_named_after_its_library_last() {
+    // The wire is judged as the caller names it, `core -> b.a`; then the value `core` takes the next free name, once the
+    // node is in. Lines in the order of their wires (spec 5.2).
+    let before = "fn f(x: f64) -> (y: f64) {\n    core = g(x)\n    b = g(core)\n    y = b\n}\n";
+    let edited = gives(
+        before,
+        into("core.abs", "core -> b.a"),
+        "use core\n\nfn f(x: f64) -> (y: f64) {\n    core2 = g(x)\n    abs = core.abs(core2)\n    b = g(abs)\n    y = b\n}\n",
+    );
+    assert_eq!(edited.names.get("node").map(String::as_str), Some("abs"));
+    assert_eq!(renamed_pairs(&edited), [("core", "core2")]);
+}
+
 #[test]
 fn a_node_names_its_first_output_and_leaves_the_others() {
     gives(EMPTY, add("visa.open"), "use visa\n\nfn f(x: f64) -> (y: f64) {\n    session, _ = visa.open()\n    y = x\n}\n");
