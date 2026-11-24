@@ -82,6 +82,13 @@ options of mcp:
   --project DIR          the root of the project, the current folder by default; not the home folder,
                          a folder above it or the root of a drive
   --lib-path DIR         as for check
+  --allow-hardware ENDPOINT
+                         a real endpoint the runs of the agent may reach: tcp:HOST:PORT, udp:HOST:PORT,
+                         serial:PORT, or a VISA name (TCPIP0::HOST::PORT::SOCKET, ASRL3::INSTR); exact,
+                         no wildcard; can be given several times. Without it, an open gets io.not_allowed
+  --allow-path DIR       a folder outside the project the runs of the agent may read and write, with
+                         what is under it; can be given several times
+                         (both are ignored when the server attaches to a window, which asks instead)
   --json is not taken: stdout is MCP's
 
 options of mcp setup:

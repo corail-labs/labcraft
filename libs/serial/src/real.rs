@@ -13,7 +13,9 @@ use labcraft_runtime::stream::real::{Buffered, Stop, Wire, code, locked};
 use labcraft_runtime::stream::{Failure, Need, Taken};
 use serial2::{CharSize, FlowControl, SerialPort};
 
-use crate::endpoint::{PORT_BUSY, PORT_NOT_FOUND, com_number, port_of};
+use labcraft_runtime::io::endpoint::{com_number, serial_port};
+
+use crate::endpoint::{PORT_BUSY, PORT_NOT_FOUND};
 use crate::settings::{Flow, Parity, Settings, StopBits};
 
 /// What a read that only takes what the system holds already waits for it: the shortest timeout `serial2` takes on Windows.
@@ -54,7 +56,7 @@ pub(crate) fn list() -> Result<Vec<String>, Failure> {
         .iter()
         .filter_map(|path| path.to_str())
         .filter(|name| !cfg!(target_os = "macos") || name.starts_with("/dev/cu."))
-        .filter_map(port_of)
+        .filter_map(serial_port)
         .collect();
     ports.sort();
     ports.dedup();

@@ -518,7 +518,7 @@ fn agent(allowed: Allowed) -> Context {
 #[test]
 fn an_agent_reaches_what_the_human_allows() {
     // io.md 4: without the right, `io.not_allowed`, code 0, naming the endpoint and `--allow-hardware`.
-    let mut driver = Driver::with(None, Mode::RealTime, agent(Allowed::default()));
+    let mut driver = Driver::with(None, Mode::RealTime, agent(Allowed { server: true, ..Allowed::default() }));
     let (category, code, message) = driver.connect("10.0.0.5", 502, MS).unwrap_err();
     assert_eq!((category.as_str(), code), ("io.not_allowed", 0));
     assert!(message.contains("--allow-hardware tcp:10.0.0.5:502"), "{message}");

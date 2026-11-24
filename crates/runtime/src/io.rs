@@ -9,6 +9,8 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use crate::native::{Job, Mode, NativeOutcome};
 
+pub mod endpoint;
+
 /// Nothing came, or could be sent, within the timeout (since M0).
 pub const TIMEOUT: &str = "io.timeout";
 /// The run has no right to this endpoint or this path (io.md 4).
@@ -98,11 +100,19 @@ pub struct Allowed {
     pub endpoints: BTreeSet<String>,
     pub paths: Vec<PathBuf>,
     pub consent: Option<Arc<dyn Consent>>,
+    /// Given by a headless `labcraft-cli mcp`, whose options the message of `io.not_allowed` names. Otherwise, with no
+    /// question, the agent is attached to a window that does not ask yet (issue #239), and reaches nothing.
+    pub server: bool,
 }
 
 impl std::fmt::Debug for Allowed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Allowed").field("endpoints", &self.endpoints).field("paths", &self.paths).field("asks", &self.consent.is_some()).finish()
+        f.debug_struct("Allowed")
+            .field("endpoints", &self.endpoints)
+            .field("paths", &self.paths)
+            .field("asks", &self.consent.is_some())
+            .field("server", &self.server)
+            .finish()
     }
 }
 
@@ -202,10 +212,15 @@ impl Rights {
     }
 
     fn not_allowed(&self, reach: &Reach) -> NativeOutcome {
-        let how = match (reach, self.0.allowed.consent.is_some()) {
-            (_, true) => "it was not allowed in the window".to_owned(),
-            (Reach::Endpoint { endpoint, .. }, false) => format!("the server allows it with `--allow-hardware {endpoint}`"),
-            (Reach::Path(_), false) => "the server allows a folder with `--allow-path DIR`".to_owned(),
+        let allowed = &self.0.allowed;
+        let how = match (reach, allowed.consent.is_some(), allowed.server) {
+            (_, true, _) => "it was not allowed in the window".to_owned(),
+            (Reach::Endpoint { endpoint, .. }, false, true) => format!("the server allows it with `--allow-hardware {endpoint}`"),
+            (Reach::Path(_), false, true) => "the server allows a folder with `--allow-path DIR`".to_owned(),
+            // Decision of the owner, 2026-11-24, until the window asks.
+            (_, false, false) => {
+                "an agent attached to the window of LabCraft reaches no real hardware and no folder outside the project until the window asks (issue #239)".to_owned()
+            }
         };
         NativeOutcome::Fail { category: NOT_ALLOWED, code: 0, message: format!("the run has no right to reach {}: {how}", reach.shown()) }
     }

@@ -234,10 +234,16 @@ fn the_tools_are_the_direct_commands_enabled_without_the_viewer() {
     for name in ["file_write", "file_rename", "file_delete", "file_format", "node_delete", "commands_batch"] {
         assert_eq!(hints(name), [false, false, false, false], "{name}");
     }
-    assert_eq!(hints("run_start"), [false, false, false, true]);
+    // It can reach real hardware, and what a run writes with `file` is no step of the history (mcp.md 2).
+    assert_eq!(hints("run_start"), [false, true, false, true]);
     assert_eq!(hints("run_abort"), [false, false, false, false]);
-    for name in names.iter().filter(|name| **name != "run_start") {
-        assert!(!hints(name)[3], "{name}: only `run_start` reaches instruments");
+    // It runs any command, `run.start` among them (commands.md 9).
+    assert!(hints("commands_execute")[3]);
+    for name in names.iter().filter(|name| !["run_start", "commands_execute"].contains(*name)) {
+        assert!(!hints(name)[3], "{name}: only `run_start` and `commands_execute` reach real hardware");
+        // No tool grants a right (mcp.md 6): none names one, nor takes it as a parameter.
+        let listed = tool(name).to_string();
+        assert!(!listed.contains("allow_hardware") && !listed.contains("allow_path"), "{name}: {listed}");
     }
     let write = tool("file_write");
     assert_eq!(write["inputSchema"]["type"], "object");

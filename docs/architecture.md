@@ -836,7 +836,8 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   and Run in the IDE, start runs of the human; a run that `run.start` starts for an MCP client is the agent's, with what
   the app gave `engine::Session::allow_agents` (`io::Allowed`: the endpoints of `--allow-hardware`, the folders of
   `--allow-path`, and the `Consent` of the window that asks the rest), nothing until it gives it. `Context` is in
-  `runtime::io`, beside what it holds.
+  `runtime::io`, beside what it holds, and `runtime::io::endpoint` reduces a name to its endpoint (io.md 2), the same
+  for `net`, `serial`, `visa` and `--allow-hardware`.
 - **`runtime::io`** is what every transport shares. Its categories (io.md 8), which a manifest declares as any other
   (spec 7.1); `io.not_allowed`, `io.needs_real_time` and `io.unsupported` with code 0. `io::open_real` applies the
   table of io.md 3 to a real name, once the library has read the name and knows it has the transport: with a file,
@@ -1895,7 +1896,7 @@ fuzzing looks for (12.10).
   `labcraft-cli run` writes no line, since a run whose trace goes to `--trace FILE` writes nothing under the root
   (commands.md 8), and nor do the commands that the MCP server answers outside its queue (`run.status`,
   `run.set_element`, `run.abort`), which never reach the session. A command that can change something is one that
-  makes a step or has an effect (commands.md 1: files, instruments, a run), and `commands.execute` is judged by the
+  makes a step or has an effect (commands.md 1: files, hardware, a run), and `commands.execute` is judged by the
   command it runs; a read (`file.read`, `functions.list`, `history.list`, `view.*`) is no line, so that what a window reads
   to draw itself never fills the journal (decision of the owner, 2026-11-16).
 - **The recovery folder** of the `Text` panel is `.labcraft/recovery/`: a text that does not parse is kept there under

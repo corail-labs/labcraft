@@ -40,16 +40,23 @@ pub(crate) fn listed(tool: &Tool) -> Json {
             "readOnlyHint": command.effects.is_empty(),
             "destructiveHint": destructive(command),
             "idempotentHint": false,
-            "openWorldHint": command.effects.contains(&Effect::Instruments),
+            "openWorldHint": open_world(command),
         },
     })
 }
 
-/// A command whose effect the history cannot undo (architecture 12.8): one that writes files without making a step. From M1
-/// every command that writes a file makes one, so none is destructive; `settings.set` writes outside the history, and is
-/// not destructive either.
+/// A command that can reach real hardware: one of the effect `hardware`, and `commands.execute`, whose effects are those of
+/// the command it runs (commands.md 9), `run.start` among them (decision of the owner, 2026-11-24).
+fn open_world(command: &Command) -> bool {
+    let reaches = |command: &Command| command.effects.contains(&Effect::Hardware);
+    reaches(command) || (command.id == "commands.execute" && registry::commands().iter().any(reaches))
+}
+
+/// A command whose effect the history cannot undo (architecture 12.8): one that writes files without making a step, or one
+/// that can reach real hardware, since what a run writes with `file` is no step either (mcp.md 2). From M1 every command
+/// that writes a file makes one; `settings.set` writes outside the history, and is not destructive.
 fn destructive(command: &Command) -> bool {
-    command.effects.contains(&Effect::Files) && !command.undoable && command.id != "settings.set"
+    command.effects.contains(&Effect::Hardware) || (command.effects.contains(&Effect::Files) && !command.undoable && command.id != "settings.set")
 }
 
 /// The result of `tools/call`: the object of the command in `structuredContent`, and the same JSON as text in

@@ -3,7 +3,7 @@
 //! any other name, a path such as `/dev/ttyUSB0`, is compared exactly. The name a program gives and the name a simulation
 //! file gives reduce to the same text, so that they compare.
 
-use labcraft_runtime::io::Reach;
+use labcraft_runtime::io::{Reach, endpoint};
 use labcraft_runtime::native::NativeOutcome;
 pub(crate) use labcraft_runtime::stream::shown;
 
@@ -37,31 +37,11 @@ impl Endpoint {
     }
 }
 
-/// `COM<n>`, `n` a number from 1 written without zeros in front, in any case: its number, written in decimal.
-pub(crate) fn com_number(name: &str) -> Option<&str> {
-    let prefix = name.get(..3)?;
-    let digits = name.get(3..)?;
-    let leading = digits.bytes().next()?;
-    (prefix.eq_ignore_ascii_case("com") && (b'1'..=b'9').contains(&leading) && digits.bytes().all(|byte| byte.is_ascii_digit())).then_some(digits)
-}
-
-/// A port as an endpoint writes it (io.md 2): `COM<n>` upper case, any other name as it is. A name is not empty and holds no
-/// control character (the smallest rule that io.md 2 leaves: a name it compares exactly, with no character that no system
-/// takes in a port name); any other text is no name.
-pub(crate) fn port_of(name: &str) -> Option<String> {
-    if name.is_empty() || name.chars().any(char::is_control) {
-        return None;
-    }
-    Some(match com_number(name) {
-        Some(number) => format!("COM{number}"),
-        None => name.to_owned(),
-    })
-}
-
 /// The endpoint of `serial.open(port)`: a text that is no name is `serial.port_not_found` at once, code 0, before the
-/// simulation file and any question (io.md 3).
+/// simulation file and any question (io.md 3). The name is written as io.md 2 says (`endpoint::serial_port`), shared with
+/// `--allow-hardware` and `visa`.
 pub(crate) fn of_call(name: &str) -> Result<Endpoint, NativeOutcome> {
-    let Some(port) = port_of(name) else {
+    let Some(port) = endpoint::serial_port(name) else {
         let message = if name.is_empty() {
             "an empty name names no port".to_owned()
         } else {
@@ -75,6 +55,5 @@ pub(crate) fn of_call(name: &str) -> Result<Endpoint, NativeOutcome> {
 /// The endpoint a simulation file names (`endpoint = "serial:com3"`), as a program reaches it (`serial:COM3`); `None` when it
 /// is not `serial:PORT`.
 pub(crate) fn of_file(text: &str) -> Option<(String, ())> {
-    let port = port_of(text.strip_prefix("serial:")?)?;
-    Some((format!("serial:{port}"), ()))
+    Some((endpoint::serial(text)?, ()))
 }

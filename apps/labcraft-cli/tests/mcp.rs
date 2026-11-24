@@ -227,6 +227,53 @@ fn a_request_of_100_mb_is_refused_unread_and_the_server_goes_on() {
     assert!(client.end().success());
 }
 
+/// The program of the tests of consent: it opens a TCP connection, then closes it.
+const REACH: &str = "labcraft 1\n\nuse net\n\n/// Opens a connection and closes it.\nfn reach(host: string, port: u16) -> (err: error) {\n    c, e1 = net.connect(host, port)\n    err = net.close(c, err: e1)\n}\n";
+
+/// A run of the agent reaches a real endpoint only with `--allow-hardware` (io.md 4; issue #232), given as an endpoint or
+/// as a VISA name that reduces to it; a name is never resolved, so `localhost` does not allow `127.0.0.1`. Without the right
+/// the open gets `io.not_allowed`, code 0, on its wire, whose message names the option; `labcraft-cli run` of the same
+/// program, a run of the human, reaches it. The endpoint is a TCP server on `127.0.0.1` that the test starts (io.md 7).
+#[test]
+fn a_run_of_the_agent_reaches_a_real_endpoint_only_with_allow_hardware() {
+    let scratch = Scratch::new("allow");
+    std::fs::write(scratch.0.join("reach.lcf"), REACH).unwrap();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            drop(stream);
+        }
+    });
+    let endpoint = format!("tcp:127.0.0.1:{port}");
+    let reach = |args: &[&str]| {
+        let mut client = Client::start(&scratch.0, args);
+        client.request("initialize", json!({ "protocolVersion": "2025-11-25" }));
+        let report = client.call("run_start", json!({ "function": "reach", "mode": "real_time", "args": { "host": "127.0.0.1", "port": port } }));
+        assert!(client.end().success());
+        // An error on a wire, not a refused run: the run ends, its status that of its `err` (spec 8.2).
+        let err = output(&report, "err");
+        assert_eq!(report["status"], if err.is_null() { "ok" } else { "error" }, "{args:?}: {report}");
+        err
+    };
+    let refused = reach(&[]);
+    assert_eq!((refused["category"].as_str(), refused["code"].as_i64()), (Some("io.not_allowed"), Some(0)), "{refused}");
+    assert!(refused["message"].as_str().unwrap().contains(&format!("--allow-hardware {endpoint}")), "{refused}");
+    let by_name = reach(&["--allow-hardware", &format!("tcp:LOCALHOST:{port}")]);
+    assert_eq!(by_name["category"], "io.not_allowed", "a name is never resolved: {by_name}");
+    assert_eq!(reach(&["--allow-hardware", &endpoint]), Value::Null);
+    assert_eq!(reach(&["--allow-hardware", &format!("TCPIP0::127.0.0.1::0{port}::SOCKET")]), Value::Null, "the same right");
+    assert_eq!(reach(&["--allow-hardware", "serial:COM3", "--allow-hardware", &endpoint]), Value::Null, "repeated");
+
+    let host = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))
+        .current_dir(&scratch.0)
+        .args(["run", "--json", "--no-trace", "--real-time", "--arg", "host=127.0.0.1", "--arg", &format!("port={port}"), ".", "reach"])
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&host.stdout).unwrap();
+    assert_eq!(output(&report, "err"), Value::Null, "the human has every right: {report}");
+}
+
 #[test]
 fn wrong_usage_is_exit_2_with_nothing_on_stdout() {
     let scratch = Scratch::new("usage");
@@ -237,6 +284,7 @@ fn wrong_usage_is_exit_2_with_nothing_on_stdout() {
     let home = std::env::home_dir().unwrap();
     let home = home.to_str().unwrap();
     let root = if cfg!(windows) { "C:\\" } else { "/" };
+    std::fs::write(scratch.0.join("a-file.txt"), "").unwrap();
     for args in [
         vec!["mcp", "--json"],
         vec!["mcp", "somewhere"],
@@ -245,6 +293,22 @@ fn wrong_usage_is_exit_2_with_nothing_on_stdout() {
         vec!["mcp", "--project", home],
         vec!["mcp", "--project", root],
         vec!["mcp", "--max-nesting", "5000"],
+        // io.md 2 and 4 (issue #232): neither an endpoint nor a VISA name that reduces to one, a wildcard, no value; the
+        // other forms are in the tests of `labcraft_runtime::io::endpoint`.
+        vec!["mcp", "--allow-hardware", "banana"],
+        vec!["mcp", "--allow-hardware", "ASRL0"],
+        vec!["mcp", "--allow-hardware", "tcp:10.0.0.*:502"],
+        vec!["mcp", "--allow-hardware"],
+        // A serial name that would allow no port (decision of the owner, 2026-11-24).
+        vec!["mcp", "--allow-hardware", "serial:COM*"],
+        vec!["mcp", "--allow-hardware", "serial:/dev/ttyUSB?"],
+        vec!["mcp", "--allow-hardware", "serial:COM3 "],
+        // A folder that does not exist, a file, and the folders too wide for a project (decisions of the owner, 2026-11-24).
+        vec!["mcp", "--allow-path", "missing-folder"],
+        vec!["mcp", "--allow-path", "a-file.txt"],
+        vec!["mcp", "--allow-path", home],
+        vec!["mcp", "--allow-path", root],
+        vec!["mcp", "--allow-path"],
     ] {
         let output = cli(&args);
         assert_eq!(output.status.code(), Some(2), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
@@ -253,8 +317,17 @@ fn wrong_usage_is_exit_2_with_nothing_on_stdout() {
     }
     let wide = cli(&["mcp", "--project", home]);
     assert!(String::from_utf8_lossy(&wide.stderr).contains("is the home folder"), "{}", String::from_utf8_lossy(&wide.stderr));
+    let file = cli(&["mcp", "--allow-path", "a-file.txt"]);
+    assert!(String::from_utf8_lossy(&file.stderr).contains("--allow-path takes a folder"), "{}", String::from_utf8_lossy(&file.stderr));
+    let wide = cli(&["mcp", "--allow-path", root]);
+    assert!(String::from_utf8_lossy(&wide.stderr).contains("is the root of a drive"), "{}", String::from_utf8_lossy(&wide.stderr));
     // An empty stdin: the server ends at once, having said nothing.
     let quiet = cli(&["mcp"]);
     assert_eq!(quiet.status.code(), Some(0), "{}", String::from_utf8_lossy(&quiet.stderr));
     assert!(quiet.stdout.is_empty());
+    // Rights that parse, and a folder outside the project that exists: the server starts.
+    let outside = Scratch::new("usage-outside");
+    let allowed = cli(&["mcp", "--allow-hardware", "ASRL3::INSTR", "--allow-path", outside.0.to_str().unwrap(), "--allow-path", "."]);
+    assert_eq!(allowed.status.code(), Some(0), "{}", String::from_utf8_lossy(&allowed.stderr));
+    assert!(allowed.stderr.is_empty(), "{}", String::from_utf8_lossy(&allowed.stderr));
 }

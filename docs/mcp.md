@@ -36,7 +36,8 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   would otherwise reach every program under it. A folder inside it is named with `--project`.
 - **The options** are `--lib-path` and the limits of cli.md, section 1, applied to every command of the
   session, and, from 0.5.0, `--allow-hardware` and `--allow-path`, the real endpoints and the folders outside the
-  project that the runs of the agent may reach (section 6). Not `--deny-warnings`: `library_check` and `run_start` take `deny_warnings` on each call.
+  project that the runs of the agent may reach (section 6); a relative `--allow-path` is resolved against the current
+  folder, as `--project` is, and one that does not read is wrong usage whether the server attaches or not. Not `--deny-warnings`: `library_check` and `run_start` take `deny_warnings` on each call.
 - **Headless in M0b.** The session lives in the process. It checks the root as it starts and keeps the
   result, so that a tool that checks answers in the time of the libraries it touched
   ([commands.md](commands.md), section 6.2). From M1, when a window of the IDE shows the
@@ -54,7 +55,9 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   project, and goes when the window closes. `mcp` reads the file of its project and connects; each side then proves
   that it holds the token, which never goes on the connection (each sends a nonce, and the other the SHA-256 of its
   side, that nonce and the token). Then `mcp` relays stdin and stdout to the window, whose server runs the calls on the
-  session of the window: `--lib-path` and the limits are then those of the window. A file whose port takes no
+  session of the window: `--lib-path` and the limits are then those of the window, and `--allow-hardware` and
+  `--allow-path` are not used, since the window asks ([io.md](io.md) 4); the server says so on stderr (decision of the
+  owner, 2026-11-24). A file whose port takes no
   connection is left over from a window that did not close, and the server starts headless. What takes the connection
   and refuses it, or does not prove it holds the token, stops the server (exit 2, the reason and the file on stderr), as
   does a window whose switch of AI is off ([ide.md](ide.md) 8): it would otherwise edit the project of a window from a
@@ -73,7 +76,8 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
 - **Annotations** follow `effects`, and all four are given, since MCP takes a missing `destructiveHint`
   or `openWorldHint` as true: a command with no effect is `readOnlyHint`; `run.start` is `openWorldHint`, since it
   reaches instruments (its effect `hardware`, io.md 4), and from 0.5.0 `destructiveHint`, since what a run writes with
-  `file` is no step of the history; every other hint is false. In M0b, `file.write`, `file.rename`, `file.delete` and `file.format`
+  `file` is no step of the history; `commands_execute` is `openWorldHint` too, since its effects are those of the
+  command it runs, `run.start` among them (decision of the owner, 2026-11-24); every other hint is false. In M0b, `file.write`, `file.rename`, `file.delete` and `file.format`
   were `destructiveHint`, since they could replace or remove a file; from M1 every command that writes a file makes a
   step of the history, which undo reverses, and `destructiveHint` is kept for a command whose effect the history cannot
   undo (decision of the owner, 2026-11-15; [architecture.md](architecture.md), 12.8).

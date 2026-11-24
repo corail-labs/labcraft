@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Effect {
     Files,
-    Instruments,
+    Hardware,
     Run,
 }
 
@@ -19,7 +19,7 @@ impl Effect {
     pub fn as_str(self) -> &'static str {
         match self {
             Effect::Files => "files",
-            Effect::Instruments => "instruments",
+            Effect::Hardware => "hardware",
             Effect::Run => "run",
         }
     }
@@ -452,7 +452,7 @@ fn catalog() -> Vec<Command> {
                 "run.busy",
                 "internal",
             ],
-            effects: &[Effect::Instruments, Effect::Run],
+            effects: &[Effect::Hardware, Effect::Run],
             long: true,
             planned: None,
             undoable: false,

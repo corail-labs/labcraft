@@ -108,10 +108,16 @@ fn window(channel: &Path, root: &Path) -> (attach::Published, Arc<AtomicUsize>, 
 /// `labcraft-cli mcp` in `project`, its channel in `channel`, given `lines` on stdin: its exit code, what it wrote on
 /// stdout, as messages, and on stderr.
 fn mcp(project: &Path, channel: &Path, lines: &[Value]) -> (Option<i32>, Vec<Value>, String) {
+    mcp_with(project, channel, &[], lines)
+}
+
+/// As [`mcp`], with the options `args`.
+fn mcp_with(project: &Path, channel: &Path, args: &[&str], lines: &[Value]) -> (Option<i32>, Vec<Value>, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))
         .env(attach::FOLDER_VARIABLE, channel)
         .current_dir(project)
         .arg("mcp")
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -164,6 +170,20 @@ fn mcp_attaches_to_the_window_of_its_project_and_relays_both_ways() {
     assert_eq!(messages[0]["result"]["serverInfo"]["version"], "window", "{messages:?}");
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(messages[2]["result"]["structuredContent"]["text"], "labcraft 1\n\nfn f() -> () {}\n", "{messages:?}");
+    drop(published);
+}
+
+/// Attached, the window asks for real hardware (io.md 4): the rights given on the command line are not used, and the
+/// server says so on stderr (decision of the owner, 2026-11-24).
+#[test]
+fn rights_given_to_a_server_that_attaches_are_not_used_and_it_says_so() {
+    let scratch = Scratch::new("rights");
+    let (published, _, window) = window(&scratch.channel(), &scratch.project());
+    let (code, messages, stderr) = mcp_with(&scratch.project(), &scratch.channel(), &["--allow-hardware", "tcp:10.0.0.5:502"], &[initialize()]);
+    assert_eq!(code, Some(0), "{stderr}");
+    window.join().unwrap();
+    assert_eq!(messages[0]["result"]["serverInfo"]["version"], "window", "{messages:?}");
+    assert!(stderr.contains("--allow-hardware and --allow-path are not used"), "{stderr}");
     drop(published);
 }
 

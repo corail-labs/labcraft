@@ -101,9 +101,13 @@ consent covers it (decision of the owner, 2026-11-19):
 
 - **`--allow-hardware ENDPOINT`**, repeated, takes an endpoint (`tcp:10.0.0.5:502`) or a VISA name, which it reduces
   (section 2). Names are exact: no wildcard in 0.5.0 (decision of the owner, 2026-11-19). A name that is neither is
-  wrong usage (exit 2). **`--allow-path DIR`**, repeated, allows the folder and what is under it, after `..` and links
-  are resolved; a folder that does not exist is wrong usage. Both are given by the human who starts the server, in the
-  configuration of the MCP client: no tool, no command and no setting changes them (mcp.md 6).
+  wrong usage (exit 2), and so is a serial name with `*`, `?` or a space at either end, which would allow no port
+  (decision of the owner, 2026-11-24). **`--allow-path DIR`**, repeated, allows the folder and what is under it, after
+  `..` and links are resolved; a folder that does not exist, a file, and a folder too wide for a project (mcp.md 1: the
+  root of a drive, the home folder or a folder above it) are wrong usage (decisions of the owner, 2026-11-24). Both are
+  given by the human who starts the server, in the configuration of the MCP client: no tool, no command and no setting
+  changes them (mcp.md 6). Until the window asks (#239), an agent attached to the IDE reaches no real endpoint and no
+  folder outside the project, and `io.not_allowed` says so (decision of the owner, 2026-11-24).
 - **In the IDE**, a run started by an agent that opens a real endpoint, or a file outside the project, waits, and the
   window asks: the client, the project, the endpoint (`tcp:10.0.0.5:5025`, with the name the program gave,
   `TCPIP0::10.0.0.5::5025::SOCKET`) or the folder, and three answers (decision of the owner, 2026-11-19): **For this
