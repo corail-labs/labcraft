@@ -38,7 +38,7 @@ impl Canvas {
     }
 
     /// [`Canvas::frame_under`], and the body of that frame by its index in the drawing.
-    fn frame_body(&self, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool, unit: Pos2) -> (InFrame, (i64, i64), usize) {
+    pub(crate) fn frame_body(&self, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool, unit: Pos2) -> (InFrame, (i64, i64), usize) {
         let deepest = (1..drawing.bodies.len())
             .filter(|&body| self.index.body_shown(body, visible))
             .filter_map(|body| body_rect(drawing, body).filter(|area| area.contains(unit)).map(|area| (body, area.area())))

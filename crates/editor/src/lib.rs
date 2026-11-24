@@ -1199,7 +1199,7 @@ impl Canvas {
         let wire_under = select::wire_at(&frame.drawing, &frame.groups, unit, reach, &visible);
         let into = self.dragged_over(&dragged, unit, wire_under, shown.into_wire);
         // The frame under the pointer, where the ghost is drawn and the node falls.
-        let (within, at) = self.frame_under(&frame.drawing, &visible, unit);
+        let (within, at, body) = self.frame_body(&frame.drawing, &visible, unit);
         if response.dnd_release_payload::<Dragged>().is_some() {
             let call = dragged.catalog.entries.get(dragged.entry).map(|entry| entry.call.clone()).unwrap_or_default();
             input.intents.push(Intent::Drop { call, at, within, into: into.map(|(_, name)| name) });
@@ -1215,10 +1215,11 @@ impl Canvas {
                 painter.add(egui::Shape::line(points, stroke));
             }
         }
-        // The ghost: a block of the size of a small node, on the grid, with what it calls.
+        // The ghost: a block of the size of a small node, on the grid, with what it calls; `at` is in units of the frame
+        // found under the pointer, so its corner adds back the origin of that frame's body.
         let corner = to_screen(
             Vec2::new(at.0 as f32, at.1 as f32)
-                + frame.drawing.bodies.first().map_or(Vec2::ZERO, |body| Vec2::new(body.origin.0 as f32, body.origin.1 as f32) / 100.0),
+                + frame.drawing.bodies.get(body).map_or(Vec2::ZERO, |body| Vec2::new(body.origin.0 as f32, body.origin.1 as f32) / 100.0),
         );
         let ghost = Rect::from_min_size(corner, Vec2::new(GHOST.0, GHOST.1) * zoom);
         painter.add(egui::Shape::dashed_line(

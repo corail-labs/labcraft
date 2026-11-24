@@ -2449,3 +2449,47 @@ fn a_placement_that_grows_upward_keeps_the_nodes_still_on_the_screen() {
     assert_eq!(was.iter().map(|at| at.y).collect::<Vec<_>>(), now.iter().map(|at| at.y).collect::<Vec<_>>());
     assert_eq!(was[..2], now[..2]);
 }
+
+#[test]
+fn the_ghost_of_a_drop_from_the_palette_is_at_the_pointer_in_every_frame() {
+    let listed = insertion::Listed { name: "core.sub".to_owned(), library: "core".to_owned(), kind: "function".to_owned(), ..Default::default() };
+    let catalog = Arc::new(insertion::Catalog::new(&[listed]));
+    let call = catalog.entries[0].call.clone();
+    // The body of the function and the loop `n` of `COUNT`; the arm `1` of the `match` of `ARMS`, shown in its tabs.
+    let arm_shown = Shown { arms: HashMap::from([("y".to_owned(), 1)]), ..Shown::default() };
+    let cases =
+        [(COUNT, Shown::default(), "", None, None), (COUNT, Shown::default(), "", Some("n"), None), (ARMS, arm_shown, "1", Some("y"), Some("1"))];
+    for (text, shown, arm, inside, arm_found) in cases {
+        // A context for each, since time starts again at 0.
+        let ctx = context();
+        let mut canvas = Canvas::new();
+        let drawn = drawing(text, &ViewState::default());
+        canvas.set_drawing(drawn.clone(), false);
+        // The first frame installs the fonts.
+        frame(&ctx, &mut canvas, &shown, input(0.0));
+        let body = match inside {
+            None => 0,
+            Some(_) => drawn.bodies.iter().position(|body| body.owner.is_some() && body.arm == arm).unwrap(),
+        };
+        // A point on the grid of that body, 16 units right and down of its origin: the ghost's corner is there, at the
+        // pointer (notation 2.5, "The ghost of an insertion").
+        let origin = drawn.bodies[body].origin;
+        let unit = Vec2::new(origin.0 as f32, origin.1 as f32) / 100.0 + Vec2::new(16.0, 16.0);
+        let (zoom, view) = canvas.viewport();
+        let pointer = canvas.rect.min + (unit - view) * zoom;
+        let found = canvas.frame_at(&shown, pointer).unwrap().0;
+        assert_eq!((found.inside.as_deref(), found.arm.as_deref()), (inside, arm_found), "body {body}");
+        egui::DragAndDrop::set_payload(&ctx, Dragged { catalog: catalog.clone(), entry: 0 });
+        let (painted, _, _) = frame_shown(&ctx, &mut canvas, 0.2, vec![egui::Event::PointerMoved(pointer)], &shown);
+        let centre = painted
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                Painted::Text(text) if text.galley.job.text == call => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+            .unwrap();
+        let expected = pointer + Vec2::new(GHOST.0, GHOST.1) * zoom / 2.0;
+        assert!((centre - expected).length() < 1.0, "body {body}: ghost centred at {centre:?}, expected {expected:?}");
+        egui::DragAndDrop::clear_payload(&ctx);
+    }
+}
