@@ -32,6 +32,8 @@ pub enum Asked {
     Command(String, Value),
     /// An action of the window (`ide.*`).
     Window(&'static str),
+    /// This panel shown and brought forward: "Show in Problems" of the band of a drawing kept (ide.md 3).
+    Reveal(crate::pane::Pane),
     /// `function.create` of `path`, then the function shown once the session lists it (ide.md 4).
     NewFunction { path: String },
     /// `type.create` of `path` with `definition` (ide.md 4; decision of the owner, 2026-11-19).
