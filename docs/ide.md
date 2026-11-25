@@ -134,7 +134,10 @@ file, typed in the command palette or sent by an agent, still edits it, as any f
 9.2). A band across the top of the canvas, over the
 drawing, tinted with the colour of errors and a line of that colour under it, says "Not drawn since the last change",
 then the code, the place and the message of the first error of the file; "Show in Problems", at its end, brings the panel
-`Problems` forward. The band goes, and the drawing comes back, as soon as the function draws again. A function that has
+`Problems` forward. The band goes, and the drawing comes back, as soon as the function draws again. A change of
+appearance (`appearance.block_fill`, `appearance.color_by_type`, the colours of the libraries, [commands.md](commands.md)
+9.7) reaches the drawing kept: it is drawn again in it, from the folder as it was when the function last drew (decision
+of the owner, 2026-11-25). A function that has
 never drawn has no drawing to keep: its frame shows its name and lists its diagnostics instead.
 
 The view of each tab, and its split, are view state (spec 11): kept for the user, never in the file.

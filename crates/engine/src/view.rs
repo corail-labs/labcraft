@@ -191,17 +191,27 @@ pub(crate) enum Which {
     Detached(String),
 }
 
+/// The last drawing of a file, with what draws it again when the reader changes the appearance while the file does not
+/// draw: the folder as it was checked then, and the appearance the drawing was made in.
+struct Last {
+    drawing: Arc<Drawing>,
+    /// None once a check finds no window showing the file: the drawing stays, as it was drawn, and only the folders of
+    /// the files shown are kept.
+    program: Option<Arc<Loaded>>,
+    appearance: labcraft_diagram::Appearance,
+}
+
 /// The state of the viewer that the session holds.
 #[derive(Default)]
 pub struct View {
     /// The folder open, without links, and how it is shown.
     folder: Option<(PathBuf, String)>,
-    loaded: Option<Loaded>,
+    loaded: Option<Arc<Loaded>>,
     /// The report of the check of the folder, as `load` published it: what the window shows when no window adds to it.
     checked: Option<Arc<Report>>,
     views: HashMap<String, ViewOf>,
     /// The last drawing of each file whose function was drawable: it holds the values it was drawn with.
-    last: HashMap<String, Arc<Drawing>>,
+    last: HashMap<String, Last>,
     /// The zoom of the canvas of each function with a tab, as the window last gave it (`Session::set_zoom`): each tab
     /// has its canvas, which keeps its zoom across tabs and windows. `view.get_state` returns that of the function each
     /// window shows, `null` until the window gives it.
@@ -504,7 +514,7 @@ pub fn set_state(session: &mut Session, params: &Params) -> Result<Value, Comman
     let (placed, moved) = read_state(state, &mut of)?;
     let which = view.which_shows(name);
     if !moved.is_empty() {
-        let drawing = view.last.get(&file).cloned();
+        let drawing = view.last.get(&file).map(|last| last.drawing.clone());
         let overlay = which.as_ref().and_then(|which| view.window(which)).and_then(|window| window.shown.overlay.clone());
         moved_iterations(&mut of, &moved, drawing.as_deref(), overlay.as_deref());
         // An iteration moved: the tabs picked before give way to the arms that the run took, those of this call stay.
@@ -876,6 +886,14 @@ pub fn files_changed(session: &mut Session) {
         }
         draw_one(view, &which, still);
     }
+    // A file that no window shows lets go of the folder it was drawn in: each file drawn would otherwise keep a whole
+    // folder, one per check.
+    let shown: BTreeSet<String> = view.main.file.iter().chain(view.detached.iter().filter_map(|window| window.file.as_ref())).cloned().collect();
+    for (file, last) in &mut view.last {
+        if !shown.contains(file) {
+            last.program = None;
+        }
+    }
     compose_report(view);
 }
 
@@ -910,7 +928,7 @@ fn load(session: &mut Session) {
     view.now.checks = view.now.checks.wrapping_add(1);
     view.now.errors = loaded.report.errors();
     view.now.warnings = loaded.report.warnings();
-    view.loaded = Some(loaded);
+    view.loaded = Some(Arc::new(loaded));
     view.publish();
 }
 
@@ -960,7 +978,11 @@ fn file_of(view: &View, name: &str) -> String {
 /// The picture of a function in its view state, whether it is drawn, its entry of `diagrams` in `labcraft-diagram/1`,
 /// and what drawing it added to the report of the check (`LC7005`, in this view state).
 fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Value, Report)> {
-    let loaded = view.loaded.as_ref()?;
+    render_in(view, view.loaded.as_deref()?, name, file)
+}
+
+/// [`render`] over a folder as it was checked: the current one, or the one a file last drew in.
+fn render_in(view: &View, loaded: &Loaded, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Value, Report)> {
     let function = loaded.functions.iter().find(|function| function.shown == file)?;
     let (state, _) = view.state_of(file);
     let files = drawings::files_of(loaded.checked.as_ref());
@@ -1051,12 +1073,33 @@ fn draw_in(view: &mut View, window: &mut Window, glide: bool) -> Value {
     };
     window.drawn = drawn;
     let shown = if drawn {
-        view.last.insert(file.clone(), picture.clone());
+        view.last.insert(file.clone(), Last { drawing: picture.clone(), program: view.loaded.clone(), appearance: view.appearance.clone() });
         window.shown.kept = false;
         picture
     } else if let Some(last) = view.last.get(&file) {
         window.shown.kept = true;
-        last.clone()
+        let (kept, program) = (last.drawing.clone(), last.program.clone());
+        if last.appearance == view.appearance {
+            kept
+        } else {
+            // The file no longer draws, and the reader changed the appearance since: the drawing kept is drawn again in the
+            // new one, from the folder it was drawn in (colours and sizes are laid out with it), and it stays the one kept.
+            // When it does not draw again, the old one stays, and is not tried again before the next change of appearance.
+            let again = program
+                .as_deref()
+                .zip(window.shown.function.as_deref())
+                .and_then(|(program, function)| {
+                    if let Some(before) = view.before_drawing {
+                        before(function);
+                    }
+                    render_in(view, program, function, &file)
+                })
+                .filter(|(_, drawn, _, _)| *drawn)
+                .map(|(again, ..)| again);
+            let drawing = again.unwrap_or(kept);
+            view.last.insert(file.clone(), Last { drawing: drawing.clone(), program, appearance: view.appearance.clone() });
+            drawing
+        }
     } else {
         window.shown.kept = false;
         picture
