@@ -1,0 +1,21 @@
+labcraft 1
+
+use errors
+use scpi
+use visa
+
+/// Waits for the end of the operations of two instruments, closes both sessions, and merges their errors.
+fn wait_on_two(
+    first: string = "SIM::DEV0",
+    second: string = "SIM::DEV1",
+    err: error = none,
+) -> (err: error) {
+    a, e1 = visa.open(first, err: err)
+    a2, e2 = scpi.wait_complete(a, err: e1)
+    b, e4 = visa.open(second, err: err)
+    b2, e5 = scpi.wait_complete(b, err: e4)
+    #close_a: e3 = visa.close(a2, err: e2)
+    #close_b: e6 = visa.close(b2, err: e5)
+    e7 = errors.merge(e3, e6)
+    err = e7
+}

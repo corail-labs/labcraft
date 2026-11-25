@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 582 188" width="582" height="188" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="count_then_wait">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect width="582" height="188" style="fill: var(--canvas-fill)"/>
+<rect x="19" y="16" width="544" height="156" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn count_then_wait</text>
+<g data-wire="resource" data-from="fn.resource" data-to="s.resource">
+<path d="M19 120 L200.43 120" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="err" data-from="fn.err" data-to="s.err">
+<path d="M19 144 L200.43 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M30.1 145.4 L31.9 144 L30.1 142.6 M38.1 145.4 L39.9 144 L38.1 142.6 M46.1 145.4 L47.9 144 L46.1 142.6 M54.1 145.4 L55.9 144 L54.1 142.6 M62.1 145.4 L63.9 144 L62.1 142.6 M70.1 145.4 L71.9 144 L70.1 142.6 M78.1 145.4 L79.9 144 L78.1 142.6 M86.1 145.4 L87.9 144 L86.1 142.6 M94.1 145.4 L95.9 144 L94.1 142.6 M102.1 145.4 L103.9 144 L102.1 142.6 M110.1 145.4 L111.9 144 L110.1 142.6 M118.1 145.4 L119.9 144 L118.1 142.6 M126.1 145.4 L127.9 144 L126.1 142.6 M134.1 145.4 L135.9 144 L134.1 142.6 M142.1 145.4 L143.9 144 L142.1 142.6 M150.1 145.4 L151.9 144 L150.1 142.6 M158.1 145.4 L159.9 144 L158.1 142.6 M166.1 145.4 L167.9 144 L166.1 142.6 M174.1 145.4 L175.9 144 L174.1 142.6 M182.1 145.4 L183.9 144 L182.1 142.6 M190.1 145.4 L191.9 144 L190.1 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+</g>
+<g data-wire="s" data-from="s.session" data-to="s2.session">
+<path d="M240.43 120 L326.59 120" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<text x="244.43" y="117" font-size="10" style="fill: var(--ink-muted)">s</text>
+</g>
+<g data-wire="e1" data-from="s.err" data-to="s2.err">
+<path d="M240.43 144 L326.59 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M251.53 145.4 L253.33 144 L251.53 142.6 M259.53 145.4 L261.33 144 L259.53 142.6 M267.53 145.4 L269.33 144 L267.53 142.6 M275.53 145.4 L277.33 144 L275.53 142.6 M283.53 145.4 L285.33 144 L283.53 142.6 M291.53 145.4 L293.33 144 L291.53 142.6 M299.53 145.4 L301.33 144 L299.53 142.6 M307.53 145.4 L309.33 144 L307.53 142.6 M315.53 145.4 L317.33 144 L315.53 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="244.43" y="141" font-size="10" style="fill: var(--ink-muted)">e1</text>
+</g>
+<g data-wire="count" data-from="s2.value" data-to="fn.count">
+<path d="M366.59 128 L372.09 128 Q377.59 128 377.59 122.5 L377.59 86 Q377.59 80 383.59 80 L495.59 80 Q501.59 80 501.59 86 L501.59 114 Q501.59 120 507.59 120 L563 120" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="381.59" y="77" font-size="10" style="fill: var(--ink-muted)">count</text>
+</g>
+<g data-wire="s2" data-from="s2.session" data-to="s3.session">
+<path d="M366.59 120 L388.59 120" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+</g>
+<g data-wire="e2" data-from="s2.err" data-to="s3.err">
+<path d="M366.59 144 L388.59 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M377.69 145.4 L379.49 144 L377.69 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="370.59" y="141" font-size="10" style="fill: var(--ink-muted)">e2</text>
+</g>
+<g data-wire="s3" data-from="s3.session" data-to="e4.session">
+<path d="M428.59 120 L450.59 120" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<text x="432.59" y="117" font-size="10" style="fill: var(--ink-muted)">s3</text>
+</g>
+<g data-wire="e3" data-from="s3.err" data-to="e4.err">
+<path d="M428.59 144 L450.59 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M439.69 145.4 L441.49 144 L439.69 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="432.59" y="141" font-size="10" style="fill: var(--ink-muted)">e3</text>
+</g>
+<g data-wire="e4" data-from="e4.err" data-to="fn.err">
+<path d="M490.59 144 L563 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M501.69 145.4 L503.49 144 L501.69 142.6 M509.69 145.4 L511.49 144 L509.69 142.6 M517.69 145.4 L519.49 144 L517.69 142.6 M525.69 145.4 L527.49 144 L525.69 142.6 M533.69 145.4 L535.49 144 L533.69 142.6 M541.69 145.4 L543.49 144 L541.69 142.6 M549.69 145.4 L551.49 144 L549.69 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="494.59" y="141" font-size="10" style="fill: var(--ink-muted)">e4</text>
+</g>
+<g>
+<rect x="16" y="117.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="23" y="114.18" width="64.16" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="123.65" font-size="10" style="fill: var(--node-title)">resource</text>
+<rect x="87.16" y="113" width="86.27" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="91.16" y="123.65" font-size="10" style="fill: var(--pill-text)">◂ &quot;SIM::DEV0&quot;</text>
+<polygon points="16,141 22,144 16,147 18,144" style="fill: var(--wire-error)"/>
+<rect x="23" y="138.18" width="34.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="147.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="57.06" y="137" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="61.06" y="147.65" font-size="10" style="fill: var(--pill-text)">◂ none</text>
+<circle cx="563" cy="120" r="3" style="fill: var(--wire-data)"/>
+<rect x="516.9" y="114.18" width="42.1" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="520.9" y="123.65" font-size="10" style="fill: var(--node-title)">count</text>
+<polygon points="560,141 566,144 560,147 562,144" style="fill: var(--wire-error)"/>
+<rect x="528.94" y="138.18" width="30.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="532.94" y="147.65" font-size="10" style="fill: var(--node-title)">err</text>
+</g>
+<g data-node="s"><title>visa.open</title>
+<rect x="200.43" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="200.43" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="200.43" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="200.43,124 240.43,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="209.6" y="121.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="200.43" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="209.6" y="141.28" font-size="9" style="fill: var(--node-title)">open</text>
+<rect x="197.43" y="117.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="237.43" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<circle cx="200.43" cy="128" r="3" style="fill: var(--wire-data)"/>
+<polygon points="197.43,141 203.43,144 197.43,147 199.43,144" style="fill: var(--wire-error)"/>
+<polygon points="237.43,141 243.43,144 237.43,147 239.43,144" style="fill: var(--wire-error)"/>
+</g>
+<g data-node="s2"><title>scpi.query_i32</title>
+<rect x="326.59" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="326.59" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="326.59" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="326.59,124 366.59,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="335.76" y="121.28" font-size="9" style="fill: var(--band-text)">scpi</text>
+<rect x="326.59" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="333.05" y="136.04" font-size="9" style="fill: var(--node-title)">query</text>
+<text x="338.46" y="146.52" font-size="9" style="fill: var(--node-title)">i32</text>
+<rect x="323.59" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<rect x="363.59" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<rect x="323.59" y="125.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<circle cx="366.59" cy="128" r="3" style="fill: var(--wire-data)"/>
+<polygon points="323.59,141 329.59,144 323.59,147 325.59,144" style="fill: var(--wire-error)"/>
+<polygon points="363.59,141 369.59,144 363.59,147 365.59,144" style="fill: var(--wire-error)"/>
+<rect x="259.43" y="121" width="56.16" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="263.43" y="131.65" font-size="10" style="fill: var(--pill-text)">&quot;MEAS:C…</text>
+</g>
+<g data-node="s3"><title>scpi.wait_complete</title>
+<rect x="388.59" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="388.59" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="388.59" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="388.59,124 428.59,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="397.76" y="121.28" font-size="9" style="fill: var(--band-text)">scpi</text>
+<rect x="388.59" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="397.76" y="136.04" font-size="9" style="fill: var(--node-title)">wait</text>
+<text x="392.34" y="146.52" font-size="9" style="fill: var(--node-title)">compl…</text>
+<rect x="385.59" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<rect x="425.59" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<polygon points="385.59,141 391.59,144 385.59,147 387.59,144" style="fill: var(--wire-error)"/>
+<polygon points="425.59,141 431.59,144 425.59,147 427.59,144" style="fill: var(--wire-error)"/>
+</g>
+<g data-node="e4"><title>visa.close</title>
+<rect x="450.59" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="450.59" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="450.59" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="450.59,124 490.59,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="459.76" y="121.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="450.59" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="457.05" y="134.37" font-size="9" style="fill: var(--node-title)">close</text>
+<rect x="447.59" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<polygon points="447.59,141 453.59,144 447.59,147 449.59,144" style="fill: var(--wire-error)"/>
+<polygon points="487.59,141 493.59,144 487.59,147 489.59,144" style="fill: var(--wire-error)"/>
+<text x="467.58" y="147.65" font-size="10" style="fill: var(--node-title)">▴</text>
+<text x="450.59" y="105.83" font-size="10" style="fill: var(--ink-muted)">#close:</text>
+</g>
+<g>
+<rect x="323.59" y="109" width="46" height="46" rx="5" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<rect x="293.57" y="93" width="73.02" height="14" rx="7" style="fill: var(--probe-fill); stroke: var(--wire-error); stroke-width: 1"/>
+<text x="297.57" y="103.28" font-size="9" style="fill: var(--wire-error)">string.parse</text>
+</g>
+<g>
+<rect x="388.59" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill); opacity: 0.6"/>
+<polyline points="388.59,120.49 397.08,112" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="388.59,128.98 405.57,112" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="388.59,137.47 414.06,112" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="388.59,145.96 422.55,112" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="391.04,152 428.59,114.45" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="399.53,152 428.59,122.94" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="408.02,152 428.59,131.43" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="416.51,152 428.59,139.92" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+<polyline points="425,152 428.59,148.41" style="fill: none; stroke: var(--ink-muted); stroke-width: 0.75"/>
+</g>
+<g data-value="resource"><title>&quot;SIM::DEV0&quot;</title>
+<rect x="87.16" y="112" width="86.27" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="91.16" y="123.65" font-size="10" style="fill: var(--node-title)">&quot;SIM::DEV0&quot;</text>
+</g>
+<g data-value="s"><title>{&quot;opaque&quot;:&quot;visa.session&quot;,&quot;resource&quot;:&quot;SIM::DEV0&quot;,&quot;open&quot;:true}</title>
+<rect x="244.43" y="109.71" width="6.02" height="9.65" style="fill: var(--canvas-fill)"/>
+<text x="310.61" y="117" font-size="10" style="fill: var(--ink-muted)">s</text>
+<rect x="244.43" y="100" width="62.18" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="248.43" y="111.65" font-size="10" style="fill: var(--node-title)">SIM::DEV0</text>
+</g>
+<g data-value="s2"><title>{&quot;opaque&quot;:&quot;visa.session&quot;,&quot;resource&quot;:&quot;SIM::DEV0&quot;,&quot;open&quot;:true}</title>
+</g>
+<g data-value="e2"><title>{&quot;category&quot;:&quot;string.parse&quot;,&quot;code&quot;:0,&quot;message&quot;:&quot;not an i32: \&quot;abc\&quot;&quot;,&quot;origin&quot;:{&quot;function&quot;:&quot;scpi.query_i32&quot;,&quot;node&quot;:&quot;value&quot;,&quot;file&quot;:&quot;&lt;labcraft&gt;/scpi/query_i32.lcf&quot;,&quot;line&quot;:13,&quot;callers&quot;:[{&quot;function&quot;:&quot;count…</title>
+</g>
+<g data-value="s3"><title>{&quot;opaque&quot;:&quot;visa.session&quot;,&quot;resource&quot;:&quot;SIM::DEV0&quot;,&quot;open&quot;:true}</title>
+</g>
+<g data-value="e3"><title>{&quot;category&quot;:&quot;string.parse&quot;,&quot;code&quot;:0,&quot;message&quot;:&quot;not an i32: \&quot;abc\&quot;&quot;,&quot;origin&quot;:{&quot;function&quot;:&quot;scpi.query_i32&quot;,&quot;node&quot;:&quot;value&quot;,&quot;file&quot;:&quot;&lt;labcraft&gt;/scpi/query_i32.lcf&quot;,&quot;line&quot;:13,&quot;callers&quot;:[{&quot;function&quot;:&quot;count…</title>
+</g>
+<g data-value="e4"><title>{&quot;category&quot;:&quot;string.parse&quot;,&quot;code&quot;:0,&quot;message&quot;:&quot;not an i32: \&quot;abc\&quot;&quot;,&quot;origin&quot;:{&quot;function&quot;:&quot;scpi.query_i32&quot;,&quot;node&quot;:&quot;value&quot;,&quot;file&quot;:&quot;&lt;labcraft&gt;/scpi/query_i32.lcf&quot;,&quot;line&quot;:13,&quot;callers&quot;:[{&quot;function&quot;:&quot;count…</title>
+</g>
+</svg>

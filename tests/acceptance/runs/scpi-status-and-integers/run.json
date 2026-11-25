@@ -1,0 +1,5 @@
+{
+  "function": "status_and_count",
+  "folder": "tests/acceptance/runs/scpi-status-and-integers",
+  "sim": "tests/acceptance/runs/scpi-status-and-integers/dev.toml"
+}

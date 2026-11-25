@@ -1,0 +1,20 @@
+labcraft 1
+
+use core
+use errors
+use string
+use visa
+
+/// Waits, within the timeout of the session, for the `1` of `*OPC?`, read as `string.to_i32` reads an
+/// integer (`+1` and ` 1` are 1). Any other answer, text that is no integer included, is a
+/// `scpi.unexpected_response`, whose message gives it: the error of `string.to_i32` only orders that
+/// check, and is replaced by it.
+fn wait_complete(session: visa.session, err: error = none) -> (session: visa.session, err: error) {
+    text, s, e1 = visa.query(session, "*OPC?", err: err)
+    message = string.format("*OPC? answered \"{answer}\", not 1", answer: text)
+    value, e2 = string.to_i32(text, err: e1)
+    other = core.ne(value, 1)
+    e3 = errors.raise_if(other, scpi.unexpected_response, message: message, err: e1, after: e2)
+    session = s
+    err = e3
+}

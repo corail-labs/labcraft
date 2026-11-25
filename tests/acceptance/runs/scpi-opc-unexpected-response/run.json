@@ -1,0 +1,5 @@
+{
+  "function": "wait_on_two",
+  "folder": "tests/acceptance/runs/scpi-opc-unexpected-response",
+  "sim": "tests/acceptance/runs/scpi-opc-unexpected-response/dev.toml"
+}

@@ -1,0 +1,5 @@
+{
+  "function": "count_then_wait",
+  "folder": "tests/acceptance/runs/scpi-query-i32-not-an-integer",
+  "sim": "tests/acceptance/runs/scpi-query-i32-not-an-integer/dev.toml"
+}

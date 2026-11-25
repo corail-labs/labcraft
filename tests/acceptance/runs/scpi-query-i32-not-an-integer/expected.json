@@ -1,0 +1,77 @@
+{
+  "how": "`visa.open` of SIM::DEV0, with no latency, opens a session at 0 ms (libs/visa/simulation.md 2). `scpi.query_i32` sends `MEAS:COUNT?` at 0 ms, which `commands` answers `abc` (simulation.md 4, point 4); `string.to_i32` reads only an optional sign and digits, so it fails with `string.parse` (spec A.2) and `value` takes the default 0 (spec 7.2), the output `count`. An error with no original code has the code 0 (spec 7.1). Its origin is the node `value`, named by its first output, line 13 of `<labcraft>/scpi/query_i32.lcf`, under the caller node `s2`, line 9 of the program (commands.md 5 and 8). `scpi.wait_complete` always runs its body, but its native nodes skip on the error (spec 7.2): `visa.query` sends nothing, so `*OPC?` never reaches the instrument and its `0` is never read, its session passes through and `e1` carries the error on; `string.to_i32` skips too, and `errors.raise_if`, whose `err` is that `e1`, skips and passes it on unchanged, so no `scpi.unexpected_response` is made (libs/scpi/wait_complete.lcf; spec A.3). `visa.close` is `always`: it closes the session and passes the error on (spec 7.2), so nothing is left open. `err` holds the `string.parse` error, so the status is `error` and `error` repeats it (spec 7.5, 8.2; commands.md 7). The run ends at 0 ms. The check finds nothing (spec 7.5, 8.1).",
+  "status": "error",
+  "outputs": [
+    {
+      "name": "count",
+      "type": "i32",
+      "value": 0
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": {
+        "category": "string.parse",
+        "code": 0,
+        "origin": {
+          "function": "scpi.query_i32",
+          "node": "value",
+          "file": "<labcraft>/scpi/query_i32.lcf",
+          "line": 13,
+          "callers": [
+            {
+              "function": "count_then_wait",
+              "node": "s2",
+              "file": "tests/acceptance/runs/scpi-query-i32-not-an-integer/count_then_wait.lcf",
+              "line": 9
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "error": {
+    "category": "string.parse",
+    "code": 0,
+    "origin": {
+      "function": "scpi.query_i32",
+      "node": "value",
+      "file": "<labcraft>/scpi/query_i32.lcf",
+      "line": 13,
+      "callers": [
+        {
+          "function": "count_then_wait",
+          "node": "s2",
+          "file": "tests/acceptance/runs/scpi-query-i32-not-an-integer/count_then_wait.lcf",
+          "line": 9
+        }
+      ]
+    }
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 1,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DEV0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:COUNT?",
+          "answer": "abc"
+        }
+      ]
+    }
+  ],
+  "check": {
+    "summary": {
+      "errors": 0
+    },
+    "diagnostics": []
+  }
+}

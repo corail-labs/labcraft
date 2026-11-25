@@ -1,0 +1,9 @@
+# An instrument whose status queries and a count answer from `commands`; `*OPC?` answers `+1`.
+[[visa.instrument]]
+resource = "SIM::DEV0"
+
+[visa.instrument.commands]
+"*OPC?" = "+1"
+"*ESR?" = "32"
+"*STB?" = "4"
+"MEAS:COUNT?" = "42"

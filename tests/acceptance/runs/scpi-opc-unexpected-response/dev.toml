@@ -1,0 +1,12 @@
+# Two instruments whose `*OPC?` answers something other than 1: text that is no integer, and the integer 0.
+[[visa.instrument]]
+resource = "SIM::DEV0"
+
+[visa.instrument.commands]
+"*OPC?" = "done"
+
+[[visa.instrument]]
+resource = "SIM::DEV1"
+
+[visa.instrument.commands]
+"*OPC?" = "0"

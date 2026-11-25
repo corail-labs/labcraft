@@ -1,0 +1,7 @@
+fn scpi.wait_complete(session: visa.session, err: error = none) -> (session: visa.session, err: error)
+  region (session, err) -> (s, e3)
+    0 text, s, e1 = native visa.query(session, "*OPC?", err)  skip(err: 2)
+    1 message = primitive string.format(text, template "*OPC? answered \"{answer}\", not 1")
+    2 value, e2 = primitive string.to_i32(text, e1)  skip(err: 1)
+    3 other = primitive core.ne(value, 1)
+    4 e3 = primitive errors.raise_if(other, message, e1, scpi.unexpected_response) after(e2)  skip(err: 2)

@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(visa.categories, ["io.timeout", "visa.invalid_session", "visa.resource_not_found"]);
         let scpi = library("scpi");
         assert!(scpi.always.is_empty() && scpi.resources.is_empty());
-        assert_eq!(scpi.categories, ["scpi.instrument_error"]);
+        assert_eq!(scpi.categories, ["scpi.instrument_error", "scpi.unexpected_response"]);
     }
 
     /// Scenario 5, points 1 and 4, on what the WASM build embeds: every program is canonical (`libs/` and
