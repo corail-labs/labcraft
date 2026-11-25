@@ -824,6 +824,12 @@ pub struct Placed {
     /// what `block.set_terminal` writes when a terminal of its block is moved (notation 2.4). Empty otherwise.
     #[cfg_attr(feature = "serde", serde(default))]
     pub callee: String,
+    /// For a call to a function of the project, in any view, the name of that function: what a double click on the body of
+    /// the node, or "Open" of its menu, shows in a tab (notation 2.6). Empty for a primitive, a function of a library and
+    /// another node. Unlike [`Placed::callee`], its file, given in compact view only, this is the name that
+    /// `view.functions` lists.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub opens: String,
     /// The places of its block that the lines of the section of its function hold, by side (`top`, `left`, `right`) and
     /// place: a terminal moved by hand cannot take them (notation 2.4). Empty otherwise.
     #[cfg_attr(feature = "serde", serde(default))]

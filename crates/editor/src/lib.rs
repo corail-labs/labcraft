@@ -211,6 +211,9 @@ pub enum Intent {
     BlockTerminal { file: String, terminal: String, side: &'static str, place: u32 },
     /// `block.reset`: "Reset the terminals of this block" of the context menu of a node (notation 2.4).
     ResetBlock { file: String },
+    /// A double click on the body of a call to a function of the project, or "Open" of the context menu of its node
+    /// (notation 2.6): the host shows that function in a tab, not in preview, or in its window when it has one.
+    Open { function: String },
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows, for the gesture lock (architecture 12.5).
@@ -1151,6 +1154,15 @@ impl Canvas {
         {
             consumed = true;
         }
+        // A double-click on the body of a call to a function of the project opens that function (notation 2.6).
+        if response.double_clicked()
+            && !consumed
+            && let Some(at) = response.interact_pointer_pos()
+            && let Some(function) = self.call_body_at(frame, unit_of(at))
+        {
+            input.intents.push(Intent::Open { function });
+            consumed = true;
+        }
         self.select_by_pointer(response, frame, shown, clicked_unit.filter(|_| !consumed), input);
         self.select_by_keys(ui, response, frame, input);
         // The number typed into a selector: Enter chooses that iteration, from 1 as the selector counts; Escape, or a click
@@ -1272,6 +1284,17 @@ impl Canvas {
         }
     }
 
+    /// The function of the project that the node under `unit` calls, when `unit` is on its body: not on a terminal, whose
+    /// field or tooltip is its own (notation 2.6).
+    fn call_body_at(&self, frame: &Frame, unit: Pos2) -> Option<String> {
+        let placed = frame.hovered?;
+        let function = frame.drawing.placed.get(placed).map(|found| &found.opens).filter(|opens| !opens.is_empty())?;
+        // The reach of a terminal as a press or a right-click finds it, at this zoom.
+        let visible = |within: Option<usize>| frame.visible(within);
+        let on_terminal = port_at(&frame.drawing, unit, (6.0 / self.viewport.zoom).max(5.0), &visible).is_some();
+        (!on_terminal).then(|| function.clone())
+    }
+
     /// A right-click on a fixed node opens its menu: "Remove the fixed position"; on a wire routed by hand, "Arrange this
     /// wire" (notation 2.4).
     fn fixed_menu(&mut self, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
@@ -1358,6 +1381,8 @@ impl Canvas {
         // The block of a function of the project: its terminals can go back to their defaults (notation 2.4).
         let callee = frame.drawing.placed.get(placed).map(|found| found.callee.clone()).unwrap_or_default();
         let mut reset = false;
+        let opens = frame.drawing.placed.get(placed).map(|found| found.opens.clone()).unwrap_or_default();
+        let mut open = false;
         let (mut arrange, mut label, mut surround, mut extract) = (false, false, None, false);
         // The node right-clicked, or the selection when it holds that node.
         let around = if name.is_empty() || shown.selection.nodes.contains(&name) { shown.selection.nodes.clone() } else { vec![name.clone()] };
@@ -1368,6 +1393,10 @@ impl Canvas {
         let mut part = None;
         let mut make = false;
         response.context_menu(|ui| {
+            if !opens.is_empty() && ui.button(format!("Open {opens}")).clicked() {
+                open = true;
+                ui.close();
+            }
             if ui.button("Label…").clicked() {
                 label = true;
                 ui.close();
@@ -1446,6 +1475,10 @@ impl Canvas {
         }
         if unsize {
             input.intents.push(Intent::Resize { structure: Some(name.clone()), size: None });
+            self.context = None;
+        }
+        if open {
+            input.intents.push(Intent::Open { function: opens });
             self.context = None;
         }
         if reset {

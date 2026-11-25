@@ -534,6 +534,10 @@ fn shapes(
                 Kind::Call { glyph: None, file: Some(file), .. } if !node.standard => file.clone(),
                 _ => String::new(),
             },
+            opens: match &node.kind {
+                Kind::Call { glyph: None, opens, .. } => opens.clone(),
+                _ => String::new(),
+            },
             held: sized.held.iter().map(|(side, place)| (side.word().to_owned(), *place)).collect(),
             reach: sized.reach,
         });

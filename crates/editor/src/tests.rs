@@ -261,6 +261,7 @@ fn the_glide_eases_from_the_old_place() {
             least: (0, 0),
             size: None,
             callee: String::new(),
+            opens: String::new(),
             held: Vec::new(),
         }],
         ..Drawing::default()
@@ -2594,4 +2595,86 @@ fn the_header_of_a_match_in_tabs_ends_under_its_tabs() {
     let wire = tabs.groups.iter().position(|group| group.within == Some(0) && group.wire.is_some()).unwrap();
     let on_wire = Pos2::new(x, 156.0);
     assert_eq!(crate::select::hit(&tabs, &index, &groups, on_wire, 4.0, &shown), Some(crate::select::Hit::Wire(wire)));
+}
+
+// Opening the function that a call names (notation 2.6, #330): a double click on the body of a call to a function of the
+// project asks the host to show it; a pill, a terminal and a node that is no such call keep their own gestures.
+
+/// A double click at `at`: two presses 0.15 s apart, what the gestures asked for.
+fn double_click(ctx: &egui::Context, canvas: &mut Canvas, at: Pos2, time: f64) -> Vec<Intent> {
+    let mut intents = click_with(ctx, canvas, at, time, egui::Modifiers::NONE, &Shown::default()).1;
+    intents.extend(click_with(ctx, canvas, at, time + 0.15, egui::Modifiers::NONE, &Shown::default()).1);
+    intents
+}
+
+fn canvas_of(drawn: &Arc<Drawing>) -> (egui::Context, Canvas) {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    (ctx, canvas)
+}
+
+#[test]
+fn a_double_click_on_the_body_of_a_call_to_a_function_of_the_project_asks_to_open_it() {
+    let drawn = drawing_of(&[("main.lcf", BLOCK_MAIN), ("g.lcf", BLOCK_CALLEE)], &ViewState::default());
+    let call = drawn.placed.iter().find(|node| node.name == "r").expect("the call");
+    assert_eq!(call.opens, "g");
+    let (ctx, mut canvas) = canvas_of(&drawn);
+    let intents = double_click(&ctx, &mut canvas, centre_of(&drawn, "r"), 0.2);
+    assert!(intents.contains(&Intent::Open { function: "g".to_owned() }), "{intents:?}");
+    assert!(!canvas.field_open(), "no field");
+}
+
+#[test]
+fn a_double_click_on_a_terminal_or_a_primitive_opens_nothing() {
+    let drawn = drawing_of(&[("main.lcf", BLOCK_MAIN), ("g.lcf", BLOCK_CALLEE)], &ViewState::default());
+    let (ctx, mut canvas) = canvas_of(&drawn);
+    // On the terminal `x` of the call: its own gestures.
+    let intents = double_click(&ctx, &mut canvas, port_of(&drawn, "r.x", true), 0.2);
+    assert!(!intents.iter().any(|intent| matches!(intent, Intent::Open { .. })), "{intents:?}");
+    // A call to a primitive has nothing to open.
+    let drawn = drawing(WIRED, &ViewState::default());
+    assert!(drawn.placed.iter().all(|node| node.opens.is_empty()), "core.add and core.mul are primitives");
+    let (ctx, mut canvas) = canvas_of(&drawn);
+    let intents = double_click(&ctx, &mut canvas, centre_of(&drawn, "a"), 0.2);
+    assert!(!intents.iter().any(|intent| matches!(intent, Intent::Open { .. })), "{intents:?}");
+}
+
+#[test]
+fn a_double_click_on_a_pill_of_a_call_opens_its_field_not_the_function() {
+    let main = "labcraft 1
+
+fn main(a: f64) -> (r: i64) {
+    r = g(a, 2.0, a)
+}
+";
+    for view in [ViewState::default(), ViewState { standard_everywhere: true, ..ViewState::default() }] {
+        let drawn = drawing_of(&[("main.lcf", main), ("g.lcf", BLOCK_CALLEE)], &view);
+        let placed = drawn.placed.iter().position(|node| node.name == "r").expect("the call");
+        // Its body, in either view, opens the function.
+        let (ctx, mut canvas) = canvas_of(&drawn);
+        let intents = double_click(&ctx, &mut canvas, centre_of(&drawn, "r"), 0.2);
+        assert!(intents.contains(&Intent::Open { function: "g".to_owned() }), "{intents:?}");
+        // Its pill, at its terminal, opens its field.
+        assert!(fields::texts_of(&drawn, placed).iter().any(|written| written.text == "2.0"), "the pill of the constant");
+        let (ctx, mut canvas) = canvas_of(&drawn);
+        let intents = double_click(&ctx, &mut canvas, port_of(&drawn, "r.y", true), 0.2);
+        assert!(!intents.iter().any(|intent| matches!(intent, Intent::Open { .. })), "{intents:?}");
+        assert!(
+            matches!(canvas.field.as_ref().map(|field| &field.kind), Some(FieldKind::Constant { to, .. }) if to == "r.y"),
+            "the field of the pill: {:?}",
+            canvas.field.as_ref().map(|field| field.kind.clone())
+        );
+    }
+}
+
+#[test]
+fn a_call_to_a_function_of_a_library_of_the_folder_opens_it_by_its_qualified_name() {
+    let main = "labcraft 1\n\nuse dev\n\nfn main(a: f64) -> (r: i64) {\n    r = dev.g(a, a, a)\n}\n";
+    let drawn = drawing_of(&[("main.lcf", main), ("dev/g.lcf", BLOCK_CALLEE)], &ViewState::default());
+    let call = drawn.placed.iter().find(|node| node.name == "r").expect("the call");
+    assert_eq!(call.opens, "dev.g");
 }
