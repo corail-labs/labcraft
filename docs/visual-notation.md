@@ -1239,6 +1239,8 @@ chain crosses the frame in a straight line (2.1).
   branch before and after, round, and a click on the title lists the branches to choose one *(proposed)*. The
   box of a branch has no title of its own, 8 at its top, and the boxes of all the branches start from one corner,
   moved down so that their error chains meet on one line: the frame is as high as the lowest.
+  For a structure in tabs, the zone that takes the structure (2.6) ends at the bottom of the tabs; under them, down to
+  the frame of the arm shown, is the canvas of that arm (decided 2026-11-25).
   A bound value (`Reading.Value(v)`, `io.timeout(err)`) appears as a terminal on the inner left
   edge of that branch.
 - **`yield`**: each branch wires the same output terminals on the right edge. A terminal that a

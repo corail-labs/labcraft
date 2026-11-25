@@ -2555,3 +2555,43 @@ fn the_ghost_of_a_drop_from_the_palette_is_at_the_pointer_in_every_frame() {
         egui::DragAndDrop::clear_payload(&ctx);
     }
 }
+
+/// A `match` in tabs: its header (the lit band, the grip, the zone that takes the structure) ends at the bottom of the
+/// row of tabs, not at the top of the arm shown, and a press on a wire of the arm takes the wire.
+///
+/// By hand, from the layout (visual notation 5.2, `style`): the row of tabs starts `frame.header` = 24 under the top of
+/// the box and a tab is `tabs.height` = 20 high, so the header is 24 + 20 = 44 units, whatever the arm; the frame of the
+/// arm starts at `frame.header + tabs.row + frame.pad` = 24 + 24 + 16 = 64 under the top of the box, 20 units under the
+/// tabs, and the box of the structure starts at 56, so the tabs end at 100 and the arm at 120.
+#[test]
+fn the_header_of_a_match_in_tabs_ends_under_its_tabs() {
+    let tabs = drawing(ARMS, &ViewState { tabs: true, ..ViewState::default() });
+    let index = crate::select::Index::of(&tabs);
+    let groups: Vec<usize> = (0..tabs.groups.len()).collect();
+    let shown = |within: Option<usize>| within.is_none() || within == Some(0);
+    let structure = tabs.placed.iter().position(|found| !found.holds.is_empty()).unwrap();
+    let top = tabs.placed[structure].y as f32 / 100.0;
+    assert_eq!(top, 56.0);
+    assert_eq!(crate::header_of(&tabs, structure), 44.0);
+    // The first body, the arm shown: its frame starts under the tabs.
+    let arm = crate::select::body_rect(&tabs, tabs.placed[structure].holds[0]).unwrap();
+    assert_eq!(arm.min.y, 120.0);
+    let x = arm.center().x;
+    // In the row of tabs, the structure; under it and above the arm, canvas; in the arm, a wire.
+    assert_eq!(crate::select::node_at(&tabs, &index, Pos2::new(x, top + 30.0), &shown), Some(structure));
+    assert_eq!(crate::select::node_at(&tabs, &index, Pos2::new(x, arm.min.y - 10.0), &shown), None);
+    assert_eq!(crate::select::node_at(&tabs, &index, Pos2::new(x, arm.min.y + 4.0), &shown), None);
+    // The strip between the tabs (100) and the frame of the arm (120) is canvas of the arm shown, for a rectangle and a
+    // quick insertion too: `frame_at` gives the arm, not the function (on main it gave 0 there).
+    let body = tabs.placed[structure].holds[0];
+    let tabs_bottom = top + 44.0;
+    assert_eq!(tabs_bottom, 100.0);
+    for y in [tabs_bottom + 1.0, arm.min.y - 1.0] {
+        assert_eq!(crate::select::frame_at(&tabs, &index, Pos2::new(x, y), &shown), body);
+    }
+    // Above the tabs bottom, in the row of tabs, it is still the function.
+    assert_eq!(crate::select::frame_at(&tabs, &index, Pos2::new(x, tabs_bottom - 1.0), &shown), 0);
+    let wire = tabs.groups.iter().position(|group| group.within == Some(0) && group.wire.is_some()).unwrap();
+    let on_wire = Pos2::new(x, 156.0);
+    assert_eq!(crate::select::hit(&tabs, &index, &groups, on_wire, 4.0, &shown), Some(crate::select::Hit::Wire(wire)));
+}

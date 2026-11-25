@@ -368,9 +368,13 @@ const WHEEL_STEP: f32 = 40.0;
 /// (architecture 12.4).
 const WIRE_REACH: f32 = 4.0;
 /// How high the header of a structure is, in units, as a press reads it (`select::inner_rect`): that of its first body,
-/// from the top of its box.
+/// from the top of its box; for a structure in tabs, down to the bottom of its row of tabs, because what is under the row
+/// is the top of the arm shown (its margin, its wires), which is canvas.
 fn header_of(drawing: &Drawing, placed: usize) -> f32 {
     let Some(found) = drawing.placed.get(placed) else { return 0.0 };
+    if let Some(bottom) = select::tabs_bottom(drawing, placed) {
+        return bottom - found.y as f32 / 100.0;
+    }
     let body = found.holds.first().and_then(|&body| Some((select::body_rect(drawing, body)?, drawing.bodies.get(body)?.header)));
     body.map_or(0.0, |(area, header)| area.min.y - found.y as f32 / 100.0 + header as f32 / 100.0)
 }
