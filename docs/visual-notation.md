@@ -1077,7 +1077,8 @@ the whole width of the wire, every 8, up to three per period for three dimension
 1.8 long, 2.8 across and 0.9 thick, inside its 4, 8 apart along the wire, none centred within `wire.radius` (6) of a bend
 or an end; an order wire is 1
 wide, dotted 1.5 and 3; a function wire dashed 6, 3, 1.5, 3. A value read as an order and as a value is one net: its
-trunk is drawn with each.
+trunk is drawn in the style of the value, its junctions in its paint, the order wire dotted from where it leaves the
+trunk, whichever reader comes first (#284).
 
 - A terminal is `node.terminal` across (6 units), centred on the edge of its node.
 - The chevrons of the error wire show **the direction of the order**: this is the wire you follow

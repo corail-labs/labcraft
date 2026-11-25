@@ -1454,8 +1454,21 @@ fn wire_groups(
     routes
         .iter()
         .filter_map(|routed| {
+            // The wires of a net all leave one end. A value read as an order (`after:`) and as a value is led by its
+            // wires of data, whichever reader comes first (notation 4.1, 4.3): they go before the orders, each kind in
+            // its order, so that its paint, its junctions, its trunk, its name, its source and the place of its bubble
+            // are those of the value, and an order is dotted only from where it leaves the trunk.
+            let is_order = |wire: usize| of.wires.get(wire).is_none_or(|wire| wire.family.base == graph::Base::Order);
+            let mut ranked: Vec<usize> = (0..routed.wires.len()).collect();
+            ranked.sort_by_key(|&index| routed.wires.get(index).is_none_or(|&wire| is_order(wire)));
+            let routed = &route::Routed {
+                wires: ranked.iter().filter_map(|&index| routed.wires.get(index).copied()).collect(),
+                branches: ranked.iter().filter_map(|&index| routed.branches.get(index).cloned()).collect(),
+                right: ranked.iter().filter_map(|&index| routed.right.get(index).copied()).collect(),
+                junctions: routed.junctions.clone(),
+                via: routed.via,
+            };
             let first = of.wires.get(*routed.wires.first()?)?;
-            // Each branch as its wire is drawn: a value read as an order (`after:`) and as a value shares its trunk.
             let style = size::wire_style(first.family, core);
             let branches = to_frame_terminals(of, placement.frames.get(body), routed);
             // The trunk once: each branch from where it leaves those before it.
@@ -1493,9 +1506,7 @@ fn wire_groups(
                     _ => false,
                 })
                 .collect();
-            // The colour of the value, which an order (`after:`) that reads it first does not have (notation 4.3).
-            let data = routed.wires.iter().filter_map(|wire| of.wires.get(*wire)).find(|wire| wire.family.base != graph::Base::Order);
-            let token = size::name_token(data.unwrap_or(first).family);
+            let token = size::name_token(first.family);
             shapes.extend(wire_names(&value, token, &routed.branches, (named_at_start, &named_at_end[..]), &mut obstacles));
             let from = terminal_form(graph, of, body, &first.from, true, &ordinals);
             let mut to: Vec<String> = routed

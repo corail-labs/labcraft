@@ -3030,6 +3030,54 @@ fn the_name_of_a_value_read_first_as_an_order_takes_its_family() {
     assert!(!painted.is_empty() && painted.iter().all(|token| *token == "type.number"), "{painted:?}");
 }
 
+/// #284, notation 4.1: a value read as an order (`after:`) and as a value is led by the value whichever reader comes
+/// first: its junctions in the paint of the value, its trunk drawn as the value from its source, the order wire dotted
+/// only from where it leaves it, a source for its bubble, and its first reader, along which the bubble moves (6.1), a
+/// reader of the value. The lines go in the canonical order (spec 5.2), by the name they bind: with the order on `y`,
+/// the order reads first; with it on `z`, the value does.
+#[test]
+fn a_value_read_first_as_an_order_leads_its_net_as_a_value() {
+    for (ordered, data) in [("y", "z"), ("z", "y")] {
+        let main = format!(
+            "labcraft 1\n\nuse core\n\nfn main(x: f64, w: f64) -> (y: f64, z: f64) {{\n    a = core.add(x, 1.0)\n    {ordered} = core.mul(w, 2.0, after: a)\n    {data} = core.neg(a)\n}}\n"
+        );
+        let (checked, names) = checked(&[("main.lcf", &main)]);
+        assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+        let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+            panic!()
+        };
+        let group = drawing.groups.iter().find(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
+        let wire = group.wire.as_ref().unwrap();
+        assert!(wire.source.is_some(), "{ordered:?}");
+        let junctions: Vec<_> = group
+            .shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Circle { paint, .. } => Some(paint.fill_token()),
+                _ => None,
+            })
+            .collect();
+        assert!(!junctions.is_empty() && junctions.iter().all(|token| *token == Some("wire.data")), "{ordered:?}: {junctions:?}");
+        // Where the net starts: the output of `a`, the first point of each branch.
+        let start = wire.readers.first().and_then(|(_, branch)| branch.first().copied()).unwrap();
+        let wires: Vec<_> = group
+            .shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Wire { points, style } => Some((points.first().copied(), style.token)),
+                _ => None,
+            })
+            .collect();
+        let from_start: Vec<_> = wires.iter().filter(|(first, _)| *first == Some(start)).map(|(_, token)| *token).collect();
+        assert_eq!(from_start, ["wire.data"], "{ordered:?}: {wires:?}");
+        // The first wire drawn, which the preview of a drag takes for the whole net, is the value.
+        assert_eq!(wires.first().map(|(_, token)| *token), Some("wire.data"), "{ordered:?}: {wires:?}");
+        assert_eq!(wires.iter().filter(|(_, token)| *token == "wire.order").count(), 1, "{ordered:?}: {wires:?}");
+        let readers: Vec<_> = wire.readers.iter().map(|(form, _)| form.clone().unwrap_or_default()).collect();
+        assert_eq!(readers, [format!("{data}.x"), format!("{ordered}.after")], "{ordered:?}");
+    }
+}
+
 /// The view `Block` draws the block as the canvas draws its calls, in the reader's appearance: in the mode of color by type
 /// its number terminals take `type.number` (notation 4.3), and without it none does.
 #[test]

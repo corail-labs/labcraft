@@ -29,11 +29,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </defs>
 <rect x="19" y="16" width="1152" height="312" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn wait_dut</text>
-<g data-wire="err" data-from="fn.err" data-to="t0.after present.e">
-<path d="M19 280 L111.18 280 Q117.18 280 117.18 274 L117.18 198 Q117.18 192 123.18 192 L140.18 192 Q144.18 192 144.18 196 L144.18 200" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M117.18 280 L244.28 280" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M128.28 281.4 L130.08 280 L128.28 278.6 M136.28 281.4 L138.08 280 L136.28 278.6 M144.28 281.4 L146.08 280 L144.28 278.6 M152.28 281.4 L154.08 280 L152.28 278.6 M160.28 281.4 L162.08 280 L160.28 278.6 M168.28 281.4 L170.08 280 L168.28 278.6 M176.28 281.4 L178.08 280 L176.28 278.6 M184.28 281.4 L186.08 280 L184.28 278.6 M192.28 281.4 L194.08 280 L192.28 278.6 M200.28 281.4 L202.08 280 L200.28 278.6 M208.28 281.4 L210.08 280 L208.28 278.6 M216.28 281.4 L218.08 280 L216.28 278.6 M224.28 281.4 L226.08 280 L224.28 278.6 M232.28 281.4 L234.08 280 L232.28 278.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
-<circle cx="117.18" cy="280" r="3" style="fill: var(--wire-order)"/>
+<g data-wire="err" data-from="fn.err" data-to="present.e t0.after">
+<path d="M19 280 L244.28 280" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M30.1 281.4 L31.9 280 L30.1 278.6 M38.1 281.4 L39.9 280 L38.1 278.6 M46.1 281.4 L47.9 280 L46.1 278.6 M54.1 281.4 L55.9 280 L54.1 278.6 M62.1 281.4 L63.9 280 L62.1 278.6 M70.1 281.4 L71.9 280 L70.1 278.6 M78.1 281.4 L79.9 280 L78.1 278.6 M86.1 281.4 L87.9 280 L86.1 278.6 M94.1 281.4 L95.9 280 L94.1 278.6 M102.1 281.4 L103.9 280 L102.1 278.6 M110.1 281.4 L111.9 280 L110.1 278.6 M118.1 281.4 L119.9 280 L118.1 278.6 M126.1 281.4 L127.9 280 L126.1 278.6 M134.1 281.4 L135.9 280 L134.1 278.6 M142.1 281.4 L143.9 280 L142.1 278.6 M150.1 281.4 L151.9 280 L150.1 278.6 M158.1 281.4 L159.9 280 L158.1 278.6 M166.1 281.4 L167.9 280 L166.1 278.6 M174.1 281.4 L175.9 280 L174.1 278.6 M182.1 281.4 L183.9 280 L182.1 278.6 M190.1 281.4 L191.9 280 L190.1 278.6 M198.1 281.4 L199.9 280 L198.1 278.6 M206.1 281.4 L207.9 280 L206.1 278.6 M214.1 281.4 L215.9 280 L214.1 278.6 M222.1 281.4 L223.9 280 L222.1 278.6 M230.1 281.4 L231.9 280 L230.1 278.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<path d="M117.18 280 L117.18 198 Q117.18 192 123.18 192 L140.18 192 Q144.18 192 144.18 196 L144.18 200" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
+<circle cx="117.18" cy="280" r="3" style="fill: var(--wire-error)"/>
 </g>
 <g data-wire="present" data-from="present.present" data-to="fn.present">
 <path d="M1092.28 144 L1171 144" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
