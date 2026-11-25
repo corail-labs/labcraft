@@ -230,10 +230,14 @@ pub(crate) fn route(edit: &mut Edit, judge: &dyn Judge, wire: &str, via: &[Point
 }
 
 /// Where a junction lies on its trunk: the trunk by its name, the index of its segment, the distance from the start of
-/// that segment, in hundredths, and how many segments the trunk has.
+/// that segment, in hundredths, and how many segments the trunk has; and the branch, by its value, its name and its frame
+/// (`body`) before the command.
 struct OnTrunk {
     entry: usize,
     trunk: String,
+    body: usize,
+    value: String,
+    branch: String,
     segment: usize,
     along: i64,
     segments: usize,
@@ -290,8 +294,12 @@ fn routes(edit: &Edit) -> Vec<Routed> {
 
 /// After a command, each junction follows its trunk (notation 2.5): the first point of a branch that lay on a wire of
 /// its value keeps its distance from the start of that segment of the trunk, cut to its length; when the trunk no
-/// longer has that segment, the point goes, and the junction is automatic again. A branch whose entry the command
-/// changed is as the command left it. Part of the same step as the command.
+/// longer has that segment, the point goes, and the junction is automatic again. When no wire after the command has
+/// the name of the trunk (a wire is named by its reader, which the command may have renamed), the other wires of the
+/// value in the frame of the branch decide (decision of the owner, 2026-11-25): one that goes through the point keeps
+/// it where it is; some, but none through the point, drop it, as for a trunk that moved; none, the trunk was removed and
+/// the branch is alone, so it keeps its whole route. A branch whose entry the command changed is as the command left
+/// it. Part of the same step as the command.
 pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge, limits: &labcraft_types::Limits) -> Result<String, EditError> {
     if before == after {
         return Ok(after);
@@ -340,7 +348,20 @@ pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge,
         let Some((trunk, segment, along)) = trunk else { continue };
         let vertical = matches!((trunk.path.get(segment), trunk.path.get(segment + 1)), (Some(a), Some(b)) if a.0 == b.0);
         let segments = trunk.path.len().saturating_sub(1);
-        junctions.push((OnTrunk { entry, trunk: trunk.name.clone(), segment, along, segments }, vertical, at));
+        junctions.push((
+            OnTrunk {
+                entry,
+                trunk: trunk.name.clone(),
+                body: branch.body,
+                value: branch.value.clone(),
+                branch: branch.name.clone(),
+                segment,
+                along,
+                segments,
+            },
+            vertical,
+            at,
+        ));
     }
     if junctions.is_empty() {
         return Ok(after);
@@ -349,20 +370,45 @@ pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge,
     if drawn_after.is_empty() {
         return Ok(after);
     }
-    let by_name: std::collections::HashMap<&str, &WireDrawn> = drawn_after.iter().map(|drawn| (drawn.name.as_str(), drawn)).collect();
+    let of_value_after = by_value(&drawn_after);
+    // A name is the one of a wire in its frame: a value bound in two arms has the same names in both.
+    let by_name: std::collections::HashMap<(usize, &str), &WireDrawn> =
+        drawn_after.iter().map(|drawn| ((drawn.body, drawn.name.as_str()), drawn)).collect();
     let mut changed = false;
     let mut emptied = Vec::new();
     let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
     for (junction, vertical, at) in junctions {
-        // At the same distance along the same segment; or where it was, when it still lies on the trunk (a part of it
-        // that did not move); otherwise it goes. A point that the file cannot write on the trunk, off the grid of units,
-        // goes too.
-        let moved = by_name.get(junction.trunk.as_str()).and_then(|trunk| {
-            along_segment(&trunk.path, junction.segment, junction.along, junction.segments, vertical)
+        let moved = match by_name.get(&(junction.body, junction.trunk.as_str())) {
+            // The trunk is still there. At the same distance along the same segment; or where it was, when it still lies
+            // on the trunk (a part of it that did not move); otherwise it goes. A point that the file cannot write on the
+            // trunk, off the grid of units, goes too.
+            Some(trunk) => along_segment(&trunk.path, junction.segment, junction.along, junction.segments, vertical)
                 .or_else(|| segment_of(&trunk.path, at).map(|_| at))
                 .map(|(x, y)| (unit(x), unit(y)))
-                .filter(|&(x, y)| segment_of(&trunk.path, (x.saturating_mul(100), y.saturating_mul(100))).is_some())
-        });
+                .filter(|&(x, y)| segment_of(&trunk.path, (x.saturating_mul(100), y.saturating_mul(100))).is_some()),
+            // No wire after the command has the name of the trunk: it was removed, or its reader was renamed. The other
+            // wires of the value in the frame of the branch, as drawn after the command, tell which (notation 2.5,
+            // decision of the owner, 2026-11-25).
+            None => {
+                let own = match edit.file.layout.as_ref().and_then(|layout| layout.items.get(junction.entry)) {
+                    Some(LayoutItem { kind: LayoutKind::Wire { from, to, .. }, .. }) => {
+                        designated(&edit, &of_value_after, &texts_of(&edit, from, to))
+                    }
+                    _ => None,
+                };
+                let (body, value, name) = own.map_or((junction.body, junction.value.as_str(), junction.branch.as_str()), |own| {
+                    (own.body, own.value.as_str(), own.name.as_str())
+                });
+                let others = of_value_after.get(value).map_or(&[][..], Vec::as_slice).iter().filter(|other| other.body == body && other.name != name);
+                // None: the branch is alone, it keeps its whole route. One through the point: the junction is still one,
+                // on a part that did not move. Otherwise the trunk moved or was renamed: the point goes.
+                let mut others = others.peekable();
+                if others.peek().is_none() || others.any(|other| segment_of(&other.path, at).is_some()) {
+                    continue;
+                }
+                None
+            }
+        };
         let first: Option<(Numeral, Numeral)> = moved.map(|(x, y)| (coordinate(&mut edit, x), coordinate(&mut edit, y)));
         let Some(layout) = edit.file.layout.as_mut() else { break };
         let Some(LayoutItem { kind: LayoutKind::Wire { via, .. }, .. }) = layout.items.get_mut(junction.entry) else { continue };

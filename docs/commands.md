@@ -788,7 +788,10 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
 - **A junction follows its trunk.** After every editing command, whoever calls it, the first point of a branch that
   lay on a wire of its value keeps its distance from the start of that segment, or goes when the trunk no longer has
   it (visual notation 2.5), in the same step; a branch whose entry the command wrote is as the command wrote it
-  (decision of the owner, 2026-11-17).
+  (decision of the owner, 2026-11-17). When the drawing after the command has no wire of the trunk's name (the command
+  removed it, as `wire.disconnect`, `node.delete` and `node.set_template` do, or renamed its reader, as `value.rename`
+  does), the other wires of the value in the same frame decide: one through the point keeps it, some but none through
+  it drop it, none leave the branch its whole route (decision of the owner, 2026-11-25).
 - **Settings.** The settings of a project are in `.labcraft/config.toml`, versioned with the project, and those
   of the user in the folder of the user (`craft-settings`); a key of the project wins over the same key of the
   user. The commands `settings.get` and `settings.set` read and write them, for the IDE, the agent and the

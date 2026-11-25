@@ -1073,6 +1073,10 @@ impl Judge for Drawn {
         Table.errors(file, text)
     }
 
+    fn template(&self, literal: &str) -> Result<Vec<String>, String> {
+        Table.template(literal)
+    }
+
     fn wires(&self, _: &str, text: &str) -> Vec<crate::WireDrawn> {
         self.by_text.iter().find(|(marker, _)| text.contains(marker)).map(|(_, wires)| wires.clone()).unwrap_or_default()
     }
@@ -1312,6 +1316,110 @@ fn a_junction_off_the_grid_of_units_goes() {
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (160, 120)\n"), "{written}");
+}
+
+/// When no wire after the command has the name of the trunk of a junction, the other wires of its value in its frame say
+/// what became of it (notation 2.5, decision of the owner, 2026-11-25). None left: the trunk was removed and the branch
+/// is alone, so it keeps its whole route. `node.set_template` removes the wire of a field that goes.
+#[test]
+fn a_branch_keeps_its_route_when_its_trunk_is_removed_by_a_template() {
+    const FORMAT: &str = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(\"{v} {w}\", v: x, w: x)\n    y = text\n}\n";
+    let before = format!("{FORMAT}\nlayout {{\n    wire x -> text.w via (100, 40) (100, 60)\n}}\n");
+    // `x -> text.v` runs straight at height 40: (100, 40) lies on it, so the first point of the route of `x -> text.w` is
+    // read as a branch of it. After, only `x -> text.w` is left, with the same path: nothing else has the value `x`, the
+    // route stays whole, and the text after is the text of the template alone, the layout as it was.
+    let trunk = drawn("x -> text.v", &[(0, 40), (200, 40)]);
+    let branch = || drawn("x -> text.w", &[(0, 40), (100, 40), (100, 60), (200, 60)]);
+    let judge = Drawn { by_text: vec![("format(\"{w}\"", vec![branch()]), ("fn f", vec![trunk, branch()])] };
+    let op = Op::NodeSetTemplate { file: FILE.to_owned(), node: "text".to_owned(), template: "\"{w}\"".to_owned() };
+    let edited = run_judged(&judge, &before, op).unwrap();
+    let after = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(\"{w}\", w: x)\n    y = text\n}\n";
+    let after = text(&format!("{after}\nlayout {{\n    wire x -> text.w via (100, 40) (100, 60)\n}}\n"));
+    assert_eq!(edited.texts.get(FILE).map(String::as_str), Some(after.as_str()));
+}
+
+/// The same for any command that removes a wire: `wire.disconnect` of the trunk, and `node.delete` of its reader.
+#[test]
+fn a_branch_keeps_its_route_when_its_trunk_is_disconnected_or_deleted() {
+    let layout = "\nlayout {\n    wire a -> z via (140, 40) (140, 100)\n}\n";
+    let trunk = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    let branch = || drawn("a -> z.x", &[(100, 40), (140, 40), (140, 100), (200, 120)]);
+    // Before: `a -> z` leaves `a -> y` at (140, 40), which lies on it. After: `z` is the only reader of `a`, drawn as it
+    // was, and the entry, written by hand, is the one before.
+    let judge = Drawn { by_text: vec![("y = core.abs()", vec![branch()]), ("y = core.abs(a)", vec![trunk, branch()])] };
+    let disconnected = run_judged(&judge, &format!("{BRANCHED}{layout}"), disconnect("a -> y.x")).unwrap();
+    let written = BRANCHED.replace("y = core.abs(a)", "y = core.abs()");
+    assert_eq!(disconnected.texts.get(FILE).map(String::as_str), Some(text(&format!("{written}{layout}")).as_str()));
+    // `y` bound to a local, deleted: its line goes, and with it the wire into it.
+    let local = BRANCHED.replace("(y: f64, z: f64)", "(z: f64)");
+    let trunk = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    let judge = Drawn { by_text: vec![("y = core.abs(a)", vec![trunk, branch()]), ("fn f", vec![branch()])] };
+    let deleted = run_judged(&judge, &format!("{local}{layout}"), delete(&["y"])).unwrap();
+    let written = local.replace("    y = core.abs(a)\n", "");
+    assert_eq!(deleted.texts.get(FILE).map(String::as_str), Some(text(&format!("{written}{layout}")).as_str()));
+}
+
+/// A wire of another frame that has the name of the trunk is not the trunk: the branch is alone in its frame, and keeps
+/// its whole route.
+#[test]
+fn the_trunk_is_looked_for_in_the_frame_of_the_branch() {
+    let before = format!("{BRANCHED}\nlayout {{\n    wire a -> z via (140, 40) (140, 100)\n}}\n");
+    let trunk = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    let branch = || drawn("a -> z.x", &[(100, 40), (140, 40), (140, 100), (200, 120)]);
+    // After, a wire of the same name is drawn in the frame 1, far from the point: followed, it would move the point to
+    // (140, 300).
+    let mut elsewhere = drawn("a -> y.x", &[(100, 300), (200, 300)]);
+    elsewhere.body = 1;
+    let judge = Drawn { by_text: vec![("y = core.abs()", vec![branch(), elsewhere]), ("y = core.abs(a)", vec![trunk, branch()])] };
+    let edited = run_judged(&judge, &before, disconnect("a -> y.x")).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(written.contains("    wire a -> z via (140, 40) (140, 100)\n"), "{written}");
+}
+
+/// The reader of the trunk is renamed: the trunk has another name, and is drawn after on a path that no longer goes
+/// through the point. Some wires of the value remain, none through the point: the point goes (decision of the owner,
+/// 2026-11-25).
+#[test]
+fn a_junction_goes_when_its_trunk_is_renamed_and_moved() {
+    const LOCAL: &str =
+        "use core\n\nfn f(x: f64) -> (r: f64, z: f64) {\n    a = core.abs(x)\n    y = core.abs(a)\n    r = core.abs(y)\n    z = core.abs(a)\n}\n";
+    let before = format!("{LOCAL}\nlayout {{\n    wire a -> z via (140, 40) (140, 100)\n}}\n");
+    let branch = || drawn("a -> z.x", &[(100, 40), (140, 40), (140, 100), (200, 120)]);
+    let trunk = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    // After `value.rename` of `y` to `q`, the trunk is `a -> q.x`, drawn with two more bends: (140, 40) is off it.
+    let renamed = drawn("a -> q.x", &[(100, 40), (120, 40), (120, 60), (200, 60)]);
+    let judge = Drawn { by_text: vec![("q = core.abs(a)", vec![renamed, branch()]), ("y = core.abs(a)", vec![trunk, branch()])] };
+    let rename = Op::ValueRename { file: FILE.to_owned(), value: "y".to_owned(), name: "q".to_owned() };
+    let edited = run_judged(&judge, &before, rename).unwrap();
+    // The rename writes `q` for `y` in the two lines that name it, and the order of lines of spec 5.2 puts them `a`, `q`,
+    // `r` (which reads `q`), `z`: by name, among the lines whose inputs are written. The first point of the entry goes.
+    let after = LOCAL.replace("y = core.abs(a)", "q = core.abs(a)").replace("core.abs(y)", "core.abs(q)");
+    let after = text(&format!("{after}\nlayout {{\n    wire a -> z via (140, 100)\n}}\n"));
+    assert_eq!(edited.texts.get(FILE).map(String::as_str), Some(after.as_str()));
+}
+
+/// The trunk is removed but another wire of the value, in the same frame, goes through the point: the junction is still
+/// one, on a part that did not move, and stays where it is. When that wire does not go through it, the point goes.
+#[test]
+fn a_junction_stays_on_another_wire_of_its_value_that_goes_through_it() {
+    const THREE: &str = "use core\n\nfn f(x: f64) -> (y: f64, z: f64, w: f64) {\n    a = core.abs(x)\n    w = core.abs(a)\n    y = core.abs(a)\n    z = core.abs(a)\n}\n";
+    let before = format!("{THREE}\nlayout {{\n    wire a -> z via (140, 40) (140, 100)\n}}\n");
+    let trunk = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    let branch = || drawn("a -> z.x", &[(100, 40), (140, 40), (140, 100), (200, 120)]);
+    // `a -> w` runs along height 40 up to 160: it goes through (140, 40) as well.
+    let through = || drawn("a -> w.x", &[(100, 40), (160, 40), (160, 140), (200, 140)]);
+    let aside = drawn("a -> w.x", &[(100, 56), (200, 56)]);
+    let disconnected = THREE.replace("y = core.abs(a)", "y = core.abs()");
+    let judge = Drawn { by_text: vec![("y = core.abs()", vec![branch(), through()]), ("y = core.abs(a)", vec![trunk, branch(), through()])] };
+    let edited = run_judged(&judge, &before, disconnect("a -> y.x")).unwrap();
+    let kept = text(&format!("{disconnected}\nlayout {{\n    wire a -> z via (140, 40) (140, 100)\n}}\n"));
+    assert_eq!(edited.texts.get(FILE).map(String::as_str), Some(kept.as_str()));
+    // `a -> w` at height 56 is off the point: the point goes, and the second one stays.
+    let trunk = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    let judge = Drawn { by_text: vec![("y = core.abs()", vec![branch(), aside]), ("y = core.abs(a)", vec![trunk, branch(), through()])] };
+    let edited = run_judged(&judge, &before, disconnect("a -> y.x")).unwrap();
+    let dropped = text(&format!("{disconnected}\nlayout {{\n    wire a -> z via (140, 100)\n}}\n"));
+    assert_eq!(edited.texts.get(FILE).map(String::as_str), Some(dropped.as_str()));
 }
 
 /// The trunk of a branch is a wire without a junction of its own, when one goes through it: another branch along the
