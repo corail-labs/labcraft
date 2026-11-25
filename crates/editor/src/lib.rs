@@ -792,7 +792,7 @@ impl Canvas {
     pub fn hold_move(&mut self, nodes: &[usize], by: (i64, i64)) {
         let Some(drawing) = self.drawing.clone() else { return };
         let moving = match &mut self.moving {
-            Some(moving) if moving.state == moving::State::Held && moving.nodes == nodes => moving,
+            Some(moving) if moving.state == moving::State::Held && moving.moves(nodes) => moving,
             _ => self.moving.insert(Moving::new(&drawing, nodes.to_vec(), moving::State::Held)),
         };
         moving.set_by(&drawing, by);
@@ -1743,7 +1743,11 @@ impl Canvas {
                 && frame.offsets.is_none()
                 && drawing.placed.get(placed).is_some_and(|found| !found.name.is_empty())
             {
-                let nodes = self.grabbed(drawing, placed, input);
+                let mut nodes = self.grabbed(drawing, placed, input);
+                // The node held leads the move: it lands on the grid of its frame (notation 2.4).
+                if let Some(front) = nodes.iter().position(|&node| node == placed).and_then(|at| nodes.get_mut(..=at)) {
+                    front.rotate_right(1);
+                }
                 self.moving = Some(Moving::new(drawing, nodes, moving::State::Dragging { from }));
             }
             self.drag = match (from, hit) {
@@ -1895,12 +1899,12 @@ impl Canvas {
         let Some(body) = movable.first().and_then(|&first| drawing.placed.get(first)).map(|found| found.body) else { return };
         let nodes: Vec<usize> = movable.into_iter().filter(|&at| drawing.placed.get(at).is_some_and(|found| found.body == body)).collect();
         // A run on other nodes ends first, with its move.
-        if self.moving.as_ref().is_some_and(|moving| moving.nodes != nodes) {
+        if self.moving.as_ref().is_some_and(|moving| !moving.moves(&nodes)) {
             input.intents.extend(self.end_run());
             return;
         }
         let moving = match &mut self.moving {
-            Some(moving) if moving.nodes == nodes => moving,
+            Some(moving) if moving.moves(&nodes) => moving,
             _ => self.moving.insert(Moving::new(drawing, nodes, moving::State::Keys { last: now })),
         };
         moving.state = moving::State::Keys { last: now };

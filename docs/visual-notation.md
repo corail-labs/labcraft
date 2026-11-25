@@ -188,7 +188,8 @@ are the nodes that a `layout` section does not place (spec 11).
   way into it: an input that reads several values, or a value bound twice, which `check` refuses.
 - **Narrow channels** *(proposed)*. The channel between two columns is as wide as its vertical segments need,
   8 apart, with the conversion and field pills of its wires, the pills of the inline constants of the blocks
-  it leads to, and a margin of 8 on each side: 16 with no vertical segment or one, 8 more for each other. The
+  it leads to, and a margin of 8 on each side: 16 with no vertical segment or one, 8 more for each other; the column after it
+  starts on the grid of 8 of its frame, which can widen it by less than 8 (2.2). The
   pills stand just before the block they lead to, in the room that its inline constants take (3.2). The name of a
   wire never widens it (section 4), nor does a value of a run (6.1): they take the room that is there, or none.
 - **Where the file places a node** (#274, decision of the owner, 2026-11-23). The columns of the routes of its body
@@ -206,7 +207,10 @@ are the nodes that a `layout` section does not place (spec 11).
   above the main chain: at the height of its source when that one is free, with no vertical; otherwise at the height
   where it reaches its readers past the next column, when they all are at one and it is free, as long and with one bend
   fewer (#279, decision of the owner, 2026-11-23); otherwise on the grid of 8, the upper one on a tie. That grid, and the one of the jogs below, starts on the main chain of the body (or
-  where it would run), so that they keep their place against its nodes wherever the body lies. Two nodes stacked 24 apart leave no lane between them; above them all is always free.
+  where it would run), so that they keep their place against its nodes wherever the body lies; the placement puts that
+  chain on the grid of 8 of its frame, counted from its origin (spec 11), and each column across on it too, the channel
+  before a column growing by less than 8, so that the nodes it places, the nodes moved by hand and the segments dragged
+  share one grid (2.4; decisions of the owner, 2026-11-24 and 2026-11-25). Two nodes stacked 24 apart leave no lane between them; above them all is always free.
   The shortest tracks are laid first. In a body so large that the searches for lanes would read more than its budget
   (architecture 11.3), the tracks laid past it go over the nodes. A wire that goes back to the left runs over the
   nodes and the other tracks, 8 above where another wire ends in the channels at its ends. A secondary error wire
@@ -323,9 +327,14 @@ same diagram, so the editor never shows a state that the `layout` section cannot
 (a wire being drawn, a field being typed in) escapes it. How each state is drawn (marks, handles, the wire being
 drawn) is in 2.5, and the keys and the gestures in detail in 2.6. Where two
 behaviours are defensible, the other one is a setting of the user or of the project, and the default is the one
-below.
+below. What a gesture moves or places in a frame snaps to one grid of 8, counted from the origin of that frame (spec
+11), inner frames too: the grid on which the placement puts the main chain and the columns (2.2), so that a segment dragged to the height of a terminal
+is level with it (decision of the owner, 2026-11-24).
 
-- **Fixed and free nodes.** Moving a node fixes it: its `node … at` entry is written, and that node alone. The
+- **Fixed and free nodes.** Moving a node fixes it, on that grid: its `node … at` entry is written, and that node
+  alone; a node that the file puts off the grid comes back to it. Nodes moved together keep their distances: the
+  first lands on the grid and the others go as far, so that a node off the grid stays off it in a group (decision of
+  the owner, 2026-11-25). The
   others stay automatic and move as little as they can around it; their place still depends on the file alone (2.1),
   so the fixed nodes are what keeps the drawing stable. Setting: "fix every node at the first move". A node that an
   agent adds without a position is placed near its neighbours, without moving the others, and stays free until
@@ -534,7 +543,7 @@ in progress writes nothing (2.4).
 | Shift+click, Ctrl+click | a node, a wire | Adds it to the selection, or removes it |
 | Drag | the empty canvas | Selects the nodes that the rectangle touches. Setting: "drag on the empty canvas pans", Shift+drag then selects |
 | Middle drag, wheel, two fingers | anywhere | Pans; Shift+wheel pans sideways; Ctrl+wheel or a pinch zooms around the pointer, as the viewer does |
-| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4), by whole steps of the grid of 8. From a node of the selection, the nodes of the selection in its frame move, the others stay (decision of the owner, 2026-11-17); from another node, that node, which the drag selects. Escape during the drag puts them back |
+| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4), by whole steps of the grid of 8, the node held landing on the grid of its frame and the others going as far: the preview shows them where the drop puts them. From a node of the selection, the nodes of the selection in its frame move, the others stay (decision of the owner, 2026-11-17); from another node, that node, which the drag selects. Escape during the drag puts them back |
 | Drag | an output | Draws a wire to an input (2.5): `wire.connect`. Released on the empty canvas, it opens quick insertion, filtered (below) |
 | Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
 | Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
@@ -724,7 +733,9 @@ the canvas shows.
   filtered, as a wire dropped on the empty canvas does; the node falls to the right of the start of the wire.
 - **A route by hand** has no key in M1: "Arrange this wire" gives a wire its automatic route back, and W on an
   output draws a branch, with an automatic junction (decision of the owner, 2026-11-17).
-- **Moving.** Ctrl and an arrow moves the selection by 8, one step of the grid; with Shift, by 64. The presses that
+- **Moving.** Ctrl and an arrow moves the selection by 8, one step of the grid, its first node onto the grid of its
+  frame and the others as far (2.4); with
+  Shift, by 64. The presses that
   follow one another on the same nodes are one run, one `node.move` and one step of undo, as a drag is
   ([commands.md](commands.md), 9.1): the nodes show where they go at each press, as in a drag, and the move is written
   when the run ends; another key, a click or a second without a press ends it. The nodes of the selection in the frame

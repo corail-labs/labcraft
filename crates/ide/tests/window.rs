@@ -768,15 +768,15 @@ fn a_node_dragged_is_fixed_where_it_goes_and_its_fixed_position_is_removed_from_
     let (x, y) = before.in_frame(a).unwrap();
     let (on_a, _) = canvas_element(&harness, "a, core.mul");
     drag_from(&mut harness, on_a, on_a + egui::vec2(60.0, 40.0));
-    // The drag selected `a`, and moved it: its entry of `layout`, the only line that changed (scenario 5), on the grid of
-    // 8 from where it was, right and down (notation 2.4, 2.6).
+    // The drag selected `a`, and moved it: its entry of `layout`, the only line that changed (scenario 5), right and down,
+    // on the grid of 8 of its frame (notation 2.4, 2.6, #327).
     assert_eq!(selection(&harness).nodes, ["a"]);
     let text = text_of(&harness, "/p/main.lcf");
     let entry = text.strip_prefix(MAIN).unwrap_or_else(|| panic!("only `layout` added: {text}"));
     let at = entry.strip_prefix("\nlayout {\n    node a at (").and_then(|rest| rest.strip_suffix(")\n}\n")).unwrap_or_else(|| panic!("{entry}"));
     let (x1, y1) = at.split_once(", ").map(|(x, y)| (x.parse::<i64>().unwrap(), y.parse::<i64>().unwrap())).unwrap();
     let (dx, dy) = (x1 - (x + 50).div_euclid(100), y1 - (y + 50).div_euclid(100));
-    assert!(dx > 0 && dy > 0 && dx % 8 == 0 && dy % 8 == 0, "moved by ({dx}, {dy})");
+    assert!(dx > 0 && dy > 0 && x1 % 8 == 0 && y1 % 8 == 0, "moved by ({dx}, {dy}) to ({x1}, {y1})");
     // The session drew it again, fixed there: the inspector says so, and removing the fixed position gives the file back.
     harness.state().host.session.borrow_mut().files_changed();
     harness.run_steps(4);

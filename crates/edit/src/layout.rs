@@ -220,7 +220,20 @@ fn report(edit: &Edit, locs: &[Loc], labelled: &[(Loc, String)], edited: &mut Ed
     Ok(names)
 }
 
-/// `node.move`: the nodes of one frame by `by`, each fixed where it goes (notation 2.4). A move by nothing changes nothing.
+/// The grid of 8 of a frame, counted from its origin (notation 2.2), in units. Two other places round to it and must
+/// agree: the placement of `diagram` (`style::grid()`) and the moves of `editor` (`rerouting::snap`); `edit` does not
+/// depend on either.
+const GRID: i64 = 8;
+
+/// `value` on the nearest line of the grid of its frame, the larger one on a tie.
+fn on_grid(value: i64) -> i64 {
+    value.saturating_add(GRID / 2).div_euclid(GRID).saturating_mul(GRID)
+}
+
+/// `node.move`: the nodes of one frame, each fixed where it goes. The first goes by about `by`, to the nearest point of
+/// the grid of 8 of its frame, so that a node that the section put off it comes back to it; the others go as far, so
+/// that the group keeps its shape (notation 2.4, 2.6; decision of the owner, 2026-11-25). A move that comes to nothing
+/// changes nothing.
 pub(crate) fn move_nodes(edit: &mut Edit, judge: &dyn Judge, nodes: &[String], by: Point, edited: &mut Edited) -> Result<(), EditError> {
     if nodes.is_empty() {
         return Err(EditError::invalid("nodes", "`nodes` names at least one node"));
@@ -244,10 +257,19 @@ pub(crate) fn move_nodes(edit: &mut Edit, judge: &dyn Judge, nodes: &[String], b
         };
         from.push(at);
     }
+    // How far the first one goes to land on the grid; the group, as far.
+    let Some(&lead) = from.first() else { return Err(EditError::invalid("nodes", "`nodes` names at least one node")) };
+    let landed =
+        Point { x: on_grid(lead.x.saturating_add(by.x)).saturating_sub(lead.x), y: on_grid(lead.y.saturating_add(by.y)).saturating_sub(lead.y) };
+    if landed == (Point { x: 0, y: 0 }) {
+        let names = report(edit, &locs, &[], edited)?;
+        edited.lists.insert("nodes", names);
+        return Ok(());
+    }
     let mut labelled = Vec::new();
     for (loc, at) in locs.iter().zip(from) {
         let designation = designate(edit, loc, &mut labelled)?;
-        let to = Point { x: at.x.saturating_add(by.x), y: at.y.saturating_add(by.y) };
+        let to = Point { x: at.x.saturating_add(landed.x), y: at.y.saturating_add(landed.y) };
         fix(edit, loc, designation, to, "by")?;
     }
     let names = report(edit, &locs, &labelled, edited)?;

@@ -9,6 +9,7 @@ use egui::{Pos2, Vec2};
 use labcraft_diagram::{Drawing, Preview, preview};
 
 use crate::paint::Painted;
+use crate::rerouting::{snap, unit};
 
 /// One step of the grid of 8: a drag moves by whole steps, and so does Ctrl with an arrow (notation 2.6).
 pub(crate) const GRID: f32 = 8.0;
@@ -32,7 +33,8 @@ pub(crate) enum State {
 }
 
 pub(crate) struct Moving {
-    /// The nodes moved, by their index in [`Drawing::placed`].
+    /// The nodes moved, by their index in [`Drawing::placed`]; the first leads the move, the one a drag holds: it lands on
+    /// the grid of 8 of its frame, where `node.move` puts it (notation 2.4).
     pub nodes: Vec<usize>,
     /// How far, in units, on the grid.
     pub by: (i64, i64),
@@ -53,8 +55,18 @@ impl Moving {
         Moving { nodes, by: (0, 0), state, preview, painted: HashMap::new(), rerouted, asked_at: None }
     }
 
-    /// Moves to `by`, in units; the preview follows.
+    /// Moves by about `by`, whole steps of the grid in units: as far as puts the first node on the nearest point of the
+    /// grid of 8 of its frame, counted from its origin, the others going as far, as `node.move` moves them (notation 2.4),
+    /// so that the preview shows them where the drop writes them. A move by nothing stays one. The preview follows.
     pub fn set_by(&mut self, drawing: &Drawing, by: (i64, i64)) {
+        let by = match self.nodes.first().and_then(|&lead| drawing.in_frame(lead)) {
+            Some((x, y)) if by != (0, 0) => {
+                let (x, y) = (unit(x), unit(y));
+                let land = |from: i64, by: i64| snap(from.saturating_add(by).saturating_mul(100), 0) / 100 - from;
+                (land(x, by.0), land(y, by.1))
+            }
+            _ => by,
+        };
         if by == self.by {
             return;
         }
@@ -62,6 +74,11 @@ impl Moving {
         self.preview = preview(drawing, &self.nodes, (by.0 * 100, by.1 * 100));
         self.rerouted = self.preview.wires.iter().enumerate().map(|(at, (group, _))| (*group, at)).collect();
         self.painted.clear();
+    }
+
+    /// Whether it moves these nodes, in any order: a drag puts the node it holds first.
+    pub fn moves(&self, nodes: &[usize]) -> bool {
+        self.nodes.len() == nodes.len() && nodes.iter().all(|node| self.nodes.contains(node))
     }
 
     /// The same move over a new drawing, its nodes found again by their keys; none when one of them is gone.
