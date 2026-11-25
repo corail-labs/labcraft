@@ -408,6 +408,24 @@ fn nodes_that_the_file_places_one_over_the_other_are_drawn_and_warned() {
     assert!(text.ends_with("\ndiagram: 1 function, 1 drawn, 0 not drawn: 0 errors, 2 warnings\n"), "{text}");
 }
 
+/// #284: a value read first as an order (`after:`), then as a value, shows its value after a run. By hand: `a` is
+/// 2.0 + 1.0 = 3.0.
+#[test]
+fn a_value_read_first_as_an_order_shows_its_value() {
+    let folder = Folder::new("trace-order");
+    folder.file(
+        "lib/ordered.lcf",
+        "labcraft 1\n\nuse core\n\nfn ordered(x: f64 = 2.0, w: f64 = 3.0) -> (y: f64, z: f64) {\n    a = core.add(x, 1.0)\n    \
+         y = core.mul(w, 2.0, after: a)\n    z = core.neg(a)\n}\n",
+    );
+    let ran = Command::new(env!("CARGO_BIN_EXE_labcraft-cli")).current_dir(&folder.0).args(["run", "lib", "ordered"]).output().unwrap();
+    assert_eq!(ran.status.code(), Some(0), "{}", String::from_utf8_lossy(&ran.stderr));
+    let (exit, document) = folder.json(&["--svg", "--out", "d", "--trace", "lib/.labcraft/runs/ordered.trace.jsonl", "lib", "ordered"]);
+    assert_eq!(exit, 0, "{document}");
+    let svg = folder.read("d/ordered.svg");
+    assert!(svg.contains("<g data-value=\"a\"><title>3.0</title>"), "{svg}");
+}
+
 const DOUBLE: &str = "labcraft 1\n\nuse core\n\nfn double(x: f64 = 2.0) -> (y: f64) {\n    y = core.add(x, x)\n}\n";
 const HALF: &str = "labcraft 1\n\nuse core\n\nfn half(x: f64 = 3.0) -> (y: f64) {\n    y = core.div(x, 2.0)\n}\n";
 

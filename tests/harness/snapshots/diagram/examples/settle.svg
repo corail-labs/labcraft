@@ -32,11 +32,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </defs>
 <rect x="19" y="16" width="984" height="344" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn settle</text>
-<g data-wire="err" data-from="fn.err" data-to="t0.after value.e">
-<path d="M19 312 L123.44 312 Q129.44 312 129.44 306 L129.44 230 Q129.44 224 135.44 224 L152.44 224 Q156.44 224 156.44 228 L156.44 232" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M129.44 312 L252.5 312" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M140.54 313.4 L142.34 312 L140.54 310.6 M148.54 313.4 L150.34 312 L148.54 310.6 M156.54 313.4 L158.34 312 L156.54 310.6 M164.54 313.4 L166.34 312 L164.54 310.6 M172.54 313.4 L174.34 312 L172.54 310.6 M180.54 313.4 L182.34 312 L180.54 310.6 M188.54 313.4 L190.34 312 L188.54 310.6 M196.54 313.4 L198.34 312 L196.54 310.6 M204.54 313.4 L206.34 312 L204.54 310.6 M212.54 313.4 L214.34 312 L212.54 310.6 M220.54 313.4 L222.34 312 L220.54 310.6 M228.54 313.4 L230.34 312 L228.54 310.6 M236.54 313.4 L238.34 312 L236.54 310.6 M244.54 313.4 L246.34 312 L244.54 310.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
-<circle cx="129.44" cy="312" r="3" style="fill: var(--wire-order)"/>
+<g data-wire="err" data-from="fn.err" data-to="value.e t0.after">
+<path d="M19 312 L252.5 312" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M30.1 313.4 L31.9 312 L30.1 310.6 M38.1 313.4 L39.9 312 L38.1 310.6 M46.1 313.4 L47.9 312 L46.1 310.6 M54.1 313.4 L55.9 312 L54.1 310.6 M62.1 313.4 L63.9 312 L62.1 310.6 M70.1 313.4 L71.9 312 L70.1 310.6 M78.1 313.4 L79.9 312 L78.1 310.6 M86.1 313.4 L87.9 312 L86.1 310.6 M94.1 313.4 L95.9 312 L94.1 310.6 M102.1 313.4 L103.9 312 L102.1 310.6 M110.1 313.4 L111.9 312 L110.1 310.6 M118.1 313.4 L119.9 312 L118.1 310.6 M126.1 313.4 L127.9 312 L126.1 310.6 M134.1 313.4 L135.9 312 L134.1 310.6 M142.1 313.4 L143.9 312 L142.1 310.6 M150.1 313.4 L151.9 312 L150.1 310.6 M158.1 313.4 L159.9 312 L158.1 310.6 M166.1 313.4 L167.9 312 L166.1 310.6 M174.1 313.4 L175.9 312 L174.1 310.6 M182.1 313.4 L183.9 312 L182.1 310.6 M190.1 313.4 L191.9 312 L190.1 310.6 M198.1 313.4 L199.9 312 L198.1 310.6 M206.1 313.4 L207.9 312 L206.1 310.6 M214.1 313.4 L215.9 312 L214.1 310.6 M222.1 313.4 L223.9 312 L222.1 310.6 M230.1 313.4 L231.9 312 L230.1 310.6 M238.1 313.4 L239.9 312 L238.1 310.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<path d="M129.44 312 L129.44 230 Q129.44 224 135.44 224 L152.44 224 Q156.44 224 156.44 228 L156.44 232" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
+<circle cx="129.44" cy="312" r="3" style="fill: var(--wire-error)"/>
 </g>
 <g data-wire="value" data-from="value.value" data-to="fn.value">
 <path d="M916.5 120 L1003 120" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
