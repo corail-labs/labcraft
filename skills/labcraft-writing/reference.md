@@ -299,7 +299,8 @@ reading = handle e3 {
   the error, its category, its message and where it came from.
 
 Categories that the shipped libraries give: `visa.resource_not_found`, `visa.invalid_session`, `io.timeout`
-(VISA codes), `scpi.instrument_error` (from `scpi.check_errors`), `string.parse`,
+(VISA codes), `scpi.instrument_error` (from `scpi.check_errors`), `scpi.unexpected_response` (from
+`scpi.wait_complete`), `string.parse`,
 `array.index_out_of_range`, `array.negative_size`, `array.unequal_rows`, `core.invalid_function`.
 
 ## 9. The panel

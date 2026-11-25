@@ -1,0 +1,15 @@
+labcraft 1
+
+use visa
+
+/// The standard event status register (`*ESR?`), which the query clears; its bits are read with
+/// `core.and`.
+fn event_status(
+    session: visa.session,
+    err: error = none,
+) -> (session: visa.session, status: i32, err: error) {
+    s, value, e1 = query_i32(session, "*ESR?", err: err)
+    session = s
+    status = value
+    err = e1
+}

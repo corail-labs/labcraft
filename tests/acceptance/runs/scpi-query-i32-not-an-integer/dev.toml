@@ -1,0 +1,7 @@
+# An instrument whose count is not an integer, and whose `*OPC?` answers 0.
+[[visa.instrument]]
+resource = "SIM::DEV0"
+
+[visa.instrument.commands]
+"*OPC?" = "0"
+"MEAS:COUNT?" = "abc"

@@ -2558,20 +2558,21 @@ fn visa.set_serial(session: visa.session, baud: u32 = 9600, data_bits: u8 = 8,
                    err: error = none) -> (session: visa.session, err: error)
 
 fn scpi.query_i32(session: visa.session, command: string,
-                  err: error = none) -> (value: i32, session: visa.session, err: error)
+                  err: error = none) -> (session: visa.session, value: i32, err: error)
 fn scpi.wait_complete(session: visa.session,
                       err: error = none) -> (session: visa.session, err: error)   // *OPC?
 fn scpi.event_status(session: visa.session,
-                     err: error = none) -> (status: i32, session: visa.session, err: error)   // *ESR?
+                     err: error = none) -> (session: visa.session, status: i32, err: error)   // *ESR?
 fn scpi.status_byte(session: visa.session,
-                    err: error = none) -> (status: i32, session: visa.session, err: error)    // *STB?
+                    err: error = none) -> (session: visa.session, status: i32, err: error)    // *STB?
 fn scpi.query_block(session: visa.session, command: string,
-                    err: error = none) -> (data: bytes, session: visa.session, err: error)
+                    err: error = none) -> (session: visa.session, data: bytes, err: error)
 ```
 
 `visa` then uses the types of `serial` (its manifest gains `dependencies = ["serial"]`). `scpi.wait_complete` waits,
-within the timeout of the session, for the `1` of `*OPC?`, and fails with `scpi.unexpected_response` on any other
-answer; `scpi.event_status` and `scpi.status_byte` are `scpi.query_i32` of `*ESR?` and `*STB?`, whose bits the program
+within the timeout of the session, for the `1` of `*OPC?`, read as `string.to_i32` reads an integer (A.2: `+1` and ` 1`
+are 1), and fails with `scpi.unexpected_response` on any other answer, text that is no integer included (decision of
+the owner, 2026-11-25); `scpi.event_status` and `scpi.status_byte` are `scpi.query_i32` of `*ESR?` and `*STB?`, whose bits the program
 reads with `core.and` (A.1). `scpi.query_block` writes the command, then reads a definite-length block of IEEE 488.2
 with `visa.read_bytes`: `#`, one digit n from 1 to 9, n digits of a length, that many bytes, and the `\n` after them; it
 gives the bytes, and fails with `scpi.unexpected_response` on anything else (an indefinite block `#0` included). All

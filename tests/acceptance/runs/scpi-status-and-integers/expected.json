@@ -1,0 +1,67 @@
+{
+  "how": "`visa.open` of SIM::DEV0, which dev.toml defines with no latency, opens a session at 0 ms (libs/visa/simulation.md 2). Each call passes the session on to the next, so the commands come in the order of the program (spec 5.3, 7.2). `scpi.wait_complete` sends `*OPC?`, which `commands` answers `+1`, its answer winning over the simulator's own (simulation.md 2 and 4, points 3 and 4); `string.to_i32` reads an optional sign and digits, so it is 1 (spec A.2, A.3), `core.ne(1, 1)` is false and `errors.raise_if` gives `none`. `scpi.event_status` and `scpi.status_byte` are `scpi.query_i32` of `*ESR?` and `*STB?` (spec A.3; libs/scpi): `32` and `4` read as the i32 32 and 4. `scpi.query_i32` of `MEAS:COUNT?` reads `42`, the i32 42. `visa.close` closes the one session and gives `none`, so `err` is `none` (null) and the status `ok` (spec 7.2, 8.2). Integers are exact JSON numbers, outputs in the order of the signature (commands.md 5, 7). No latency and every read finds its answer waiting, so each command is handled at 0 ms and the run ends at 0 ms (simulation.md 4, Answers and reads). Every error output is wired and the one session goes in a line, so the check has nothing to say (spec 7.5, 8.1).",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "esr",
+      "type": "i32",
+      "value": 32
+    },
+    {
+      "name": "stb",
+      "type": "i32",
+      "value": 4
+    },
+    {
+      "name": "count",
+      "type": "i32",
+      "value": 42
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": null
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 1,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DEV0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "*OPC?",
+          "answer": "+1"
+        },
+        {
+          "t_ms": 0.0,
+          "sent": "*ESR?",
+          "answer": "32"
+        },
+        {
+          "t_ms": 0.0,
+          "sent": "*STB?",
+          "answer": "4"
+        },
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:COUNT?",
+          "answer": "42"
+        }
+      ]
+    }
+  ],
+  "check": {
+    "summary": {
+      "errors": 0
+    },
+    "diagnostics": []
+  }
+}

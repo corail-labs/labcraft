@@ -1,0 +1,18 @@
+labcraft 1
+
+use scpi
+use visa
+
+/// Waits for the end of the operations, then reads the event status register, the status byte and a count.
+fn status_and_count(
+    resource: string = "SIM::DEV0",
+    err: error = none,
+) -> (esr: i32, stb: i32, count: i32, err: error) {
+    s, e1 = visa.open(resource, err: err)
+    s2, e2 = scpi.wait_complete(s, err: e1)
+    s3, esr, e3 = scpi.event_status(s2, err: e2)
+    s4, stb, e4 = scpi.status_byte(s3, err: e3)
+    s5, count, e5 = scpi.query_i32(s4, "MEAS:COUNT?", err: e4)
+    #close: e6 = visa.close(s5, err: e5)
+    err = e6
+}

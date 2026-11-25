@@ -1,0 +1,126 @@
+{
+  "how": "Both opens succeed at 0 ms (no latency, libs/visa/simulation.md 2), and each `scpi.wait_complete` sends `*OPC?` at 0 ms, answered from `commands`, which wins over the simulator's own answer (simulation.md 2 and 4, points 3 and 4). In `scpi.wait_complete` (libs/scpi/wait_complete.lcf; spec A.3): SIM::DEV0 answers `done`, which `string.to_i32` cannot read, so it fails with `string.parse` and its `value` takes the default 0 (spec A.2, 7.2); SIM::DEV1 answers `0`, the i32 0. Either way `core.ne(value, 1)` is true, and `errors.raise_if`, whose `err` is `e1`, `none` here, runs and makes a `scpi.unexpected_response`; the error of `string.to_i32` only orders it (`after:`) and is dropped. `raise_if` has no code, so the code is 0 (spec 7.1), and its message is the `string.format` of the library, a string field shown as its text alone (spec 5.4; escapes of 14.1): `*OPC? answered \"done\", not 1` and `*OPC? answered \"0\", not 1`. Its origin is the node `e3`, named by its first output, line 17 of the library file, under the caller nodes `a2` (line 14) and `b2` (line 16) of `wait_on_two` (commands.md 5 and 8). Each `visa.close` is `always`, closes its session and passes its error on (spec 7.2), so nothing is left open. `errors.merge(e3, e6)` makes the error of SIM::DEV0, its first argument, the main error, and puts that of SIM::DEV1 in its `others`, without its own `others` (spec 7.4; commands.md 5). `err` holds it, so the status is `error` and `error` repeats it (spec 7.5, 8.2; commands.md 7). Resources in code point order of their names (commands.md 7); the run ends at 0 ms. The check finds nothing (spec 7.5, 8.1: every error output is wired, and the two sessions are on two resources).",
+  "status": "error",
+  "outputs": [
+    {
+      "name": "err",
+      "type": "error",
+      "value": {
+        "category": "scpi.unexpected_response",
+        "code": 0,
+        "message": "*OPC? answered \"done\", not 1",
+        "origin": {
+          "function": "scpi.wait_complete",
+          "node": "e3",
+          "file": "<labcraft>/scpi/wait_complete.lcf",
+          "line": 17,
+          "callers": [
+            {
+              "function": "wait_on_two",
+              "node": "a2",
+              "file": "tests/acceptance/runs/scpi-opc-unexpected-response/wait_on_two.lcf",
+              "line": 14
+            }
+          ]
+        },
+        "others": [
+          {
+            "category": "scpi.unexpected_response",
+            "code": 0,
+            "message": "*OPC? answered \"0\", not 1",
+            "origin": {
+              "function": "scpi.wait_complete",
+              "node": "e3",
+              "file": "<labcraft>/scpi/wait_complete.lcf",
+              "line": 17,
+              "callers": [
+                {
+                  "function": "wait_on_two",
+                  "node": "b2",
+                  "file": "tests/acceptance/runs/scpi-opc-unexpected-response/wait_on_two.lcf",
+                  "line": 16
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "error": {
+    "category": "scpi.unexpected_response",
+    "code": 0,
+    "message": "*OPC? answered \"done\", not 1",
+    "origin": {
+      "function": "scpi.wait_complete",
+      "node": "e3",
+      "file": "<labcraft>/scpi/wait_complete.lcf",
+      "line": 17,
+      "callers": [
+        {
+          "function": "wait_on_two",
+          "node": "a2",
+          "file": "tests/acceptance/runs/scpi-opc-unexpected-response/wait_on_two.lcf",
+          "line": 14
+        }
+      ]
+    },
+    "others": [
+      {
+        "category": "scpi.unexpected_response",
+        "code": 0,
+        "message": "*OPC? answered \"0\", not 1",
+        "origin": {
+          "function": "scpi.wait_complete",
+          "node": "e3",
+          "file": "<labcraft>/scpi/wait_complete.lcf",
+          "line": 17,
+          "callers": [
+            {
+              "function": "wait_on_two",
+              "node": "b2",
+              "file": "tests/acceptance/runs/scpi-opc-unexpected-response/wait_on_two.lcf",
+              "line": 16
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 2,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DEV0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "*OPC?",
+          "answer": "done"
+        }
+      ]
+    },
+    {
+      "resource": "SIM::DEV1",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "*OPC?",
+          "answer": "0"
+        }
+      ]
+    }
+  ],
+  "check": {
+    "summary": {
+      "errors": 0
+    },
+    "diagnostics": []
+  }
+}

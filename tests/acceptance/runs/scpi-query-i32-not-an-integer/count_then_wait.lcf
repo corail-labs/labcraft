@@ -1,0 +1,13 @@
+labcraft 1
+
+use scpi
+use visa
+
+/// Reads a count, then waits for the end of the operations, then closes the session.
+fn count_then_wait(resource: string = "SIM::DEV0", err: error = none) -> (count: i32, err: error) {
+    s, e1 = visa.open(resource, err: err)
+    s2, count, e2 = scpi.query_i32(s, "MEAS:COUNT?", err: e1)
+    s3, e3 = scpi.wait_complete(s2, err: e2)
+    #close: e4 = visa.close(s3, err: e3)
+    err = e4
+}

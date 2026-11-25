@@ -1,0 +1,14 @@
+labcraft 1
+
+use visa
+
+/// The status byte (`*STB?`); its bits are read with `core.and`.
+fn status_byte(
+    session: visa.session,
+    err: error = none,
+) -> (session: visa.session, status: i32, err: error) {
+    s, value, e1 = query_i32(session, "*STB?", err: err)
+    session = s
+    status = value
+    err = e1
+}

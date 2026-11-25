@@ -5,4 +5,4 @@ description = "Queries and the error queue of SCPI instruments"
 dependencies = ["visa"]
 always = []
 resources = []
-categories = ["scpi.instrument_error"]
+categories = ["scpi.instrument_error", "scpi.unexpected_response"]

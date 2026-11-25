@@ -1,0 +1,3 @@
+fn scpi.event_status(session: visa.session, err: error = none) -> (session: visa.session, status: i32, err: error)
+  region (session, err) -> (s, value, e1)
+    0 s, value, e1 = call scpi.query_i32(session, "*ESR?", err)  runs

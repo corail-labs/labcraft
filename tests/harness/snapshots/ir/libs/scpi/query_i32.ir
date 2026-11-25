@@ -1,0 +1,4 @@
+fn scpi.query_i32(session: visa.session, command: string, err: error = none) -> (session: visa.session, value: i32, err: error)
+  region (session, command, err) -> (s, value, e2)
+    0 text, s, e1 = native visa.query(session, command, err)  skip(err: 2)
+    1 value, e2 = primitive string.to_i32(text, e1)  skip(err: 1)
