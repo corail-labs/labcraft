@@ -867,7 +867,7 @@ fn arrays() -> (a: [f64], err: error) {
 fn queries() -> Folder {
     program(
         "queries.lcf",
-        "labcraft 1\n\nuse core\nuse scpi\nuse visa\n\n/// Reads a multimeter until the run stops it.\nfn queries(resource: string) -> (n: f64, err: error) {\n    dmm, e1 = visa.open(resource)\n    n, s, e = loop carry total = 0.0, carry session = dmm, carry f = e1 {\n        v, s2, f2 = scpi.query_f64(session, \"MEAS:VOLT:DC?\", err: f)\n        t = core.add(total, v)\n        next f = f2\n        next session = s2\n        next total = t\n        until false\n    }\n    #close: err = visa.close(s, err: e)\n}\n",
+        "labcraft 1\n\nuse core\nuse scpi\nuse visa\n\n/// Reads a multimeter until the run stops it.\nfn queries(resource: string) -> (n: f64, err: error) {\n    dmm, e1 = visa.open(resource)\n    n, s, e = loop carry total = 0.0, carry session = dmm, carry f = e1 {\n        s2, v, f2 = scpi.query_f64(session, \"MEAS:VOLT:DC?\", err: f)\n        t = core.add(total, v)\n        next f = f2\n        next session = s2\n        next total = t\n        until false\n    }\n    #close: err = visa.close(s, err: e)\n}\n",
     )
 }
 

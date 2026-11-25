@@ -66,8 +66,8 @@ fn read_power(
     err: error = none,
 ) -> (power: f64[W], reading: Reading, err: error) {
     psu, e1 = visa.open(resource, timeout: 2 s, err: err)
-    raw_v, psu2, e2 = scpi.query_f64(psu, "MEAS:VOLT?", err: e1)
-    raw_i, psu3, e3 = scpi.query_f64(psu2, "MEAS:CURR?", err: e2)
+    psu2, raw_v, e2 = scpi.query_f64(psu, "MEAS:VOLT?", err: e1)
+    psu3, raw_i, e3 = scpi.query_f64(psu2, "MEAS:CURR?", err: e2)
     current = core.with_unit(raw_i, [A])
     #close: e4 = visa.close(psu3, err: e3)
     voltage = core.with_unit(raw_v, [V])
@@ -86,7 +86,7 @@ What it shows, rule by rule:
 - **The signature** names every input and every output. An input with a default (`err: error = none`) is
   optional. A function that can fail takes `err: error = none` and gives `err: error`.
 - **A line lists every output of its node, in the order of the signature.** `scpi.query_f64` gives
-  `(value, session, err)`, so its line has three targets. `_` leaves an output unwired, but never an `err`.
+  `(session, value, err)`, so its line has three targets. `_` leaves an output unwired, but never an `err`.
 - **One node per line: no nesting.** `core.mul(core.with_unit(raw_v, [V]), current)` is refused (`LC1004`):
   give the inner value a name on a line of its own. Constants go straight in the arguments (`"MEAS:VOLT?"`,
   `2 s`).

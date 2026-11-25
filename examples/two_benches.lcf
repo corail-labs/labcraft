@@ -20,7 +20,7 @@ fn two_benches(
     n_a, sum_a, err_a = loop carry n = 0.0, carry s = 0.0, carry e = ea {
         m = core.add(n, 1.0)
         full = core.ge(m, count)
-        x, _, e1 = scpi.query_f64(dmm_a, "MEAS:VOLT:DC?", err: e)
+        _, x, e1 = scpi.query_f64(dmm_a, "MEAS:VOLT:DC?", err: e)
         e2 = time.wait(period, err: e1)
         stop = ui.get(stop_switch, after: e2)
         halt = core.or(full, stop)
@@ -34,7 +34,7 @@ fn two_benches(
     n_b, sum_b, err_b = loop carry n = 0.0, carry s = 0.0, carry e = eb {
         m = core.add(n, 1.0)
         full = core.ge(m, count)
-        x, _, e1 = scpi.query_f64(dmm_b, "MEAS:VOLT:DC?", err: e)
+        _, x, e1 = scpi.query_f64(dmm_b, "MEAS:VOLT:DC?", err: e)
         e2 = time.wait(period, err: e1)
         stop = ui.get(stop_switch, after: e2)
         halt = core.or(full, stop)

@@ -88,17 +88,17 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="199.18" y="147.65" font-size="10" style="fill: var(--pill-text)">false</text>
 </g>
 <g data-wire="bench" data-to="level.session">
-<path d="M244.28 184 L324.42 184 Q330.42 184 330.42 190 L330.42 258 Q330.42 264 336.42 264 L463.72 264" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
-<path d="M244.28 184 L324.42 184 Q330.42 184 330.42 190 L330.42 258 Q330.42 264 336.42 264 L463.72 264" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
-<rect x="402.58" y="257" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="406.58" y="267.65" font-size="10" style="fill: var(--pill-text)">.relays</text>
+<path d="M244.28 184 L324.42 184 Q330.42 184 330.42 190 L330.42 250 Q330.42 256 336.42 256 L463.72 256" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
+<path d="M244.28 184 L324.42 184 Q330.42 184 330.42 190 L330.42 250 Q330.42 256 336.42 256 L463.72 256" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
+<rect x="402.58" y="249" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="406.58" y="259.65" font-size="10" style="fill: var(--pill-text)">.relays</text>
 </g>
 <g data-wire="e" data-to="level.err">
 <path d="M244.28 280 L463.72 280" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
 <path d="M255.38 281.4 L257.18 280 L255.38 278.6 M263.38 281.4 L265.18 280 L263.38 278.6 M271.38 281.4 L273.18 280 L271.38 278.6 M279.38 281.4 L281.18 280 L279.38 278.6 M287.38 281.4 L289.18 280 L287.38 278.6 M295.38 281.4 L297.18 280 L295.38 278.6 M303.38 281.4 L305.18 280 L303.38 278.6 M311.38 281.4 L313.18 280 L311.38 278.6 M319.38 281.4 L321.18 280 L319.38 278.6 M327.38 281.4 L329.18 280 L327.38 278.6 M335.38 281.4 L337.18 280 L335.38 278.6 M343.38 281.4 L345.18 280 L343.38 278.6 M351.38 281.4 L353.18 280 L351.38 278.6 M359.38 281.4 L361.18 280 L359.38 278.6 M367.38 281.4 L369.18 280 L367.38 278.6 M375.38 281.4 L377.18 280 L375.38 278.6 M383.38 281.4 L385.18 280 L383.38 278.6 M391.38 281.4 L393.18 280 L391.38 278.6 M399.38 281.4 L401.18 280 L399.38 278.6 M407.38 281.4 L409.18 280 L407.38 278.6 M415.38 281.4 L417.18 280 L415.38 278.6 M423.38 281.4 L425.18 280 L423.38 278.6 M431.38 281.4 L433.18 280 L431.38 278.6 M439.38 281.4 L441.18 280 L439.38 278.6 M447.38 281.4 L449.18 280 L447.38 278.6 M455.38 281.4 L457.18 280 L455.38 278.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="level" data-from="level.value" data-to="here.a">
-<path d="M503.72 256 L509.22 256 Q514.72 256 514.72 250.5 L514.72 142 Q514.72 136 520.72 136 L591.86 136" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M503.72 264 L509.22 264 Q514.72 264 514.72 258.5 L514.72 142 Q514.72 136 520.72 136 L591.86 136" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="518.72" y="133" font-size="10" style="fill: var(--ink-muted)">level</text>
 </g>
 <g data-wire="here" data-from="here.result" data-to="absent.a pause.condition done.a next.p">
@@ -202,15 +202,15 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <rect x="463.72" y="248" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="470.18" y="272.04" font-size="9" style="fill: var(--node-title)">query</text>
 <text x="475.59" y="282.52" font-size="9" style="fill: var(--node-title)">f64</text>
-<circle cx="503.72" cy="256" r="3" style="fill: var(--wire-data)"/>
-<rect x="460.72" y="261" width="6" height="6" style="fill: var(--wire-resource)"/>
-<rect x="500.72" y="261" width="6" height="6" style="fill: var(--node-fill); stroke: var(--wire-resource); stroke-width: 1.2"/>
-<rect x="460.72" y="269.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="460.72" y="253" width="6" height="6" style="fill: var(--wire-resource)"/>
+<rect x="500.72" y="253" width="6" height="6" style="fill: var(--node-fill); stroke: var(--wire-resource); stroke-width: 1.2"/>
+<rect x="460.72" y="261.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<circle cx="503.72" cy="264" r="3" style="fill: var(--wire-data)"/>
 <polygon points="460.72,277 466.72,280 460.72,283 462.72,280" style="fill: var(--wire-error)"/>
 <polygon points="500.72,277 506.72,280 500.72,283 502.72,280" style="fill: var(--wire-error)"/>
-<rect x="338.42" y="265" width="56.16" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="342.42" y="275.65" font-size="10" style="fill: var(--pill-text)">&quot;DUT:PR…</text>
-<polyline points="394.58,272 460.72,272" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<rect x="338.42" y="257" width="56.16" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="342.42" y="267.65" font-size="10" style="fill: var(--pill-text)">&quot;DUT:PR…</text>
+<polyline points="394.58,264 460.72,264" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-node="here"><title>core.gt</title>
 <use href="#outline-0" x="591.86" y="128" style="fill: var(--rgb-557F88-557F88); stroke: var(--node-stroke); stroke-width: 1"/>

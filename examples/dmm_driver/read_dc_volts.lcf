@@ -9,7 +9,7 @@ fn read_dc_volts(
     session: visa.session,
     err: error = none,
 ) -> (volts: f64[V], session: visa.session, err: error) {
-    raw, s, e1 = scpi.query_f64(session, "MEAS:VOLT:DC?", err: err)
+    s, raw, e1 = scpi.query_f64(session, "MEAS:VOLT:DC?", err: err)
     volts = core.with_unit(raw, [V])
     session = s
     err = e1

@@ -23,7 +23,7 @@
       "function": "f",
       "node": {
         "name": "value",
-        "text": "value, _, e1 = scpi.query_f64(v, \"MEAS:VOLT:DC?\", err: err)"
+        "text": "_, value, e1 = scpi.query_f64(v, \"MEAS:VOLT:DC?\", err: err)"
       },
       "wires": [
         {

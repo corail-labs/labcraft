@@ -3,7 +3,7 @@ fn wait_dut(bench: Bench, timeout: duration, err: error = none) -> (present: boo
     0 t0 = primitive time.now() after(err)
     1 present, err_out = loop (carries 2, collects 0) (false, err, bench, t0, timeout)
       region (p, e, bench, t0, timeout) -> (here, next.e, done)
-        0 level, _, e1 = call scpi.query_f64(bench.relays, "DUT:PRES?", e)  runs
+        0 _, level, e1 = call scpi.query_f64(bench.relays, "DUT:PRES?", e)  runs
         1 here = primitive core.gt(level, 0.5)
         2 absent = primitive core.not(here)
         3 pause = primitive core.select(here, 0.0 ms, 100.0 ms)

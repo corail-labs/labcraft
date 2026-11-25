@@ -773,8 +773,8 @@ terminals (N-15).
   between two pairs and after the last, the inputs and the outputs that lie there in their own
   lists fill lines side by side, in signature order; when one side has more, the rest take lines of
   their own. `visa.open` above: `resource` and `dmm`, then `timeout` alone, then the pair `err`,
-  `e1`. `scpi.query_f64` (inputs `session`, `command`, `err`; outputs `value`, `session`, `err`):
-  `value` alone, the pair `session`, `command` alone, the pair `err`, so four lines.
+  `e1`. `scpi.query_f64` (inputs `session`, `command`, `err`; outputs `session`, `value`, `err`):
+  first the pair `session`, then `command` and `value` side by side, then the pair `err`, so three lines.
 - **Inline constants**: a constant written as an argument (spec 5.1) is shown on its terminal
   (`timeout ◂ 2 s`, `◂ "MEAS:VOLT:DC?"`), not as a separate node. Long text is truncated (`…`),
   in full in the tooltip.

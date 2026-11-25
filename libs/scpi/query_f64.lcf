@@ -8,7 +8,7 @@ fn query_f64(
     session: visa.session,
     command: string,
     err: error = none,
-) -> (value: f64, session: visa.session, err: error) {
+) -> (session: visa.session, value: f64, err: error) {
     text, s, e1 = visa.query(session, command, err: err)
     value, e2 = string.to_f64(text, err: e1)
     session = s
