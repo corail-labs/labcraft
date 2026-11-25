@@ -129,6 +129,28 @@ const MAKING_ERRORS: &[&str] = &[
     "internal",
 ];
 
+/// `function.extract`: a command that makes a file, and a call that could read its own output.
+const EXTRACT_ERRORS: &[&str] = &[
+    "params.unknown",
+    "params.missing",
+    "params.invalid",
+    "path.outside_project",
+    "path.not_found",
+    "path.invalid",
+    "path.exists",
+    "file.unreadable",
+    "file.unwritable",
+    "file.too_large",
+    "file.unparsed",
+    "file.stale",
+    "edit.unknown",
+    "edit.ambiguous",
+    "name.taken",
+    "name.invalid",
+    "wire.cycle",
+    "internal",
+];
+
 pub(super) const SETTINGS_ERRORS: &[&str] =
     &["command.not_enabled", "params.unknown", "params.missing", "params.invalid", "file.unparsed", "file.unwritable", "internal"];
 
@@ -1039,6 +1061,23 @@ pub(super) fn catalog() -> Vec<Command> {
                 &["path"],
             ),
             MAKING_ERRORS,
+            false,
+        ),
+        editing(
+            "function.extract",
+            "Make Function from Selection",
+            "Move nodes into a new function, and put a call to it in their place",
+            "Moves the nodes, of one frame, into a new function `name`, in a new `.lcf` in the folder of `file`, and puts a call to it in their place, one step over both files, as section 9.8 of `docs/commands.md` says. What the nodes read from outside becomes its inputs, what they give outside its outputs, named as the values, so that nothing outside changes; one error that enters and one that leaves become its `err`. The call stands where the nodes were. `names.function`, `names.file` and `names.node` give what it made. It does not go in a `commands.batch`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("nodes", names("The nodes to move, of one frame.")),
+                    ("name", string("The name of the new function, which names its file.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "nodes", "name"],
+            ),
+            EXTRACT_ERRORS,
             false,
         ),
         editing(

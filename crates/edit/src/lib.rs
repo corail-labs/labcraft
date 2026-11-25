@@ -29,6 +29,7 @@ mod add;
 mod block;
 mod constant;
 mod delete;
+mod extract;
 mod fragment;
 mod frame;
 mod imports;
@@ -49,6 +50,7 @@ mod whole;
 mod wire;
 
 pub use block::BlockAt;
+pub use extract::extract;
 pub use fragment::MAX_FRAGMENT;
 pub use frame::Within;
 pub use names::of_type;

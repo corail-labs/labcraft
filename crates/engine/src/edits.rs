@@ -470,9 +470,22 @@ struct Overlay<'a> {
     files: &'a BTreeMap<PathBuf, Vec<u8>>,
 }
 
+impl Overlay<'_> {
+    /// What the overlay holds that the disk does not have yet: the new file of `function.extract`.
+    fn only_here(&self, path: &Path) -> Option<Metadata> {
+        let bytes = self.files.get(path)?;
+        self.inner.link_metadata(path).is_err().then_some(Metadata {
+            kind: crate::workspace::Kind::File,
+            len: bytes.len() as u64,
+            modified: None,
+            read_only: false,
+        })
+    }
+}
+
 impl Workspace for Overlay<'_> {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
-        self.inner.canonicalize(path)
+        self.only_here(path).map_or_else(|| self.inner.canonicalize(path), |_| Ok(path.to_path_buf()))
     }
     fn absolute(&self, path: &Path) -> io::Result<PathBuf> {
         self.inner.absolute(path)
@@ -481,13 +494,19 @@ impl Workspace for Overlay<'_> {
         self.inner.current()
     }
     fn metadata(&self, path: &Path) -> io::Result<Metadata> {
-        self.inner.metadata(path)
+        self.only_here(path).map_or_else(|| self.inner.metadata(path), Ok)
     }
     fn link_metadata(&self, path: &Path) -> io::Result<Metadata> {
-        self.inner.link_metadata(path)
+        self.only_here(path).map_or_else(|| self.inner.link_metadata(path), Ok)
     }
     fn read_dir(&self, path: &Path, each: &mut dyn FnMut(io::Result<Entry>)) -> io::Result<()> {
-        self.inner.read_dir(path, each)
+        self.inner.read_dir(path, each)?;
+        for file in self.files.keys().filter(|file| file.parent() == Some(path) && self.only_here(file).is_some()) {
+            if let Some(name) = file.file_name() {
+                each(Ok(Entry { name: name.to_owned(), kind: Ok(crate::workspace::Kind::File) }));
+            }
+        }
+        Ok(())
     }
     fn read(&self, path: &Path, max: u64) -> io::Result<Read> {
         match self.files.get(path) {
@@ -1083,6 +1102,64 @@ pub(crate) fn create_type(session: &mut Session, author: &Author, command: &Comm
     result(session, step, &changes, false, &before, extra)
 }
 
+/// `function.extract` (commands.md 9.8): the nodes of `file` moved into a new function `name`, in a new `.lcf` of its
+/// folder, and a call in their place, one step over both files; undo removes the new file.
+pub(crate) fn extract_function(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
+    judge_revisions(session, params)?;
+    let target = target(session, params.text("file")?)?;
+    let name = params.text("name")?.to_owned();
+    let nodes = texts(params, "nodes")?.unwrap_or_default();
+    let wanted = match target.shown.rsplit_once('/') {
+        Some((folder, _)) => format!("{folder}/{name}.lcf"),
+        None => format!("{name}.lcf"),
+    };
+    let text = read_text(session, &target)?;
+    let mut texts = Texts::default();
+    texts.files.insert(target.path.clone(), (target.shown.clone(), text.as_bytes().to_vec(), text.clone()));
+    let root = session.root.clone();
+    let memory = texts.memory();
+    session.checked(&root)?;
+    let edited = {
+        let kept = session.kept_root().ok_or_else(|| CommandError::internal("the check of the root is not kept"))?;
+        let judge = SessionJudge { session, kept: &kept.checked, memory: &memory, typed: Default::default() };
+        let mut files = Files::new();
+        files.insert(&target.shown, &text);
+        labcraft_edit::extract(&files, &target.shown, &nodes, &name, &wanted, &judge, &session.config.limits).map_err(command_error)?
+    };
+    let (new_path, new_shown, exists) = paths::in_project(&*session.ws, &session.root, &wanted, "name", Wanted::File)?;
+    if exists {
+        return Err(CommandError::of("path.exists", "name", format!("`{new_shown}` exists already: choose another name")));
+    }
+    crate::files::refuse_case_twin(session, &new_path, &new_shown, "name", None)?;
+    let (names, renamed) = names_json(&edited);
+    let mut extra = Map::new();
+    extra.insert("names".to_owned(), names);
+    extra.insert("renamed".to_owned(), renamed);
+    let before = session.root_check_document()?;
+    // The new file first: when the system refuses it, the caller is not written either.
+    let mut changes = Vec::new();
+    if let Some(made) = edited.texts.get(&wanted) {
+        changes.push(Change { path: new_path, shown: new_shown, before: None, after: Some(Arc::from(made.as_bytes())) });
+    }
+    if let Some(now) = edited.texts.get(&target.shown) {
+        let old = shared_bytes(session, &target.path, text.as_bytes().to_vec());
+        changes.push(Change { path: target.path.clone(), shown: target.shown.clone(), before: Some(old), after: Some(Arc::from(now.as_bytes())) });
+    }
+    if let Err(error) = write_changes(session, &changes, false) {
+        // The caller could not be written after the new file: the new file goes, so that nothing is half done.
+        if let Some(first) = changes.first()
+            && bytes_now(session, &first.path).ok().flatten().is_some()
+            && changes.len() > 1
+            && bytes_now(session, &target.path).ok().flatten().as_deref() == Some(text.as_bytes())
+        {
+            let _ = session.ws.remove_file(&first.path);
+        }
+        return Err(error);
+    }
+    let step = record(session, author, command.label.to_owned(), changes.clone());
+    result(session, step, &changes, false, &before, extra)
+}
+
 /// `function.rename` and `type.rename` (commands.md 6.7): the declaration and its file, and every use of it in the files
 /// of the project, in one step of history (decision of the owner, 2026-11-15). The file is removed under its old name
 /// and made under the new one, in the same folder, as `file.rename` does; `names.file` gives its path after the step.
@@ -1330,7 +1407,7 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
             registry::command(id).ok_or_else(|| at(CommandError::of("command.unknown", "commands", format!("no command has the id `{id}`"))))?;
         // The commands that edit, built or planned; a planned one is not enabled yet. The commands of files make steps too,
         // but write the disk at once: they are not commands of 6.7.
-        let alone = ["commands.batch", "function.create", "function.rename", "type.create", "type.rename", "library.set_mask"];
+        let alone = ["commands.batch", "function.create", "function.extract", "function.rename", "type.create", "type.rename", "library.set_mask"];
         if !command.undoable || alone.contains(&id) || id.starts_with("file.") {
             return Err(at(CommandError::of(
                 "params.invalid",

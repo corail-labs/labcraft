@@ -35,6 +35,8 @@ pub enum FieldKind {
     AddTerminal { input: bool },
     /// `function.rename` of the function shown, from the title of its frame (decision of the owner, 2026-11-19).
     FunctionName,
+    /// `function.extract` of `nodes`: the name of the new function (commands.md 9.8).
+    Extract { nodes: Vec<String> },
 }
 
 /// A field open on the canvas.
@@ -279,6 +281,28 @@ impl Canvas {
         if adds {
             field.original = String::new();
         }
+        self.field = Some(field);
+        true
+    }
+
+    /// "Make a function…" (notation 2.6): the field of the name of the new function on the top-left node of `nodes`, the
+    /// name proposed selected; Enter writes it as it is. False when none of them is drawn.
+    pub fn edit_extract(&mut self, nodes: Vec<String>, proposed: String) -> bool {
+        if self.waiting() {
+            return false;
+        }
+        let Some(drawing) = self.drawing.clone() else { return false };
+        let first = drawing
+            .placed
+            .iter()
+            .enumerate()
+            .filter(|(_, found)| !found.name.is_empty() && nodes.contains(&found.name))
+            .min_by_key(|(_, found)| (found.y, found.x))
+            .map(|(placed, _)| placed);
+        let Some(placed) = first else { return false };
+        let at = self.corner_of(&drawing, placed) - Vec2::new(0.0, 28.0);
+        let mut field = Field::new(FieldKind::Extract { nodes }, proposed, at, Some(placed));
+        field.original = String::new();
         self.field = Some(field);
         true
     }

@@ -166,6 +166,22 @@ by a test of the app, as in M0v.
 
 **Verified** by `cargo xtask web-smoke`, which the job `web` runs.
 
+## Scenario 9: a function made from a selection
+
+**Setup.** `examples/check_voltage.lcf` open in the IDE; the user selects `above`, `below` and `in_range`, then "Make
+a function…" and types `in_limits` (visual notation 2.6, commands.md 9.8).
+
+**Expected.**
+
+1. `in_limits.lcf` appears beside it, with the three nodes, the inputs `voltage`, `low` and `high` and the output
+   `in_range`; one call stands where the nodes were, and the `match` still reads `in_range`.
+2. `labcraft-cli check` gives no new error, and `run` gives the same outputs as before the gesture.
+3. One Ctrl+Z removes `in_limits.lcf` and gives back `check_voltage.lcf` byte for byte; redo makes both again.
+
+**Verified** in CI by tests of `engine` that make the same gesture on functions written for them, their texts worked out
+by hand from commands.md 9.8, and the field by a test of the window; on `check_voltage` itself, with point 2, by hand
+before the tag.
+
 ## Not covered by these scenarios
 
 The commands that each scenario does not name (structures, the block of a function, the mask of a library, the
@@ -184,3 +200,4 @@ Detached windows, the start page and `Connect an AI agent` are tried by hand bef
 | 6. 60 frames/s | | Frame rate, time of the preview and of the drawing |
 | 7. External writes | All | |
 | 8. Web | `web-smoke` | |
+| 9. A function from a selection | The gesture, as commands and in the window | On `check_voltage`, point 2 |

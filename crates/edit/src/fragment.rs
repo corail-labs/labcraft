@@ -126,7 +126,7 @@ fn used_as(used: &Use) -> Name {
 }
 
 /// The `use` lines of `uses` whose library the text of the file of `edit` names.
-fn needed(edit: &Edit, uses: &[Use]) -> Result<Vec<Use>, EditError> {
+pub(crate) fn needed(edit: &Edit, uses: &[Use]) -> Result<Vec<Use>, EditError> {
     let named = named_before_dot(edit, &edit.render()?);
     Ok(uses.iter().filter(|used| named.contains(&used_as(used))).cloned().collect())
 }
@@ -209,6 +209,46 @@ fn loop_only(statement: &labcraft_graph::Statement) -> bool {
 
 /// `fragment.copy`: the text of the function `clipboard` that holds the nodes named, and what they hold.
 pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<String, EditError> {
+    let Clipped { mut clip, outside, waited, items, .. } = clip(edit, judge, nodes, "copied")?;
+    // What the selection reads from outside: left out, or a hole (9.1). A value that a node outside reads is no output.
+    take_out_all(&mut clip, judge, outside, waited)?;
+    set_layout(&mut clip, items);
+    // The `use` lines that it needs: those of the file whose library the text names.
+    clip.file.uses = needed(&clip, &edit.file.uses)?;
+    let text = clip.render()?;
+    if text.len() > MAX_FRAGMENT {
+        return Err(too_large("nodes"));
+    }
+    Ok(text)
+}
+
+/// Nodes of one frame as a function of their own, `clipboard`, which `fragment.copy` and `function.extract` (commands.md
+/// 9.8) make: its body, what it reads from outside, and its `layout` entries, not in it yet.
+pub(crate) struct Clipped {
+    /// The function, its signature empty, with no `use` line and no `layout`.
+    pub clip: Edit,
+    /// The statements selected, in the order of the text.
+    pub outer: Vec<Loc>,
+    /// Those and every statement they hold.
+    pub held: HashSet<Loc>,
+    /// The values that the nodes read and that are bound outside them, an input of the function included, each once, in
+    /// the order of the text where they are first read.
+    pub outside: Vec<Name>,
+    /// The same, with the inputs of the function that a node selected reads and binds again as an output of their name
+    /// (R-2): what enters a function made of the nodes (commands.md 9.8).
+    pub entering: Vec<Name>,
+    /// The labels outside that an `after:` of the nodes waits for.
+    pub waited: Vec<Name>,
+    /// Its `layout` entries: a `node … at` for each node that has a name, and the routes of the wires between them; each
+    /// with whether it is counted from `origin`, the top-left corner of the selection, in its frame.
+    pub items: Vec<(LayoutItem, bool)>,
+    pub origin: Point,
+    /// Whether the drawing placed a node of the selection: `origin` is then where it was.
+    pub drawn: bool,
+}
+
+/// The nodes that `nodes` names, in one frame, as a function `clipboard`. `verb` says what is done to them in a message.
+pub(crate) fn clip(edit: &Edit, judge: &dyn Judge, nodes: &[String], verb: &str) -> Result<Clipped, EditError> {
     let function = edit.body_function()?;
     let nodes_of = index(function);
     let mut outer = resolve(edit, &nodes_of, nodes)?;
@@ -217,13 +257,13 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
         return Err(EditError::invalid("nodes", "`nodes` names at least one node"));
     };
     if outer.iter().any(|loc| loc.body != body_path) {
-        return Err(EditError::invalid("nodes", "the nodes copied are in one frame: those of another frame are copied apart"));
+        return Err(EditError::invalid("nodes", format!("the nodes {verb} are in one frame: the body of the function, of a loop, or an arm")));
     }
     let frame = body_path.len();
     if outer.iter().filter_map(|loc| scope::statement(function, loc)).any(loop_only) {
         return Err(EditError::invalid(
             "nodes",
-            "a `next`, a `collect` or an `until` is copied with its loop: the text of a copy is the body of a function, which holds none (R-6)",
+            format!("a `next`, a `collect` or an `until` stays in its loop: the nodes {verb} make the body of a function, which holds none (R-6)"),
         ));
     }
     // Each selected statement by its index in its body, with its place in the function `clipboard`.
@@ -332,28 +372,30 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
     let name = clip.intern(CLIPBOARD);
     clip.body_function_mut()?.name = name;
 
-    // What the selection reads from outside: left out, or a hole (9.1). A value that a node outside reads is no output.
+    // What the selection reads from outside, in the order of the text.
     let (read, waited) = reads_of(clip.body_function()?, false);
-    let (read, waited): (HashSet<Name>, HashSet<Name>) = (read.into_iter().collect(), waited.into_iter().collect());
+    let waited: HashSet<Name> = waited.into_iter().collect();
     let top: HashSet<Name> = clip.body_function()?.body.statements.iter().flat_map(scope::targets).collect();
-    let mut outside: Vec<Name> = values
+    let bound_outside: HashSet<Name> = values
         .iter()
         .filter(|value| match &value.bound {
             Bound::Line(loc, _) | Bound::Head(loc, _) => !held.contains(loc),
             Bound::Input => true,
         })
         .map(|value| value.name)
-        .filter(|name| read.contains(name) && !top.contains(name))
         .collect();
-    once(&mut outside);
+    let inputs: HashSet<Name> = if frame == 0 { function.signature.params.iter().map(|param| param.name).collect() } else { HashSet::new() };
+    let entering: Vec<Name> =
+        read.into_iter().filter(|name| bound_outside.contains(name) && (!top.contains(name) || inputs.contains(name))).collect();
+    let outside: Vec<Name> = entering.iter().copied().filter(|name| !top.contains(name)).collect();
     let labels: Vec<Name> =
         scope::labels(function).into_iter().filter(|(label, loc)| !held.contains(loc) && waited.contains(label)).map(|(label, _)| label).collect();
-    take_out_all(&mut clip, judge, outside, labels)?;
 
     // Its `layout`: a `node … at` entry for each node that has a name, and the routes of the wires between them.
     let clip_function = clip.body_function()?.clone();
     let clip_nodes = index(&clip_function);
     let mut items = Vec::new();
+    let drawn = at.iter().any(|(loc, _, _)| loc.body.len() == frame);
     for (loc, point, view) in at {
         let Some(selected) = selected_of(&loc) else { continue };
         let Some(&place_index) = position.get(&selected) else { continue };
@@ -374,9 +416,10 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
                 format!("the nodes selected are more than {MAX_COORDINATE} apart: a copy counts them from their top-left corner"),
             ));
         }
-        items.push(node_item(&mut clip, named, point, view));
+        let in_frame = loc.body.len() == frame;
+        items.push((node_item(&mut clip, named, point, view), in_frame));
         if let Some(size) = sizes.get(&loc).copied() {
-            items.push(frame_item(&mut clip, named, size));
+            items.push((frame_item(&mut clip, named, size), false));
         }
     }
     for (mut item, of_selection) in wires {
@@ -385,25 +428,39 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
                 shifted(&mut clip, point, Point { x: -origin.x, y: -origin.y }, "nodes")?;
             }
         }
-        items.push(item);
+        items.push((item, of_selection));
     }
-    if !items.is_empty() {
-        let id = clip.id();
-        clip.file.layout = Some(Layout { id, comments: Attached::default(), items, end: Vec::new() });
-    }
+    Ok(Clipped { clip, outer, held, outside, entering, waited: labels, items, origin, drawn })
+}
 
-    // The `use` lines that it needs: those of the file whose library the text names.
-    clip.file.uses = needed(&clip, &edit.file.uses)?;
-    let text = clip.render()?;
-    if text.len() > MAX_FRAGMENT {
-        return Err(too_large("nodes"));
+/// The `layout` section of `edit`: the entries of `items`, or none.
+pub(crate) fn set_layout(edit: &mut Edit, items: Vec<(LayoutItem, bool)>) {
+    let items: Vec<LayoutItem> = items.into_iter().map(|(item, _)| item).collect();
+    if !items.is_empty() {
+        let id = edit.id();
+        edit.file.layout = Some(Layout { id, comments: Attached::default(), items, end: Vec::new() });
     }
-    Ok(text)
+}
+
+/// The entries of `items` that are counted from the corner of the selection, moved by `by`.
+pub(crate) fn shift_items(edit: &mut Edit, items: &mut [(LayoutItem, bool)], by: Point) -> Result<(), EditError> {
+    for (item, _) in items.iter_mut().filter(|(_, in_frame)| *in_frame) {
+        match &mut item.kind {
+            LayoutKind::Node { at: Some(point), .. } => shifted(edit, point, by, "nodes")?,
+            LayoutKind::Wire { via, .. } => {
+                for point in via.iter_mut() {
+                    shifted(edit, point, by, "nodes")?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Takes out of the function of `edit` each value and each label that it reads without binding them: left out, or a
 /// hole (9.1), as `node.delete` takes out what a node gave. Each on the function as the ones before left it.
-fn take_out_all(edit: &mut Edit, judge: &dyn Judge, values: Vec<Name>, labels: Vec<Name>) -> Result<(), EditError> {
+pub(crate) fn take_out_all(edit: &mut Edit, judge: &dyn Judge, values: Vec<Name>, labels: Vec<Name>) -> Result<(), EditError> {
     for name in values {
         let found = readers(edit.body_function()?, &Value { name, bound: Bound::Input, seen_in: Vec::new() }, &[]);
         take_out(edit, judge, name, false, &found)?;

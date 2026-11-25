@@ -77,7 +77,7 @@ pub(crate) fn edge_field_at(drawing: &Drawing, input: bool, y: f32) -> Pos2 {
 
 /// `base`, or `base2`, `base3`… the first that is free (N-14); a base that ends in a digit takes `_` before its number.
 /// The rule of `edit`, on the names the drawing shows: the command refuses a name taken that it does not show.
-fn fresh(base: &str, taken: &BTreeSet<String>) -> String {
+pub fn fresh(base: &str, taken: &BTreeSet<String>) -> String {
     if !taken.contains(base) {
         return base.to_owned();
     }

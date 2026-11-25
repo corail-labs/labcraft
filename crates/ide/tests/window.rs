@@ -680,6 +680,40 @@ fn surround_with_from_the_context_menu_makes_each_kind() {
     }
 }
 
+/// "Make a function…" of the context menu of a node (notation 2.6, commands.md 9.8): the field of its name opens with
+/// `new_function` selected, so that what one types replaces it; a name taken keeps it open with the reason, and Enter on
+/// a free one makes the function and the call. The texts written by hand from 9.8: `x` enters, `a` leaves, read by `y`.
+/// The `layout` that follows is not read.
+#[test]
+fn make_a_function_from_the_context_menu_asks_its_name() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n}\n";
+    let mut harness = harness(fake_with(&[("/p/main.lcf", main)]));
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    let button =
+        |pressed| egui::Event::PointerButton { pos: on_a, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
+    harness.input_mut().events.extend([egui::Event::PointerMoved(on_a), button(true)]);
+    harness.run_steps(1);
+    harness.input_mut().events.push(button(false));
+    harness.run_steps(3);
+    let item = harness.get_by_label("Make a function…").rect().center();
+    click_at(&mut harness, item, egui::Modifiers::NONE);
+    harness.run_steps(3);
+    assert!(harness.query_all_by_value("new_function").next().is_some(), "the name proposed");
+    shot(&mut harness, "make-a-function");
+    // `main` is taken: the field stays, and says why.
+    type_then_enter(&mut harness, "main");
+    assert_eq!(text_of(&harness, "/p/main.lcf"), main);
+    assert!(harness.query_by_label_contains("`main` is the name of a function").is_some(), "the reason under the field");
+    type_then_enter(&mut harness, "doubled");
+    let caller = text_of(&harness, "/p/main.lcf");
+    let body = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = doubled(x)\n    y = core.add(a, 1.0)\n}\n";
+    assert!(caller.strip_prefix(body).is_some_and(|rest| rest.is_empty() || rest.starts_with("\nlayout {")), "{caller}");
+    let made = text_of(&harness, "/p/doubled.lcf");
+    let new = "labcraft 1\n\nuse core\n\nfn doubled(x: f64) -> (a: f64) {\n    a = core.mul(x, 2.0)\n}\n";
+    assert!(made.strip_prefix(new).is_some_and(|rest| rest.is_empty() || rest.starts_with("\nlayout {")), "{made}");
+}
+
 /// A drag of the primary button from `from` to `to`, over a few frames.
 fn drag_from(harness: &mut Harness<'_, State>, from: egui::Pos2, to: egui::Pos2) {
     let button =
