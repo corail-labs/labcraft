@@ -909,6 +909,44 @@ fn moving_a_free_node_fixes_it_from_where_it_is_drawn() {
     assert_eq!(error, Some(("params.invalid", Some("nodes"))));
 }
 
+/// A node off the grid of 8 of its frame comes back to it when it moves (notation 2.4, #327): each coordinate where it
+/// goes, to the nearest multiple of 8, the larger on a tie. Worked by hand: `a` at (43, 76) by (8, 0) goes to (51, 76),
+/// so (48, 80); `b`, drawn at (205, 84), by (-8, 8) goes to (197, 92), so (200, 96), a tie going to the larger; left
+/// and above the origin, `a` at (-13, 2) by (-8, 8) goes to (-21, 10), so (-24, 8).
+#[test]
+fn a_node_moved_lands_on_the_grid_of_its_frame() {
+    let off = placed("    node a at (43, 76) view compact\n");
+    moves(&off, moving(&["a"], 8, 0), vec![], &placed("    node a at (48, 80) view compact\n"));
+    moves(
+        &off,
+        moving(&["b"], -8, 8),
+        vec![place_of(6, "a", 43, 76), place_of(7, "b", 205, 84)],
+        &placed("    node a at (43, 76) view compact\n    node b at (200, 96)\n"),
+    );
+    moves(&placed("    node a at (-13, 2)\n"), moving(&["a"], -8, 8), vec![], &placed("    node a at (-24, 8)\n"));
+}
+
+/// A group moves as one (decision of the owner, 2026-11-25): the first node named lands on the grid, the others go as
+/// far and keep their distances, on the grid or off it. Worked by hand: `b` at (200, 80) by (8, 0) goes to (208, 80), on
+/// the grid, a move of (8, 0), and `a`, off it at (43, 76), goes as far, to (51, 76). Named the other way, `a` leads: to
+/// (51, 76), so (48, 80), a move of (5, 4), and `b` goes as far, to (205, 84).
+#[test]
+fn a_group_moves_as_one_led_by_its_first_node() {
+    let off = placed("    node a at (43, 76) view compact\n    node b at (200, 80)\n");
+    moves(&off, moving(&["b", "a"], 8, 0), vec![], &placed("    node a at (51, 76) view compact\n    node b at (208, 80)\n"));
+    moves(&off, moving(&["a", "b"], 8, 0), vec![], &placed("    node a at (48, 80) view compact\n    node b at (205, 84)\n"));
+}
+
+/// A move that comes to nothing once on the grid changes nothing: a free node drawn on the grid at (40, 80), by (3, 0),
+/// goes to (43, 80), whose nearest point of the grid is (40, 80), where it is. No entry is written, no node is fixed.
+#[test]
+fn a_move_that_rounds_to_nothing_changes_nothing() {
+    let edited =
+        run_with(TWO, moving(&["a"], 3, 0), vec![place_of(6, "a", 40, 80), place_of(7, "b", 200, 80)]).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(edited.texts.is_empty(), "{:?}", edited.texts);
+    assert_eq!(edited.lists.get("nodes"), Some(&vec!["a".to_owned()]));
+}
+
 #[test]
 fn a_move_by_nothing_changes_nothing() {
     let edited = run_with(&placed(PLACED), moving(&["a"], 0, 0), vec![]).unwrap_or_else(|error| panic!("{error:?}"));
@@ -930,8 +968,8 @@ fn a_node_that_the_section_cannot_name_gets_a_label() {
     let edited = moves(
         &twice("", "", ""),
         moving(&["@8"], 8, 0),
-        vec![place_of(8, "@8", 40, 60), place_of(12, "@12", 40, 60)],
-        &twice("#d: ", "", "\nlayout {\n    node #d at (48, 60)\n}\n"),
+        vec![place_of(8, "@8", 40, 64), place_of(12, "@12", 40, 64)],
+        &twice("#d: ", "", "\nlayout {\n    node #d at (48, 64)\n}\n"),
     );
     assert_eq!(edited.lists.get("nodes"), Some(&vec!["#d".to_owned()]));
     assert_eq!(edited.renamed, vec![crate::Renamed { file: FILE.to_owned(), from: "@8".to_owned(), to: "#d".to_owned() }]);

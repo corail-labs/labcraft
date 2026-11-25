@@ -1424,7 +1424,8 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
      the constraints of the wires that enter and leave at one height); then, once the columns are placed, a
      polyline per wire and the junction points of each value. Tracks stack on a skyline over channels and columns.
      The plan is made again on the placed heights, and is the first one moved: its lanes and jogs are on a grid that
-     starts on the main chain of the body, or where it would run (`BodyIn::origin`), so each channel needs the slots
+     starts on the main chain of the body, or where it would run (`BodyIn::origin`), itself on the grid of 8 of the
+     frame, as each column is across (notation 2.2), so each channel needs the slots
      that its width was given (a test on random bodies checks it). A body that the file places can need more.
      The names and the pills of the wires, `names.rs`, are placed where they cover nothing, tested against the
      edges of what the body draws, kept merged by line.
@@ -1978,7 +1979,9 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   and its edges, 6 units wide inside its box (`select::EDGE_GRAB`; the rest of its frames is canvas, `BodyDrawn::header`
   saying how high its header is), a wire within 4 units of its route.
 - **As step 2b writes them.** `Intent::Move { nodes, by }` and `Intent::Arrange(Selection)`, and `Gesture::Move`. A move
-  under way is the canvas's own state (`moving.rs`): the nodes dragged, by whole steps of the grid of 8, or moved by a
+  under way is the canvas's own state (`moving.rs`): the nodes dragged, by whole steps of the grid of 8, the first of the move landing on the grid of its
+  frame and the others going as far (`Moving::set_by`, notation 2.4): the node held in a drag, the first of the
+  selection for the keys; or moved by a
   run of presses of Ctrl and an arrow, which the canvas reads on the focus and ends after a second, at a press of the
   pointer or at another key; `ide` ends it too before a key of its own (`Canvas::end_run`), so that the move comes
   before what the key does. Meanwhile the nodes are painted at their offsets, as a glide paints them, and the wires

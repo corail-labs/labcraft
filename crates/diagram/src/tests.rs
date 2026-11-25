@@ -1215,12 +1215,13 @@ fn a_placed_node_keeps_its_place() {
     let (a, y) = (&placed["a"], &placed["y"]);
     // `a` stands in the first column: after the name `x` (one cell at 10, 6.02), 12 before it and 8 after it, the
     // narrowest channel, 16, its wire being straight, and the half terminal of 3: 45.02 from the corner of the frame,
-    // its block, 24 wide, reaching 69.02. It reaches over `y`, at 66, so it goes up, 24 above it: at 72 - 24 - 16 = 32
+    // up to its grid of 8, 48 (#327), its block, 24 wide, reaching 72. It reaches over `y`, at 66, so it goes up, 24
+    // above it: at 72 - 24 - 16 = 32
     // from the corner, higher than the header of 24 and its margin of 16 (40). The frame grows up by 8 so that it holds
     // it: its top is at the margin, 16, its corner 8 lower, at 24 (notation 5).
     // Across, the margin of 16 is around everything: the terminal of `x` reaches 3 left of the frame, at 19.
     assert_eq!((y.x, y.y), (1900 + 6600, 2400 + 7200));
-    assert_eq!((a.x, a.y), (1900 + 1200 + 602 + 800 + 1600 + 300, 2400 + 3200));
+    assert_eq!((a.x, a.y), (1900 + 4800, 2400 + 3200));
 }
 
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
@@ -1258,6 +1259,50 @@ fn the_chain_goes_straight_through_a_loop() {
     let placed = placed_of(&checked, &names, "main.lcf");
     // Three blocks of `step`, 48 high, their error pair 40 from their top: one line, one top.
     assert_eq!((placed["w/b"].y, placed["y"].y), (placed["a"].y, placed["a"].y));
+}
+
+/// The columns on the grid of 8 of their frame, counted from its origin (notation 2.2, #327). Worked out by hand: `a`, a D
+/// of 16 × 16 for one value in (notation 3.2) whose terminals reach 3 out of it, stands after the name `x` (one cell at
+/// 10, 6.02), 12 before it and 8 after it, the narrowest channel, 16, its wires being straight, and its half terminal of
+/// 3: at 45.02, which goes to 48. `b` stands 3 + 16 + 3 after the right edge of `a`, at 48 + 16 + 22 = 86, which goes to
+/// 88; `y` at 88 + 38 = 126, so 128. Without the grid they would stand at 45.02, 83.02 and 121.02.
+#[test]
+fn the_columns_are_on_the_grid_of_their_frame() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.neg(x)\n    b = core.neg(a)\n    y = core.neg(b)\n}\n";
+    let drawing = drawing_of(main);
+    let across = |key: &str| drawing.in_frame(drawing.placed.iter().position(|placed| placed.key == key).unwrap()).unwrap().0;
+    assert_eq!((across("a"), across("b"), across("y")), (4800, 8800, 12800));
+}
+
+/// One grid of 8 per frame (notation 2.2, #327): the main chain of a body on the grid of its frame, counted from its
+/// origin, and so every terminal of every node. Worked out by hand: `step` is a block of 40, `v` on its first place, 8
+/// below its top, its error pair on the last one, 32 below it. From the axis, the block stands at -32, `x` and `y` at
+/// the height of `v` and `w`, -24, the error terminals on the axis. What is highest is the terminal `x`, 12 above its
+/// height (half the 24 between two terminals): -36. Under the header of 24 and the margin of 16, the axis would be 40 +
+/// 36 = 76 below the origin, 4 off the grid: it goes to 80.
+#[test]
+fn the_main_chain_is_on_the_grid_of_its_frame() {
+    let main = "labcraft 1\n\nfn main(x: f64, err: error = none) -> (y: f64, err: error) {\n    y, e1 = step(x, err: err)\n    err = e1\n}\n";
+    let drawing = drawing_with(&[("main.lcf", main), ("step.lcf", STEP)]);
+    let frame = &drawing.bodies[0];
+    assert_eq!(frame.axis.map(|axis| axis - frame.origin.1), Some(8000));
+    let step = drawing.placed.iter().find(|placed| placed.key == "y").unwrap();
+    assert_eq!(step.y - frame.origin.1, 8000 - 3200);
+    // The same in the frame of a loop, inner frames too: each port of a node or of a structure, where its wire meets
+    // it, is a whole number of 8 below the origin of the frame where that wire lies.
+    let looped = "labcraft 1\n\nfn main(x: f64, err: error = none) -> (y: f64, err: error) {\n    a, e1 = step(x, err: err)\n    w, e3 = loop\n        carry v = a,\n        carry e = e1\n    {\n        b, e2 = step(v, err: e)\n        next v = b\n        next e = e2\n        until true\n    }\n    y, e4 = step(w, err: e3)\n    err = e4\n}\n";
+    for drawing in [drawing, drawing_with(&[("main.lcf", looped), ("step.lcf", STEP)])] {
+        assert!(drawing.bodies.iter().all(|body| body.axis.is_none_or(|axis| (axis - body.origin.1) % 800 == 0)));
+        // Across too: every node, a structure included, at a whole number of 8 from the origin of its frame.
+        for (at, placed) in drawing.placed.iter().enumerate() {
+            let (x, _) = drawing.in_frame(at).unwrap();
+            assert_eq!(x.rem_euclid(800), 0, "{} at {x}", placed.key);
+        }
+        for port in drawing.ports.iter().filter(|port| port.placed.is_some()) {
+            let origin = drawing.bodies[port.body].origin.1;
+            assert_eq!((port.y - origin).rem_euclid(800), 0, "{} at {} in body {}", port.name, port.y - origin, port.body);
+        }
+    }
 }
 
 /// The last arm of a `match` is on the axis: the error enters and leaves the `match` on that line, even when only an

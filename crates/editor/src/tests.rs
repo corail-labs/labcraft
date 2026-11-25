@@ -1077,7 +1077,8 @@ fn a_drag_on_a_node_selects_it_and_asks_to_move_it_by_whole_steps_of_the_grid() 
     canvas.set_viewport(1.0, Vec2::ZERO);
     let none = Shown::default();
     frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
-    // 43 across and 21 down, at 100 %: 40 and 24, the nearest steps of 8 (notation 2.6).
+    // 43 across and 21 down, at 100 %: 40 and 24, the nearest steps of 8 (notation 2.6). `b`, placed automatically, is on
+    // the grid of its frame both ways (notation 2.2, #327): it stays on it.
     let on_b = centre_of(&drawn, "b");
     let intents = drag_with(&ctx, &mut canvas, (on_b, on_b + Vec2::new(43.0, 21.0)), 0.2, &none);
     assert_eq!(intents, vec![selecting(&["b"], &[], &[]), moving_of(&["b"], (40, 24))]);
@@ -1170,6 +1171,54 @@ fn a_run_of_ctrl_and_the_arrows_is_one_move() {
     assert_eq!(canvas.end_run(), None);
 }
 
+/// Ctrl and an arrow during a drag of the selection does the same whichever node of it the drag holds, though the drag
+/// puts that node first (#327): the nodes are the same, in any order. Worked by hand: 16 dragged, then 8 more by the key,
+/// which takes the move over.
+#[test]
+fn a_key_during_a_drag_does_the_same_from_any_node_of_the_selection() {
+    let run = |held: &str| {
+        let ctx = context();
+        install_fonts(&ctx);
+        let mut canvas = Canvas::new();
+        let drawn = drawing(ROW, &ViewState::default());
+        canvas.set_drawing(drawn.clone(), false);
+        canvas.set_viewport(1.0, Vec2::ZERO);
+        let both = showing(&selecting(&["a", "b"], &[], &[]));
+        frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &both);
+        let on = centre_of(&drawn, held);
+        let button =
+            |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let to = on + Vec2::new(16.0, 0.0);
+        let mut intents = Vec::new();
+        for (at, events) in [
+            vec![egui::Event::PointerMoved(on), button(on, true)],
+            vec![egui::Event::PointerMoved(to)],
+            vec![key(egui::Key::ArrowRight, egui::Modifiers::COMMAND)],
+            vec![egui::Event::PointerMoved(to), button(to, false)],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            intents.extend(frame_shown(&ctx, &mut canvas, 0.1 + at as f64 * 0.1, events, &both).2);
+        }
+        intents.extend(canvas.end_run());
+        // The nodes of the move, in any order, and how far.
+        intents
+            .into_iter()
+            .map(|intent| match intent {
+                Intent::Move { mut nodes, by } => {
+                    nodes.sort();
+                    Intent::Move { nodes, by }
+                }
+                other => other,
+            })
+            .collect::<Vec<Intent>>()
+    };
+    // From `a`: 16 dragged, then 8 more by the key, which takes the move over; the nodes are on the grid.
+    assert_eq!(run("a"), vec![moving_of(&["a", "b"], (24, 0))]);
+    assert_eq!(run("b"), run("a"));
+}
+
 /// `b` fixed by the file.
 const FIXED: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64, k: f64) -> (y: f64) {\n    a = core.mul(x, k)\n    b = core.add(a, 1.0)\n    y = core.neg(b)\n}\n\nlayout {\n    node b at (400, 200)\n}\n";
 
@@ -1228,6 +1277,28 @@ fn a_drawing_that_comes_during_a_drag_keeps_it() {
     frame_shown(&ctx, &mut canvas, 0.3, vec![egui::Event::PointerMoved(to)], &b);
     let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.4, vec![egui::Event::PointerMoved(to), button(to, false)], &b);
     assert_eq!(intents, vec![moving_of(&["b"], (48, 0))]);
+}
+
+/// A node that the file puts off the grid of 8 of its frame comes back to it when it is dragged or moved by the keys
+/// (notation 2.4, #327). Worked by hand: `b` at (43, 76) dragged by 8 across goes to (51, 76), whose nearest line of
+/// the grid is (48, 80): a move by (5, 4), the one that `node.move` writes. Ctrl and the right arrow ask for the same.
+#[test]
+fn a_node_off_the_grid_lands_on_it_when_moved() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(&FIXED.replace("node b at (400, 200)", "node b at (43, 76)"), &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let b = showing(&selecting(&["b"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &b);
+    let on_b = centre_of(&drawn, "b");
+    let intents = drag_with(&ctx, &mut canvas, (on_b, on_b + Vec2::new(9.0, 2.0)), 0.2, &b);
+    assert_eq!(intents, vec![moving_of(&["b"], (5, 4))]);
+    canvas.cancel_move();
+    click_with(&ctx, &mut canvas, on_b, 1.0, egui::Modifiers::NONE, &b);
+    frame_shown(&ctx, &mut canvas, 1.5, vec![key(egui::Key::ArrowRight, egui::Modifiers::COMMAND)], &b);
+    assert_eq!(canvas.end_run(), Some(moving_of(&["b"], (5, 4))));
 }
 
 /// Two nodes in a row, a value of another family beside them: the wiring of notation 2.4 to 2.6.
@@ -1708,6 +1779,52 @@ fn a_segment_being_moved_goes_on_over_a_new_drawing() {
     assert_eq!((again.segment, again.by), (moving.segment, 800));
     let other = stacked(&CHAIN.replace("core.add(a, 1.0)", "core.add(1.0, a)"));
     assert!(moving.again(&drawn, &other).is_none());
+}
+
+/// A segment dragged to the height of the terminal it leaves is level with it, and the wire is straight (notation 2.2,
+/// 2.4, #327). `a`, `b` and `y`, each a D of one value in, stand on one line, `b` and `y` fixed 160 apart right of `a`;
+/// the file routes the wire of `a` over them, 32 above their terminals. Dragged down by 30, the segment goes to the nearest line of the grid
+/// of the frame, 32 down: the height of the terminals, on that grid too. Worked out from the rule: every point of the
+/// route that the drop writes is on the line of the terminals.
+#[test]
+fn a_segment_dragged_to_the_height_of_its_terminal_makes_the_wire_straight() {
+    let text = |layout: &str| {
+        format!(
+            "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {{\n    a = core.neg(x)\n    b = core.neg(a)\n    y = core.neg(b)\n}}\n{layout}"
+        )
+    };
+    let plain = drawing(&text(""), &ViewState::default());
+    let a = plain.placed.iter().position(|placed| placed.name == "a").unwrap();
+    let (ax, ay) = plain.in_frame(a).unwrap();
+    let (ax, ay) = (crate::rerouting::unit(ax), crate::rerouting::unit(ay));
+    let out = plain.ports.iter().find(|port| port.placed == Some(a) && !port.input).unwrap();
+    let height = crate::rerouting::unit(out.y - plain.bodies[out.body].origin.1);
+    let routed = format!(
+        "\nlayout {{\n    node b at ({}, {ay})\n    node y at ({}, {ay})\n    wire a -> b via ({}, {}) ({}, {height})\n}}\n",
+        ax + 160,
+        ax + 320,
+        ax + 60,
+        height - 32,
+        ax + 100
+    );
+    let drawn = drawing(&text(&routed), &ViewState::default());
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let (path, (_, oy)) = path_of(&drawn, "a");
+    // The segment over the nodes, 32 above the terminals.
+    let top = path.windows(2).find(|pair| pair[0].1 == pair[1].1 && pair[0].1 < path[0].1).unwrap_or_else(|| panic!("{path:?}"));
+    assert_eq!(((top[0].1 - oy) / 100, (path[0].1 - oy) / 100), (height - 32, height), "{path:?}");
+    let on = units_of(((top[0].0 + top[1].0) / 2, top[0].1));
+    let intents = drag_with(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 30.0)), 0.2, &none);
+    let Some(Intent::Route(routes)) = intents.last() else { panic!("{intents:?}") };
+    assert_eq!(routes.len(), 1, "{routes:?}");
+    assert_eq!(routes[0].0, "a -> b.x", "{routes:?}");
+    assert!(routes[0].1.iter().all(|&(_, y)| y == height), "{routes:?}");
 }
 
 /// The fields in place of M1 step 4b (notation 2.6): what a double-click finds is the text that the drawing writes.

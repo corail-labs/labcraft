@@ -329,6 +329,38 @@ fn covered_nodes(drawing: &labcraft_diagram::Drawing) -> Vec<(String, String)> {
     found
 }
 
+/// The nodes that a label lifts off the grid in height: the line of text of a label (`#close:`, notation 3.1) is no
+/// whole number of steps of the grid, so a node stacked above a node with a label stands off it (notation 2.1: 24 above
+/// what is below, its label included), and so does what stacks above that one, or what is straightened on it, the wire
+/// into its first input level with one of them (#279). Worked out from those rules over the drawing, to a fixed point.
+fn lifted_by_a_label(drawing: &labcraft_diagram::Drawing, text: &str) -> std::collections::HashSet<String> {
+    let labelled = |line: u32| text.lines().nth((line as usize).saturating_sub(1)).is_some_and(|found| found.trim_start().starts_with('#'));
+    let mut lifted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    loop {
+        let before = lifted.len();
+        for node in &drawing.placed {
+            let stands_over = drawing.placed.iter().any(|below| {
+                below.body == node.body
+                    && (labelled(below.line) || lifted.contains(&below.key))
+                    && below.y > node.y
+                    && below.x < node.x + node.width
+                    && node.x < below.x + below.width
+            });
+            let fed = drawing
+                .groups
+                .iter()
+                .filter_map(|group| group.wire.as_ref())
+                .any(|wire| wire.to_nodes.contains(&node.key) && wire.from_node.as_ref().is_some_and(|from| lifted.contains(from)));
+            if stands_over || fed {
+                lifted.insert(node.key.clone());
+            }
+        }
+        if lifted.len() == before {
+            return lifted;
+        }
+    }
+}
+
 /// Scenario 5 of `docs/acceptance-m1.md`, point 1: moving one node of a function of `examples/` (and of the wiring cases) changes its entry of
 /// `layout` alone, or adds it, with the section when the file had none; a node that the section cannot name gets its
 /// label first (commands.md 6.7, `node.move`). And where it goes is where it was in its frame, plus the move (spec 11):
@@ -369,6 +401,7 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
                     wiring_cases += usize::from(function.starts_with("wiring."));
                     let path = format!("/p/{file}");
                     let text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
+                    let lifted = lifted_by_a_label(&before, &text);
                     for (at, placed) in before.placed.iter().enumerate().filter(|(_, placed)| !placed.name.is_empty()) {
                         let result = ok(&mut session, "node.move", json!({ "file": file, "nodes": [placed.name], "by": [by.0, by.1] }));
                         let after_text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
@@ -385,15 +418,30 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
                         );
                         assert!(removed.len() <= 1 + usize::from(labelled), "{function}, {}: removed {removed:?}", placed.name);
                         assert!(removed.iter().all(|line| entry(line) || labelled), "{function}, {}: removed {removed:?}", placed.name);
-                        // Where it went: in its frame, where it was plus the move. The app tells the session of what it wrote.
+                        // Where it went: in its frame, where it was plus the move, on the nearest point of the grid of 8 of
+                        // the frame, the larger coordinate on a tie (notation 2.4, #327). The app tells the session of what
+                        // it wrote.
                         session.files_changed();
                         let after = session.view().main.drawing.clone().unwrap();
                         let now = after.placed.iter().position(|found| found.line == placed.line && found.body == placed.body).unwrap();
                         let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+                        let near = |units: i64| (units + 4).div_euclid(8) * 8;
                         let (x, y) = before.in_frame(at).unwrap();
                         let (x1, y1) = after.in_frame(now).unwrap();
-                        assert_eq!((unit(x1), unit(y1)), (unit(x) + by.0, unit(y) + by.1), "{function}, {}", placed.name);
-                        assert_eq!(after.placed[now].at, Some(((unit(x) + by.0) * 100, (unit(y) + by.1) * 100)));
+                        let went = (near(unit(x) + by.0), near(unit(y) + by.1));
+                        assert_eq!((unit(x1), unit(y1)), went, "{function}, {}", placed.name);
+                        assert_eq!(after.placed[now].at, Some((went.0 * 100, went.1 * 100)));
+                        // A node placed automatically is on the grid of its frame (notation 2.2): its column across, and
+                        // in height the main chain and what stacks on it or is straightened on it, by whole steps. So the
+                        // move takes it exactly by `by`, which is on the grid. Left out in height: what a label lifts
+                        // (`lifted_by_a_label`).
+                        if placed.at.is_none() {
+                            assert_eq!(x.rem_euclid(800), 0, "{function}, {}: placed off the grid across", placed.name);
+                            if !lifted.contains(&placed.key) {
+                                assert_eq!(y.rem_euclid(800), 0, "{function}, {}: placed off the grid in height", placed.name);
+                                assert_eq!(went, (unit(x) + by.0, unit(y) + by.1), "{function}, {}", placed.name);
+                            }
+                        }
                         // No node covers another, the frame that a structure grows upward included (#192), except two that
                         // the file places, which `LC7005` names.
                         let covered = covered_nodes(&after);

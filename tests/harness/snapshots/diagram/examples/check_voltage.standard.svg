@@ -1,283 +1,283 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1550 400" width="1550" height="400" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="check_voltage">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1566 416" width="1566" height="416" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="check_voltage">
 <style>
 svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; }
 @media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect width="1550" height="400" style="fill: var(--canvas-fill)"/>
-<rect x="19" y="16" width="1512" height="368" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect width="1566" height="416" style="fill: var(--canvas-fill)"/>
+<rect x="19" y="16" width="1528" height="384" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn check_voltage</text>
 <g data-wire="resource" data-from="fn.resource" data-to="dmm.resource">
-<path d="M19 256 L159.48 256 Q165.48 256 165.48 262 L165.48 274.5 Q165.48 280 170.98 280 L176.48 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 272 L159.48 272 Q165.48 272 165.48 278 L165.48 290 Q165.48 296 171.48 296 L179 296" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="dmm.err">
-<path d="M19 328 L176.48 328" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M30.1 329.4 L31.9 328 L30.1 326.6 M38.1 329.4 L39.9 328 L38.1 326.6 M46.1 329.4 L47.9 328 L46.1 326.6 M54.1 329.4 L55.9 328 L54.1 326.6 M62.1 329.4 L63.9 328 L62.1 326.6 M70.1 329.4 L71.9 328 L70.1 326.6 M78.1 329.4 L79.9 328 L78.1 326.6 M86.1 329.4 L87.9 328 L86.1 326.6 M94.1 329.4 L95.9 328 L94.1 326.6 M102.1 329.4 L103.9 328 L102.1 326.6 M110.1 329.4 L111.9 328 L110.1 326.6 M118.1 329.4 L119.9 328 L118.1 326.6 M126.1 329.4 L127.9 328 L126.1 326.6 M134.1 329.4 L135.9 328 L134.1 326.6 M142.1 329.4 L143.9 328 L142.1 326.6 M150.1 329.4 L151.9 328 L150.1 326.6 M158.1 329.4 L159.9 328 L158.1 326.6 M166.1 329.4 L167.9 328 L166.1 326.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<path d="M19 344 L179 344" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M30.1 345.4 L31.9 344 L30.1 342.6 M38.1 345.4 L39.9 344 L38.1 342.6 M46.1 345.4 L47.9 344 L46.1 342.6 M54.1 345.4 L55.9 344 L54.1 342.6 M62.1 345.4 L63.9 344 L62.1 342.6 M70.1 345.4 L71.9 344 L70.1 342.6 M78.1 345.4 L79.9 344 L78.1 342.6 M86.1 345.4 L87.9 344 L86.1 342.6 M94.1 345.4 L95.9 344 L94.1 342.6 M102.1 345.4 L103.9 344 L102.1 342.6 M110.1 345.4 L111.9 344 L110.1 342.6 M118.1 345.4 L119.9 344 L118.1 342.6 M126.1 345.4 L127.9 344 L126.1 342.6 M134.1 345.4 L135.9 344 L134.1 342.6 M142.1 345.4 L143.9 344 L142.1 342.6 M150.1 345.4 L151.9 344 L150.1 342.6 M158.1 345.4 L159.9 344 L158.1 342.6 M166.1 345.4 L167.9 344 L166.1 342.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm" data-from="dmm.session" data-to="dmm2.session">
-<path d="M320.48 280 L342.48 280" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<path d="M323 296 L347 296" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e1" data-from="dmm.err" data-to="dmm2.err">
-<path d="M320.48 328 L342.48 328" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M331.58 329.4 L333.38 328 L331.58 326.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
-<text x="324.48" y="325" font-size="10" style="fill: var(--ink-muted)">e1</text>
+<path d="M323 344 L347 344" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M334.1 345.4 L335.9 344 L334.1 342.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="327" y="341" font-size="10" style="fill: var(--ink-muted)">e1</text>
 </g>
 <g data-wire="dmm2" data-from="dmm2.session" data-to="e3.session">
-<path d="M574.48 280 L587.48 280 Q593.48 280 593.48 286 L593.48 298.5 Q593.48 304 598.98 304 L604.48 304" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<path d="M579 296 L592 296 Q598 296 598 302 L598 314 Q598 320 604 320 L611 320" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e2" data-from="dmm2.err" data-to="e3.err">
-<path d="M574.48 328 L604.48 328" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M585.58 329.4 L587.38 328 L585.58 326.6 M593.58 329.4 L595.38 328 L593.58 326.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
-<path d="M585.48 328 L585.48 354 Q585.48 360 591.48 360 L1229.48 360 Q1235.48 360 1235.48 354 L1235.48 276 Q1235.48 272 1239.48 272 L1243.48 272" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M584.08 339.1 L585.48 340.9 L586.88 339.1 M584.08 347.1 L585.48 348.9 L586.88 347.1 M590.58 361.4 L592.38 360 L590.58 358.6 M598.58 361.4 L600.38 360 L598.58 358.6 M606.58 361.4 L608.38 360 L606.58 358.6 M614.58 361.4 L616.38 360 L614.58 358.6 M622.58 361.4 L624.38 360 L622.58 358.6 M630.58 361.4 L632.38 360 L630.58 358.6 M638.58 361.4 L640.38 360 L638.58 358.6 M646.58 361.4 L648.38 360 L646.58 358.6 M654.58 361.4 L656.38 360 L654.58 358.6 M662.58 361.4 L664.38 360 L662.58 358.6 M670.58 361.4 L672.38 360 L670.58 358.6 M678.58 361.4 L680.38 360 L678.58 358.6 M686.58 361.4 L688.38 360 L686.58 358.6 M694.58 361.4 L696.38 360 L694.58 358.6 M702.58 361.4 L704.38 360 L702.58 358.6 M710.58 361.4 L712.38 360 L710.58 358.6 M718.58 361.4 L720.38 360 L718.58 358.6 M726.58 361.4 L728.38 360 L726.58 358.6 M734.58 361.4 L736.38 360 L734.58 358.6 M742.58 361.4 L744.38 360 L742.58 358.6 M750.58 361.4 L752.38 360 L750.58 358.6 M758.58 361.4 L760.38 360 L758.58 358.6 M766.58 361.4 L768.38 360 L766.58 358.6 M774.58 361.4 L776.38 360 L774.58 358.6 M782.58 361.4 L784.38 360 L782.58 358.6 M790.58 361.4 L792.38 360 L790.58 358.6 M798.58 361.4 L800.38 360 L798.58 358.6 M806.58 361.4 L808.38 360 L806.58 358.6 M814.58 361.4 L816.38 360 L814.58 358.6 M822.58 361.4 L824.38 360 L822.58 358.6 M830.58 361.4 L832.38 360 L830.58 358.6 M838.58 361.4 L840.38 360 L838.58 358.6 M846.58 361.4 L848.38 360 L846.58 358.6 M854.58 361.4 L856.38 360 L854.58 358.6 M862.58 361.4 L864.38 360 L862.58 358.6 M870.58 361.4 L872.38 360 L870.58 358.6 M878.58 361.4 L880.38 360 L878.58 358.6 M886.58 361.4 L888.38 360 L886.58 358.6 M894.58 361.4 L896.38 360 L894.58 358.6 M902.58 361.4 L904.38 360 L902.58 358.6 M910.58 361.4 L912.38 360 L910.58 358.6 M918.58 361.4 L920.38 360 L918.58 358.6 M926.58 361.4 L928.38 360 L926.58 358.6 M934.58 361.4 L936.38 360 L934.58 358.6 M942.58 361.4 L944.38 360 L942.58 358.6 M950.58 361.4 L952.38 360 L950.58 358.6 M958.58 361.4 L960.38 360 L958.58 358.6 M966.58 361.4 L968.38 360 L966.58 358.6 M974.58 361.4 L976.38 360 L974.58 358.6 M982.58 361.4 L984.38 360 L982.58 358.6 M990.58 361.4 L992.38 360 L990.58 358.6 M998.58 361.4 L1000.38 360 L998.58 358.6 M1006.58 361.4 L1008.38 360 L1006.58 358.6 M1014.58 361.4 L1016.38 360 L1014.58 358.6 M1022.58 361.4 L1024.38 360 L1022.58 358.6 M1030.58 361.4 L1032.38 360 L1030.58 358.6 M1038.58 361.4 L1040.38 360 L1038.58 358.6 M1046.58 361.4 L1048.38 360 L1046.58 358.6 M1054.58 361.4 L1056.38 360 L1054.58 358.6 M1062.58 361.4 L1064.38 360 L1062.58 358.6 M1070.58 361.4 L1072.38 360 L1070.58 358.6 M1078.58 361.4 L1080.38 360 L1078.58 358.6 M1086.58 361.4 L1088.38 360 L1086.58 358.6 M1094.58 361.4 L1096.38 360 L1094.58 358.6 M1102.58 361.4 L1104.38 360 L1102.58 358.6 M1110.58 361.4 L1112.38 360 L1110.58 358.6 M1118.58 361.4 L1120.38 360 L1118.58 358.6 M1126.58 361.4 L1128.38 360 L1126.58 358.6 M1134.58 361.4 L1136.38 360 L1134.58 358.6 M1142.58 361.4 L1144.38 360 L1142.58 358.6 M1150.58 361.4 L1152.38 360 L1150.58 358.6 M1158.58 361.4 L1160.38 360 L1158.58 358.6 M1166.58 361.4 L1168.38 360 L1166.58 358.6 M1174.58 361.4 L1176.38 360 L1174.58 358.6 M1182.58 361.4 L1184.38 360 L1182.58 358.6 M1190.58 361.4 L1192.38 360 L1190.58 358.6 M1198.58 361.4 L1200.38 360 L1198.58 358.6 M1206.58 361.4 L1208.38 360 L1206.58 358.6 M1214.58 361.4 L1216.38 360 L1214.58 358.6 M1222.58 361.4 L1224.38 360 L1222.58 358.6 M1236.88 354.9 L1235.48 353.1 L1234.08 354.9 M1236.88 346.9 L1235.48 345.1 L1234.08 346.9 M1236.88 338.9 L1235.48 337.1 L1234.08 338.9 M1236.88 330.9 L1235.48 329.1 L1234.08 330.9 M1236.88 322.9 L1235.48 321.1 L1234.08 322.9 M1236.88 314.9 L1235.48 313.1 L1234.08 314.9 M1236.88 306.9 L1235.48 305.1 L1234.08 306.9 M1236.88 298.9 L1235.48 297.1 L1234.08 298.9 M1236.88 290.9 L1235.48 289.1 L1234.08 290.9 M1236.88 282.9 L1235.48 281.1 L1234.08 282.9" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
-<circle cx="585.48" cy="328" r="3" style="fill: var(--wire-error)"/>
-<text x="578.48" y="325" font-size="10" style="fill: var(--ink-muted)">e2</text>
-<text x="904.46" y="357" font-size="10" style="fill: var(--ink-muted)">e2</text>
+<path d="M579 344 L611 344" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M590.1 345.4 L591.9 344 L590.1 342.6 M598.1 345.4 L599.9 344 L598.1 342.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<path d="M590 344 L590 370 Q590 376 596 376 L1245 376 Q1251 376 1251 370 L1251 292 Q1251 288 1255 288 L1259 288" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M588.6 355.1 L590 356.9 L591.4 355.1 M588.6 363.1 L590 364.9 L591.4 363.1 M595.1 377.4 L596.9 376 L595.1 374.6 M603.1 377.4 L604.9 376 L603.1 374.6 M611.1 377.4 L612.9 376 L611.1 374.6 M619.1 377.4 L620.9 376 L619.1 374.6 M627.1 377.4 L628.9 376 L627.1 374.6 M635.1 377.4 L636.9 376 L635.1 374.6 M643.1 377.4 L644.9 376 L643.1 374.6 M651.1 377.4 L652.9 376 L651.1 374.6 M659.1 377.4 L660.9 376 L659.1 374.6 M667.1 377.4 L668.9 376 L667.1 374.6 M675.1 377.4 L676.9 376 L675.1 374.6 M683.1 377.4 L684.9 376 L683.1 374.6 M691.1 377.4 L692.9 376 L691.1 374.6 M699.1 377.4 L700.9 376 L699.1 374.6 M707.1 377.4 L708.9 376 L707.1 374.6 M715.1 377.4 L716.9 376 L715.1 374.6 M723.1 377.4 L724.9 376 L723.1 374.6 M731.1 377.4 L732.9 376 L731.1 374.6 M739.1 377.4 L740.9 376 L739.1 374.6 M747.1 377.4 L748.9 376 L747.1 374.6 M755.1 377.4 L756.9 376 L755.1 374.6 M763.1 377.4 L764.9 376 L763.1 374.6 M771.1 377.4 L772.9 376 L771.1 374.6 M779.1 377.4 L780.9 376 L779.1 374.6 M787.1 377.4 L788.9 376 L787.1 374.6 M795.1 377.4 L796.9 376 L795.1 374.6 M803.1 377.4 L804.9 376 L803.1 374.6 M811.1 377.4 L812.9 376 L811.1 374.6 M819.1 377.4 L820.9 376 L819.1 374.6 M827.1 377.4 L828.9 376 L827.1 374.6 M835.1 377.4 L836.9 376 L835.1 374.6 M843.1 377.4 L844.9 376 L843.1 374.6 M851.1 377.4 L852.9 376 L851.1 374.6 M859.1 377.4 L860.9 376 L859.1 374.6 M867.1 377.4 L868.9 376 L867.1 374.6 M875.1 377.4 L876.9 376 L875.1 374.6 M883.1 377.4 L884.9 376 L883.1 374.6 M891.1 377.4 L892.9 376 L891.1 374.6 M899.1 377.4 L900.9 376 L899.1 374.6 M907.1 377.4 L908.9 376 L907.1 374.6 M915.1 377.4 L916.9 376 L915.1 374.6 M923.1 377.4 L924.9 376 L923.1 374.6 M931.1 377.4 L932.9 376 L931.1 374.6 M939.1 377.4 L940.9 376 L939.1 374.6 M947.1 377.4 L948.9 376 L947.1 374.6 M955.1 377.4 L956.9 376 L955.1 374.6 M963.1 377.4 L964.9 376 L963.1 374.6 M971.1 377.4 L972.9 376 L971.1 374.6 M979.1 377.4 L980.9 376 L979.1 374.6 M987.1 377.4 L988.9 376 L987.1 374.6 M995.1 377.4 L996.9 376 L995.1 374.6 M1003.1 377.4 L1004.9 376 L1003.1 374.6 M1011.1 377.4 L1012.9 376 L1011.1 374.6 M1019.1 377.4 L1020.9 376 L1019.1 374.6 M1027.1 377.4 L1028.9 376 L1027.1 374.6 M1035.1 377.4 L1036.9 376 L1035.1 374.6 M1043.1 377.4 L1044.9 376 L1043.1 374.6 M1051.1 377.4 L1052.9 376 L1051.1 374.6 M1059.1 377.4 L1060.9 376 L1059.1 374.6 M1067.1 377.4 L1068.9 376 L1067.1 374.6 M1075.1 377.4 L1076.9 376 L1075.1 374.6 M1083.1 377.4 L1084.9 376 L1083.1 374.6 M1091.1 377.4 L1092.9 376 L1091.1 374.6 M1099.1 377.4 L1100.9 376 L1099.1 374.6 M1107.1 377.4 L1108.9 376 L1107.1 374.6 M1115.1 377.4 L1116.9 376 L1115.1 374.6 M1123.1 377.4 L1124.9 376 L1123.1 374.6 M1131.1 377.4 L1132.9 376 L1131.1 374.6 M1139.1 377.4 L1140.9 376 L1139.1 374.6 M1147.1 377.4 L1148.9 376 L1147.1 374.6 M1155.1 377.4 L1156.9 376 L1155.1 374.6 M1163.1 377.4 L1164.9 376 L1163.1 374.6 M1171.1 377.4 L1172.9 376 L1171.1 374.6 M1179.1 377.4 L1180.9 376 L1179.1 374.6 M1187.1 377.4 L1188.9 376 L1187.1 374.6 M1195.1 377.4 L1196.9 376 L1195.1 374.6 M1203.1 377.4 L1204.9 376 L1203.1 374.6 M1211.1 377.4 L1212.9 376 L1211.1 374.6 M1219.1 377.4 L1220.9 376 L1219.1 374.6 M1227.1 377.4 L1228.9 376 L1227.1 374.6 M1235.1 377.4 L1236.9 376 L1235.1 374.6 M1243.1 377.4 L1244.9 376 L1243.1 374.6 M1252.4 370.9 L1251 369.1 L1249.6 370.9 M1252.4 362.9 L1251 361.1 L1249.6 362.9 M1252.4 354.9 L1251 353.1 L1249.6 354.9 M1252.4 346.9 L1251 345.1 L1249.6 346.9 M1252.4 338.9 L1251 337.1 L1249.6 338.9 M1252.4 330.9 L1251 329.1 L1249.6 330.9 M1252.4 322.9 L1251 321.1 L1249.6 322.9 M1252.4 314.9 L1251 313.1 L1249.6 314.9 M1252.4 306.9 L1251 305.1 L1249.6 306.9 M1252.4 298.9 L1251 297.1 L1249.6 298.9" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<circle cx="590" cy="344" r="3" style="fill: var(--wire-error)"/>
+<text x="583" y="341" font-size="10" style="fill: var(--ink-muted)">e2</text>
+<text x="914.48" y="373" font-size="10" style="fill: var(--ink-muted)">e2</text>
 </g>
 <g data-wire="raw" data-from="dmm2.value" data-to="voltage.x">
-<path d="M574.48 304 L579.98 304 Q585.48 304 585.48 298.5 L585.48 214.36 Q585.48 208.36 591.48 208.36 L604.48 208.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M579 320 L584.5 320 Q590 320 590 314.5 L590 230.36 Q590 224.36 596 224.36 L611 224.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="voltage" data-from="voltage.result" data-to="fn.voltage above.a below.a">
-<path d="M724.48 208.36 L753.48 208.36 Q759.48 208.36 759.48 214.36 L759.48 298 Q759.48 304 765.48 304 L1429.48 304 Q1435.48 304 1435.48 298 L1435.48 274 Q1435.48 268 1441.48 268 L1531 268" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M759.48 208.36 L778.48 208.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M759.48 208.36 L759.48 110.36 Q759.48 104.36 765.48 104.36 L778.48 104.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<circle cx="759.48" cy="208.36" r="3" style="fill: var(--wire-data)"/>
-<text x="763.48" y="301" font-size="10" style="fill: var(--ink-muted)">voltage</text>
+<path d="M731 224.36 L760 224.36 Q766 224.36 766 230.36 L766 314 Q766 320 772 320 L1445 320 Q1451 320 1451 314 L1451 286 Q1451 280 1457 280 L1547 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M766 224.36 L787 224.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M766 224.36 L766 126.36 Q766 120.36 772 120.36 L787 120.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="766" cy="224.36" r="3" style="fill: var(--wire-data)"/>
+<text x="770" y="317" font-size="10" style="fill: var(--ink-muted)">voltage</text>
 </g>
 <g data-wire="low" data-from="fn.low" data-to="above.b">
-<path d="M19 280 L143.48 280 Q149.48 280 149.48 274 L149.48 158 Q149.48 152 155.48 152 L761.48 152 Q767.48 152 767.48 158 L767.48 226.86 Q767.48 232.36 772.98 232.36 L778.48 232.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="449.45" y="149" font-size="10" style="fill: var(--ink-muted)">low</text>
+<path d="M19 296 L143.48 296 Q149.48 296 149.48 290 L149.48 174 Q149.48 168 155.48 168 L768 168 Q774 168 774 174 L774 242.36 Q774 248.36 780 248.36 L787 248.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="452.71" y="165" font-size="10" style="fill: var(--ink-muted)">low</text>
 </g>
 <g data-wire="high" data-from="fn.high" data-to="below.b">
-<path d="M19 304 L151.48 304 Q157.48 304 157.48 298 L157.48 134.36 Q157.48 128.36 163.48 128.36 L778.48 128.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="455.94" y="125.36" font-size="10" style="fill: var(--ink-muted)">high</text>
+<path d="M19 320 L151.48 320 Q157.48 320 157.48 314 L157.48 150.36 Q157.48 144.36 163.48 144.36 L787 144.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="460.2" y="141.36" font-size="10" style="fill: var(--ink-muted)">high</text>
 </g>
 <g data-wire="above" data-from="above.result" data-to="in_range.a">
-<path d="M898.48 208.36 L920.48 208.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M907 224.36 L931 224.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="below" data-from="below.result" data-to="in_range.b">
-<path d="M898.48 104.36 L903.98 104.36 Q909.48 104.36 909.48 109.86 L909.48 226.86 Q909.48 232.36 914.98 232.36 L920.48 232.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M907 120.36 L912.5 120.36 Q918 120.36 918 125.86 L918 242.36 Q918 248.36 924 248.36 L931 248.36" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="in_range" data-from="in_range.result">
-<path d="M1032.48 208.36 L1037.98 208.36 Q1043.48 208.36 1043.48 202.86 L1043.48 72 Q1043.48 68 1047.48 68 L1051.48 68" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1043 224.36 L1048.5 224.36 Q1054 224.36 1054 218.86 L1054 74 Q1054 68 1060 68 L1067 68" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="verdict" data-from="verdict.verdict" data-to="fn.verdict">
-<path d="M1427.48 244 L1531 244" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1443 256 L1547 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="e3" data-from="e3.err" data-to="fn.err">
-<path d="M748.48 328 L1531 328" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
-<path d="M759.58 329.4 L761.38 328 L759.58 326.6 M767.58 329.4 L769.38 328 L767.58 326.6 M775.58 329.4 L777.38 328 L775.58 326.6 M783.58 329.4 L785.38 328 L783.58 326.6 M791.58 329.4 L793.38 328 L791.58 326.6 M799.58 329.4 L801.38 328 L799.58 326.6 M807.58 329.4 L809.38 328 L807.58 326.6 M815.58 329.4 L817.38 328 L815.58 326.6 M823.58 329.4 L825.38 328 L823.58 326.6 M831.58 329.4 L833.38 328 L831.58 326.6 M839.58 329.4 L841.38 328 L839.58 326.6 M847.58 329.4 L849.38 328 L847.58 326.6 M855.58 329.4 L857.38 328 L855.58 326.6 M863.58 329.4 L865.38 328 L863.58 326.6 M871.58 329.4 L873.38 328 L871.58 326.6 M879.58 329.4 L881.38 328 L879.58 326.6 M887.58 329.4 L889.38 328 L887.58 326.6 M895.58 329.4 L897.38 328 L895.58 326.6 M903.58 329.4 L905.38 328 L903.58 326.6 M911.58 329.4 L913.38 328 L911.58 326.6 M919.58 329.4 L921.38 328 L919.58 326.6 M927.58 329.4 L929.38 328 L927.58 326.6 M935.58 329.4 L937.38 328 L935.58 326.6 M943.58 329.4 L945.38 328 L943.58 326.6 M951.58 329.4 L953.38 328 L951.58 326.6 M959.58 329.4 L961.38 328 L959.58 326.6 M967.58 329.4 L969.38 328 L967.58 326.6 M975.58 329.4 L977.38 328 L975.58 326.6 M983.58 329.4 L985.38 328 L983.58 326.6 M991.58 329.4 L993.38 328 L991.58 326.6 M999.58 329.4 L1001.38 328 L999.58 326.6 M1007.58 329.4 L1009.38 328 L1007.58 326.6 M1015.58 329.4 L1017.38 328 L1015.58 326.6 M1023.58 329.4 L1025.38 328 L1023.58 326.6 M1031.58 329.4 L1033.38 328 L1031.58 326.6 M1039.58 329.4 L1041.38 328 L1039.58 326.6 M1047.58 329.4 L1049.38 328 L1047.58 326.6 M1055.58 329.4 L1057.38 328 L1055.58 326.6 M1063.58 329.4 L1065.38 328 L1063.58 326.6 M1071.58 329.4 L1073.38 328 L1071.58 326.6 M1079.58 329.4 L1081.38 328 L1079.58 326.6 M1087.58 329.4 L1089.38 328 L1087.58 326.6 M1095.58 329.4 L1097.38 328 L1095.58 326.6 M1103.58 329.4 L1105.38 328 L1103.58 326.6 M1111.58 329.4 L1113.38 328 L1111.58 326.6 M1119.58 329.4 L1121.38 328 L1119.58 326.6 M1127.58 329.4 L1129.38 328 L1127.58 326.6 M1135.58 329.4 L1137.38 328 L1135.58 326.6 M1143.58 329.4 L1145.38 328 L1143.58 326.6 M1151.58 329.4 L1153.38 328 L1151.58 326.6 M1159.58 329.4 L1161.38 328 L1159.58 326.6 M1167.58 329.4 L1169.38 328 L1167.58 326.6 M1175.58 329.4 L1177.38 328 L1175.58 326.6 M1183.58 329.4 L1185.38 328 L1183.58 326.6 M1191.58 329.4 L1193.38 328 L1191.58 326.6 M1199.58 329.4 L1201.38 328 L1199.58 326.6 M1207.58 329.4 L1209.38 328 L1207.58 326.6 M1215.58 329.4 L1217.38 328 L1215.58 326.6 M1223.58 329.4 L1225.38 328 L1223.58 326.6 M1231.58 329.4 L1233.38 328 L1231.58 326.6 M1239.58 329.4 L1241.38 328 L1239.58 326.6 M1247.58 329.4 L1249.38 328 L1247.58 326.6 M1255.58 329.4 L1257.38 328 L1255.58 326.6 M1263.58 329.4 L1265.38 328 L1263.58 326.6 M1271.58 329.4 L1273.38 328 L1271.58 326.6 M1279.58 329.4 L1281.38 328 L1279.58 326.6 M1287.58 329.4 L1289.38 328 L1287.58 326.6 M1295.58 329.4 L1297.38 328 L1295.58 326.6 M1303.58 329.4 L1305.38 328 L1303.58 326.6 M1311.58 329.4 L1313.38 328 L1311.58 326.6 M1319.58 329.4 L1321.38 328 L1319.58 326.6 M1327.58 329.4 L1329.38 328 L1327.58 326.6 M1335.58 329.4 L1337.38 328 L1335.58 326.6 M1343.58 329.4 L1345.38 328 L1343.58 326.6 M1351.58 329.4 L1353.38 328 L1351.58 326.6 M1359.58 329.4 L1361.38 328 L1359.58 326.6 M1367.58 329.4 L1369.38 328 L1367.58 326.6 M1375.58 329.4 L1377.38 328 L1375.58 326.6 M1383.58 329.4 L1385.38 328 L1383.58 326.6 M1391.58 329.4 L1393.38 328 L1391.58 326.6 M1399.58 329.4 L1401.38 328 L1399.58 326.6 M1407.58 329.4 L1409.38 328 L1407.58 326.6 M1415.58 329.4 L1417.38 328 L1415.58 326.6 M1423.58 329.4 L1425.38 328 L1423.58 326.6 M1431.58 329.4 L1433.38 328 L1431.58 326.6 M1439.58 329.4 L1441.38 328 L1439.58 326.6 M1447.58 329.4 L1449.38 328 L1447.58 326.6 M1455.58 329.4 L1457.38 328 L1455.58 326.6 M1463.58 329.4 L1465.38 328 L1463.58 326.6 M1471.58 329.4 L1473.38 328 L1471.58 326.6 M1479.58 329.4 L1481.38 328 L1479.58 326.6 M1487.58 329.4 L1489.38 328 L1487.58 326.6 M1495.58 329.4 L1497.38 328 L1495.58 326.6 M1503.58 329.4 L1505.38 328 L1503.58 326.6 M1511.58 329.4 L1513.38 328 L1511.58 326.6 M1519.58 329.4 L1521.38 328 L1519.58 326.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
-<text x="752.48" y="325" font-size="10" style="fill: var(--ink-muted)">e3</text>
+<path d="M755 344 L1547 344" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M766.1 345.4 L767.9 344 L766.1 342.6 M774.1 345.4 L775.9 344 L774.1 342.6 M782.1 345.4 L783.9 344 L782.1 342.6 M790.1 345.4 L791.9 344 L790.1 342.6 M798.1 345.4 L799.9 344 L798.1 342.6 M806.1 345.4 L807.9 344 L806.1 342.6 M814.1 345.4 L815.9 344 L814.1 342.6 M822.1 345.4 L823.9 344 L822.1 342.6 M830.1 345.4 L831.9 344 L830.1 342.6 M838.1 345.4 L839.9 344 L838.1 342.6 M846.1 345.4 L847.9 344 L846.1 342.6 M854.1 345.4 L855.9 344 L854.1 342.6 M862.1 345.4 L863.9 344 L862.1 342.6 M870.1 345.4 L871.9 344 L870.1 342.6 M878.1 345.4 L879.9 344 L878.1 342.6 M886.1 345.4 L887.9 344 L886.1 342.6 M894.1 345.4 L895.9 344 L894.1 342.6 M902.1 345.4 L903.9 344 L902.1 342.6 M910.1 345.4 L911.9 344 L910.1 342.6 M918.1 345.4 L919.9 344 L918.1 342.6 M926.1 345.4 L927.9 344 L926.1 342.6 M934.1 345.4 L935.9 344 L934.1 342.6 M942.1 345.4 L943.9 344 L942.1 342.6 M950.1 345.4 L951.9 344 L950.1 342.6 M958.1 345.4 L959.9 344 L958.1 342.6 M966.1 345.4 L967.9 344 L966.1 342.6 M974.1 345.4 L975.9 344 L974.1 342.6 M982.1 345.4 L983.9 344 L982.1 342.6 M990.1 345.4 L991.9 344 L990.1 342.6 M998.1 345.4 L999.9 344 L998.1 342.6 M1006.1 345.4 L1007.9 344 L1006.1 342.6 M1014.1 345.4 L1015.9 344 L1014.1 342.6 M1022.1 345.4 L1023.9 344 L1022.1 342.6 M1030.1 345.4 L1031.9 344 L1030.1 342.6 M1038.1 345.4 L1039.9 344 L1038.1 342.6 M1046.1 345.4 L1047.9 344 L1046.1 342.6 M1054.1 345.4 L1055.9 344 L1054.1 342.6 M1062.1 345.4 L1063.9 344 L1062.1 342.6 M1070.1 345.4 L1071.9 344 L1070.1 342.6 M1078.1 345.4 L1079.9 344 L1078.1 342.6 M1086.1 345.4 L1087.9 344 L1086.1 342.6 M1094.1 345.4 L1095.9 344 L1094.1 342.6 M1102.1 345.4 L1103.9 344 L1102.1 342.6 M1110.1 345.4 L1111.9 344 L1110.1 342.6 M1118.1 345.4 L1119.9 344 L1118.1 342.6 M1126.1 345.4 L1127.9 344 L1126.1 342.6 M1134.1 345.4 L1135.9 344 L1134.1 342.6 M1142.1 345.4 L1143.9 344 L1142.1 342.6 M1150.1 345.4 L1151.9 344 L1150.1 342.6 M1158.1 345.4 L1159.9 344 L1158.1 342.6 M1166.1 345.4 L1167.9 344 L1166.1 342.6 M1174.1 345.4 L1175.9 344 L1174.1 342.6 M1182.1 345.4 L1183.9 344 L1182.1 342.6 M1190.1 345.4 L1191.9 344 L1190.1 342.6 M1198.1 345.4 L1199.9 344 L1198.1 342.6 M1206.1 345.4 L1207.9 344 L1206.1 342.6 M1214.1 345.4 L1215.9 344 L1214.1 342.6 M1222.1 345.4 L1223.9 344 L1222.1 342.6 M1230.1 345.4 L1231.9 344 L1230.1 342.6 M1238.1 345.4 L1239.9 344 L1238.1 342.6 M1246.1 345.4 L1247.9 344 L1246.1 342.6 M1254.1 345.4 L1255.9 344 L1254.1 342.6 M1262.1 345.4 L1263.9 344 L1262.1 342.6 M1270.1 345.4 L1271.9 344 L1270.1 342.6 M1278.1 345.4 L1279.9 344 L1278.1 342.6 M1286.1 345.4 L1287.9 344 L1286.1 342.6 M1294.1 345.4 L1295.9 344 L1294.1 342.6 M1302.1 345.4 L1303.9 344 L1302.1 342.6 M1310.1 345.4 L1311.9 344 L1310.1 342.6 M1318.1 345.4 L1319.9 344 L1318.1 342.6 M1326.1 345.4 L1327.9 344 L1326.1 342.6 M1334.1 345.4 L1335.9 344 L1334.1 342.6 M1342.1 345.4 L1343.9 344 L1342.1 342.6 M1350.1 345.4 L1351.9 344 L1350.1 342.6 M1358.1 345.4 L1359.9 344 L1358.1 342.6 M1366.1 345.4 L1367.9 344 L1366.1 342.6 M1374.1 345.4 L1375.9 344 L1374.1 342.6 M1382.1 345.4 L1383.9 344 L1382.1 342.6 M1390.1 345.4 L1391.9 344 L1390.1 342.6 M1398.1 345.4 L1399.9 344 L1398.1 342.6 M1406.1 345.4 L1407.9 344 L1406.1 342.6 M1414.1 345.4 L1415.9 344 L1414.1 342.6 M1422.1 345.4 L1423.9 344 L1422.1 342.6 M1430.1 345.4 L1431.9 344 L1430.1 342.6 M1438.1 345.4 L1439.9 344 L1438.1 342.6 M1446.1 345.4 L1447.9 344 L1446.1 342.6 M1454.1 345.4 L1455.9 344 L1454.1 342.6 M1462.1 345.4 L1463.9 344 L1462.1 342.6 M1470.1 345.4 L1471.9 344 L1470.1 342.6 M1478.1 345.4 L1479.9 344 L1478.1 342.6 M1486.1 345.4 L1487.9 344 L1486.1 342.6 M1494.1 345.4 L1495.9 344 L1494.1 342.6 M1502.1 345.4 L1503.9 344 L1502.1 342.6 M1510.1 345.4 L1511.9 344 L1510.1 342.6 M1518.1 345.4 L1519.9 344 L1518.1 342.6 M1526.1 345.4 L1527.9 344 L1526.1 342.6 M1534.1 345.4 L1535.9 344 L1534.1 342.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="759" y="341" font-size="10" style="fill: var(--ink-muted)">e3</text>
 </g>
 <g data-wire="measured" data-from="measured.measured" data-to="verdict.measured">
-<path d="M1227.48 244 L1231.48 244 Q1235.48 244 1235.48 240 L1235.48 152 Q1235.48 148 1239.48 148 L1243.48 148" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1243 256 L1247 256 Q1251 256 1251 252 L1251 156 Q1251 152 1255 152 L1259 152" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g>
-<rect x="16" y="253.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
-<rect x="23" y="250.18" width="60.16" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="259.65" font-size="10" style="fill: var(--node-title)">resource</text>
-<circle cx="19" cy="280" r="3" style="fill: var(--wire-data)"/>
-<rect x="23" y="274.18" width="54.32" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="283.65" font-size="10" style="fill: var(--node-title)">low</text>
-<text x="53.06" y="283.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
-<rect x="77.32" y="273" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="81.32" y="283.65" font-size="10" style="fill: var(--pill-text)">◂ 220 V</text>
-<circle cx="19" cy="304" r="3" style="fill: var(--wire-data)"/>
-<rect x="23" y="298.18" width="60.34" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="307.65" font-size="10" style="fill: var(--node-title)">high</text>
-<text x="59.08" y="307.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
-<rect x="83.34" y="297" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="87.34" y="307.65" font-size="10" style="fill: var(--pill-text)">◂ 240 V</text>
-<polygon points="16,325 22,328 16,331 18,328" style="fill: var(--wire-error)"/>
-<rect x="23" y="322.18" width="34.06" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="31" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
-<rect x="57.06" y="321" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="61.06" y="331.65" font-size="10" style="fill: var(--pill-text)">◂ none</text>
-<polygon points="1528,241 1534,244 1528,247" style="fill: var(--wire-data)"/>
-<rect x="1472.86" y="238.18" width="54.14" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="1476.86" y="247.65" font-size="10" style="fill: var(--node-title)">verdict</text>
-<circle cx="1531" cy="268" r="3" style="fill: var(--wire-data)"/>
-<rect x="1452.6" y="262.18" width="74.4" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="1456.6" y="271.65" font-size="10" style="fill: var(--node-title)">voltage</text>
-<text x="1502.74" y="271.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
-<polygon points="1528,325 1534,328 1528,331 1530,328" style="fill: var(--wire-error)"/>
-<rect x="1496.94" y="322.18" width="30.06" height="11.64" style="fill: var(--canvas-fill)"/>
-<text x="1500.94" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="16" y="269.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="23" y="266.18" width="60.16" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="275.65" font-size="10" style="fill: var(--node-title)">resource</text>
+<circle cx="19" cy="296" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="290.18" width="54.32" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="299.65" font-size="10" style="fill: var(--node-title)">low</text>
+<text x="53.06" y="299.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<rect x="77.32" y="289" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="81.32" y="299.65" font-size="10" style="fill: var(--pill-text)">◂ 220 V</text>
+<circle cx="19" cy="320" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="314.18" width="60.34" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="323.65" font-size="10" style="fill: var(--node-title)">high</text>
+<text x="59.08" y="323.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<rect x="83.34" y="313" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="87.34" y="323.65" font-size="10" style="fill: var(--pill-text)">◂ 240 V</text>
+<polygon points="16,341 22,344 16,347 18,344" style="fill: var(--wire-error)"/>
+<rect x="23" y="338.18" width="34.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="57.06" y="337" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="61.06" y="347.65" font-size="10" style="fill: var(--pill-text)">◂ none</text>
+<polygon points="1544,253 1550,256 1544,259" style="fill: var(--wire-data)"/>
+<rect x="1488.86" y="250.18" width="54.14" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="1492.86" y="259.65" font-size="10" style="fill: var(--node-title)">verdict</text>
+<circle cx="1547" cy="280" r="3" style="fill: var(--wire-data)"/>
+<rect x="1468.6" y="274.18" width="74.4" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="1472.6" y="283.65" font-size="10" style="fill: var(--node-title)">voltage</text>
+<text x="1518.74" y="283.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<polygon points="1544,341 1550,344 1544,347 1546,344" style="fill: var(--wire-error)"/>
+<rect x="1512.94" y="338.18" width="30.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="1516.94" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
 </g>
 <g data-node="dmm"><title>visa.open</title>
-<rect x="176.48" y="240" width="144" height="104" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="176.48,264 320.48,264" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="188.48" y="255.65" font-size="10" style="fill: var(--ink-muted)">visa.</text>
-<text x="218.58" y="255.65" font-size="10" style="fill: var(--node-title)">open</text>
-<rect x="173.48" y="277.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
-<text x="188.48" y="283.65" font-size="10" style="fill: var(--node-title)">resource</text>
-<rect x="317.48" y="277" width="6" height="6" style="fill: var(--wire-resource)"/>
-<text x="266.34" y="283.65" font-size="10" style="fill: var(--node-title)">session</text>
-<circle cx="176.48" cy="304" r="3" style="fill: var(--wire-data)"/>
-<text x="188.48" y="307.65" font-size="10" style="fill: var(--node-title)">timeout</text>
-<rect x="238.62" y="297" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="242.62" y="307.65" font-size="10" style="fill: var(--pill-text)">2 s</text>
-<polygon points="173.48,325 179.48,328 173.48,331 175.48,328" style="fill: var(--wire-error)"/>
-<text x="188.48" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
-<polygon points="317.48,325 323.48,328 317.48,331 319.48,328" style="fill: var(--wire-error)"/>
-<text x="290.42" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="179" y="256" width="144" height="104" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="179,280 323,280" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="191" y="271.65" font-size="10" style="fill: var(--ink-muted)">visa.</text>
+<text x="221.1" y="271.65" font-size="10" style="fill: var(--node-title)">open</text>
+<rect x="176" y="293.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<text x="191" y="299.65" font-size="10" style="fill: var(--node-title)">resource</text>
+<rect x="320" y="293" width="6" height="6" style="fill: var(--wire-resource)"/>
+<text x="268.86" y="299.65" font-size="10" style="fill: var(--node-title)">session</text>
+<circle cx="179" cy="320" r="3" style="fill: var(--wire-data)"/>
+<text x="191" y="323.65" font-size="10" style="fill: var(--node-title)">timeout</text>
+<rect x="241.14" y="313" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="245.14" y="323.65" font-size="10" style="fill: var(--pill-text)">2 s</text>
+<polygon points="176,341 182,344 176,347 178,344" style="fill: var(--wire-error)"/>
+<text x="191" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
+<polygon points="320,341 326,344 320,347 322,344" style="fill: var(--wire-error)"/>
+<text x="292.94" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
 </g>
 <g data-node="dmm2"><title>scpi.query_f64</title>
-<rect x="342.48" y="240" width="232" height="104" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="342.48,264 574.48,264" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="354.48" y="255.65" font-size="10" style="fill: var(--ink-muted)">scpi.</text>
-<text x="384.58" y="255.65" font-size="10" style="fill: var(--node-title)">query_f64</text>
-<rect x="339.48" y="277" width="6" height="6" style="fill: var(--wire-resource)"/>
-<text x="354.48" y="283.65" font-size="10" style="fill: var(--node-title)">session</text>
-<rect x="571.48" y="277" width="6" height="6" style="fill: var(--wire-resource)"/>
-<text x="520.34" y="283.65" font-size="10" style="fill: var(--node-title)">session</text>
-<rect x="339.48" y="301.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
-<text x="354.48" y="307.65" font-size="10" style="fill: var(--node-title)">command</text>
-<rect x="404.62" y="297" width="98.31" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="408.62" y="307.65" font-size="10" style="fill: var(--pill-text)">&quot;MEAS:VOLT:DC?&quot;</text>
-<circle cx="574.48" cy="304" r="3" style="fill: var(--wire-data)"/>
-<text x="532.38" y="307.65" font-size="10" style="fill: var(--node-title)">value</text>
-<polygon points="339.48,325 345.48,328 339.48,331 341.48,328" style="fill: var(--wire-error)"/>
-<text x="354.48" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
-<polygon points="571.48,325 577.48,328 571.48,331 573.48,328" style="fill: var(--wire-error)"/>
-<text x="544.42" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="347" y="256" width="232" height="104" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="347,280 579,280" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="359" y="271.65" font-size="10" style="fill: var(--ink-muted)">scpi.</text>
+<text x="389.1" y="271.65" font-size="10" style="fill: var(--node-title)">query_f64</text>
+<rect x="344" y="293" width="6" height="6" style="fill: var(--wire-resource)"/>
+<text x="359" y="299.65" font-size="10" style="fill: var(--node-title)">session</text>
+<rect x="576" y="293" width="6" height="6" style="fill: var(--wire-resource)"/>
+<text x="524.86" y="299.65" font-size="10" style="fill: var(--node-title)">session</text>
+<rect x="344" y="317.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<text x="359" y="323.65" font-size="10" style="fill: var(--node-title)">command</text>
+<rect x="409.14" y="313" width="98.31" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="413.14" y="323.65" font-size="10" style="fill: var(--pill-text)">&quot;MEAS:VOLT:DC?&quot;</text>
+<circle cx="579" cy="320" r="3" style="fill: var(--wire-data)"/>
+<text x="536.9" y="323.65" font-size="10" style="fill: var(--node-title)">value</text>
+<polygon points="344,341 350,344 344,347 346,344" style="fill: var(--wire-error)"/>
+<text x="359" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
+<polygon points="576,341 582,344 576,347 578,344" style="fill: var(--wire-error)"/>
+<text x="548.94" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
 </g>
 <g data-node="e3"><title>visa.close</title>
-<rect x="604.48" y="264" width="144" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="604.48,288 748.48,288" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="616.48" y="279.65" font-size="10" style="fill: var(--ink-muted)">visa.</text>
-<text x="646.58" y="279.65" font-size="10" style="fill: var(--node-title)">close</text>
-<rect x="684.68" y="268" width="44.12" height="16" rx="3" style="fill: var(--badge-fill)"/>
-<text x="688.68" y="279.65" font-size="10" style="fill: var(--badge-text)">always</text>
-<rect x="601.48" y="301" width="6" height="6" style="fill: var(--wire-resource)"/>
-<text x="616.48" y="307.65" font-size="10" style="fill: var(--node-title)">session</text>
-<polygon points="601.48,325 607.48,328 601.48,331 603.48,328" style="fill: var(--wire-error)"/>
-<text x="616.48" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
-<polygon points="745.48,325 751.48,328 745.48,331 747.48,328" style="fill: var(--wire-error)"/>
-<text x="718.42" y="331.65" font-size="10" style="fill: var(--node-title)">err</text>
-<text x="604.48" y="257.83" font-size="10" style="fill: var(--ink-muted)">#close:</text>
+<rect x="611" y="280" width="144" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="611,304 755,304" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="623" y="295.65" font-size="10" style="fill: var(--ink-muted)">visa.</text>
+<text x="653.1" y="295.65" font-size="10" style="fill: var(--node-title)">close</text>
+<rect x="691.2" y="284" width="44.12" height="16" rx="3" style="fill: var(--badge-fill)"/>
+<text x="695.2" y="295.65" font-size="10" style="fill: var(--badge-text)">always</text>
+<rect x="608" y="317" width="6" height="6" style="fill: var(--wire-resource)"/>
+<text x="623" y="323.65" font-size="10" style="fill: var(--node-title)">session</text>
+<polygon points="608,341 614,344 608,347 610,344" style="fill: var(--wire-error)"/>
+<text x="623" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
+<polygon points="752,341 758,344 752,347 754,344" style="fill: var(--wire-error)"/>
+<text x="724.94" y="347.65" font-size="10" style="fill: var(--node-title)">err</text>
+<text x="611" y="273.83" font-size="10" style="fill: var(--ink-muted)">#close:</text>
 </g>
 <g data-node="voltage"><title>core.with_unit</title>
-<rect x="604.48" y="168.36" width="120" height="56" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="604.48,192.36 724.48,192.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="616.48" y="184.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
-<text x="646.58" y="184.01" font-size="10" style="fill: var(--node-title)">with_unit</text>
-<circle cx="604.48" cy="208.36" r="3" style="fill: var(--wire-data)"/>
-<text x="616.48" y="212.01" font-size="10" style="fill: var(--node-title)">x</text>
-<circle cx="724.48" cy="208.36" r="3" style="fill: var(--wire-data)"/>
-<text x="694.42" y="212.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
-<text x="654.3" y="212.01" font-size="10" style="fill: var(--node-title)">result</text>
+<rect x="611" y="184.36" width="120" height="56" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="611,208.36 731,208.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="623" y="200.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
+<text x="653.1" y="200.01" font-size="10" style="fill: var(--node-title)">with_unit</text>
+<circle cx="611" cy="224.36" r="3" style="fill: var(--wire-data)"/>
+<text x="623" y="228.01" font-size="10" style="fill: var(--node-title)">x</text>
+<circle cx="731" cy="224.36" r="3" style="fill: var(--wire-data)"/>
+<text x="700.94" y="228.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
+<text x="660.82" y="228.01" font-size="10" style="fill: var(--node-title)">result</text>
 </g>
 <g data-node="above"><title>core.ge</title>
-<rect x="778.48" y="168.36" width="120" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="778.48,192.36 898.48,192.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="790.48" y="184.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
-<text x="820.58" y="184.01" font-size="10" style="fill: var(--node-title)">ge</text>
-<circle cx="778.48" cy="208.36" r="3" style="fill: var(--wire-data)"/>
-<text x="790.48" y="212.01" font-size="10" style="fill: var(--node-title)">a</text>
-<text x="800.5" y="212.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
-<polygon points="898.48,205.36 901.48,208.36 898.48,211.36 895.48,208.36" style="fill: var(--wire-data)"/>
-<text x="850.36" y="212.01" font-size="10" style="fill: var(--node-title)">result</text>
-<circle cx="778.48" cy="232.36" r="3" style="fill: var(--wire-data)"/>
-<text x="790.48" y="236.01" font-size="10" style="fill: var(--node-title)">b</text>
-<text x="800.5" y="236.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
+<rect x="787" y="184.36" width="120" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="787,208.36 907,208.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="799" y="200.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
+<text x="829.1" y="200.01" font-size="10" style="fill: var(--node-title)">ge</text>
+<circle cx="787" cy="224.36" r="3" style="fill: var(--wire-data)"/>
+<text x="799" y="228.01" font-size="10" style="fill: var(--node-title)">a</text>
+<text x="809.02" y="228.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
+<polygon points="907,221.36 910,224.36 907,227.36 904,224.36" style="fill: var(--wire-data)"/>
+<text x="858.88" y="228.01" font-size="10" style="fill: var(--node-title)">result</text>
+<circle cx="787" cy="248.36" r="3" style="fill: var(--wire-data)"/>
+<text x="799" y="252.01" font-size="10" style="fill: var(--node-title)">b</text>
+<text x="809.02" y="252.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
 </g>
 <g data-node="below"><title>core.le</title>
-<rect x="778.48" y="64.36" width="120" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="778.48,88.36 898.48,88.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="790.48" y="80.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
-<text x="820.58" y="80.01" font-size="10" style="fill: var(--node-title)">le</text>
-<circle cx="778.48" cy="104.36" r="3" style="fill: var(--wire-data)"/>
-<text x="790.48" y="108.01" font-size="10" style="fill: var(--node-title)">a</text>
-<text x="800.5" y="108.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
-<polygon points="898.48,101.36 901.48,104.36 898.48,107.36 895.48,104.36" style="fill: var(--wire-data)"/>
-<text x="850.36" y="108.01" font-size="10" style="fill: var(--node-title)">result</text>
-<circle cx="778.48" cy="128.36" r="3" style="fill: var(--wire-data)"/>
-<text x="790.48" y="132.01" font-size="10" style="fill: var(--node-title)">b</text>
-<text x="800.5" y="132.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
+<rect x="787" y="80.36" width="120" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="787,104.36 907,104.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="799" y="96.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
+<text x="829.1" y="96.01" font-size="10" style="fill: var(--node-title)">le</text>
+<circle cx="787" cy="120.36" r="3" style="fill: var(--wire-data)"/>
+<text x="799" y="124.01" font-size="10" style="fill: var(--node-title)">a</text>
+<text x="809.02" y="124.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
+<polygon points="907,117.36 910,120.36 907,123.36 904,120.36" style="fill: var(--wire-data)"/>
+<text x="858.88" y="124.01" font-size="10" style="fill: var(--node-title)">result</text>
+<circle cx="787" cy="144.36" r="3" style="fill: var(--wire-data)"/>
+<text x="799" y="148.01" font-size="10" style="fill: var(--node-title)">b</text>
+<text x="809.02" y="148.01" font-size="10" style="fill: var(--ink-muted)">[V]</text>
 </g>
 <g data-node="in_range"><title>core.and</title>
-<rect x="920.48" y="168.36" width="112" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<polyline points="920.48,192.36 1032.48,192.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
-<text x="932.48" y="184.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
-<text x="962.58" y="184.01" font-size="10" style="fill: var(--node-title)">and</text>
-<polygon points="920.48,205.36 923.48,208.36 920.48,211.36 917.48,208.36" style="fill: var(--wire-data)"/>
-<text x="932.48" y="212.01" font-size="10" style="fill: var(--node-title)">a</text>
-<polygon points="1032.48,205.36 1035.48,208.36 1032.48,211.36 1029.48,208.36" style="fill: var(--wire-data)"/>
-<text x="984.36" y="212.01" font-size="10" style="fill: var(--node-title)">result</text>
-<polygon points="920.48,229.36 923.48,232.36 920.48,235.36 917.48,232.36" style="fill: var(--wire-data)"/>
-<text x="932.48" y="236.01" font-size="10" style="fill: var(--node-title)">b</text>
+<rect x="931" y="184.36" width="112" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="931,208.36 1043,208.36" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="943" y="200.01" font-size="10" style="fill: var(--ink-muted)">core.</text>
+<text x="973.1" y="200.01" font-size="10" style="fill: var(--node-title)">and</text>
+<polygon points="931,221.36 934,224.36 931,227.36 928,224.36" style="fill: var(--wire-data)"/>
+<text x="943" y="228.01" font-size="10" style="fill: var(--node-title)">a</text>
+<polygon points="1043,221.36 1046,224.36 1043,227.36 1040,224.36" style="fill: var(--wire-data)"/>
+<text x="994.88" y="228.01" font-size="10" style="fill: var(--node-title)">result</text>
+<polygon points="931,245.36 934,248.36 931,251.36 928,248.36" style="fill: var(--wire-data)"/>
+<text x="943" y="252.01" font-size="10" style="fill: var(--node-title)">b</text>
 </g>
 <g data-node="measured"><title>match in_range</title>
-<rect x="1051.48" y="56" width="176" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<polyline points="1063.48,68 1068.28,68" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
-<polyline points="1075.48,63.2 1068.28,63.2 1068.28,72.8 1075.48,72.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
-<text x="1079.48" y="71.65" font-size="10" style="fill: var(--node-title)">match in_range</text>
-<polygon points="1051.48,65 1054.48,68 1051.48,71 1048.48,68" style="fill: var(--wire-data)"/>
-<polygon points="1224.48,241 1230.48,244 1224.48,247" style="fill: var(--wire-data)"/>
-<path d="M1211.48 148 L1215.48 148 Q1219.48 148 1219.48 152 L1219.48 240 Q1219.48 244 1223.48 244 L1227.48 244" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M1211.48 244 L1227.48 244" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<circle cx="1219.48" cy="244" r="3" style="fill: var(--wire-data)"/>
+<rect x="1067" y="56" width="176" height="248" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<polyline points="1079,68 1083.8,68" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="1091,63.2 1083.8,63.2 1083.8,72.8 1091,72.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="1095" y="71.65" font-size="10" style="fill: var(--node-title)">match in_range</text>
+<polygon points="1067,65 1070,68 1067,71 1064,68" style="fill: var(--wire-data)"/>
+<polygon points="1240,253 1246,256 1240,259" style="fill: var(--wire-data)"/>
+<path d="M1227 152 L1231 152 Q1235 152 1235 156 L1235 252 Q1235 256 1239 256 L1243 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1227 256 L1243 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="1235" cy="256" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-arm="true">
-<rect x="1067.48" y="96" width="144" height="80" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="1079.48" y="111.65" font-size="10" style="fill: var(--ink-muted)">true</text>
+<rect x="1083" y="96" width="144" height="88" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="1095" y="111.65" font-size="10" style="fill: var(--ink-muted)">true</text>
 </g>
 <g data-arm="false">
-<rect x="1067.48" y="192" width="144" height="80" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="1079.48" y="207.65" font-size="10" style="fill: var(--ink-muted)">false</text>
+<rect x="1083" y="200" width="144" height="88" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="1095" y="215.65" font-size="10" style="fill: var(--ink-muted)">false</text>
 </g>
 <g data-arm="true">
-<polygon points="1208.48,145 1214.48,148 1208.48,151" style="fill: var(--wire-data)"/>
-<rect x="1095.2" y="142.18" width="60.16" height="11.64" style="fill: var(--frame-fill-2)"/>
-<text x="1099.2" y="151.65" font-size="10" style="fill: var(--node-title)">measured</text>
-<rect x="1155.36" y="141" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="1159.36" y="151.65" font-size="10" style="fill: var(--pill-text)">◂ Pass</text>
+<polygon points="1224,149 1230,152 1224,155" style="fill: var(--wire-data)"/>
+<rect x="1110.72" y="146.18" width="60.16" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="1114.72" y="155.65" font-size="10" style="fill: var(--node-title)">measured</text>
+<rect x="1170.88" y="145" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="1174.88" y="155.65" font-size="10" style="fill: var(--pill-text)">◂ Pass</text>
 </g>
 <g data-arm="false">
-<polygon points="1208.48,241 1214.48,244 1208.48,247" style="fill: var(--wire-data)"/>
-<rect x="1095.2" y="238.18" width="60.16" height="11.64" style="fill: var(--frame-fill-2)"/>
-<text x="1099.2" y="247.65" font-size="10" style="fill: var(--node-title)">measured</text>
-<rect x="1155.36" y="237" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="1159.36" y="247.65" font-size="10" style="fill: var(--pill-text)">◂ Fail</text>
+<polygon points="1224,253 1230,256 1224,259" style="fill: var(--wire-data)"/>
+<rect x="1110.72" y="250.18" width="60.16" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="1114.72" y="259.65" font-size="10" style="fill: var(--node-title)">measured</text>
+<rect x="1170.88" y="249" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="1174.88" y="259.65" font-size="10" style="fill: var(--pill-text)">◂ Fail</text>
 </g>
 <g data-node="verdict"><title>handle e2</title>
-<rect x="1243.48" y="56" width="184" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--wire-error); stroke-width: 1"/>
-<polyline points="1255.48,68 1260.28,68" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
-<polyline points="1267.48,63.2 1260.28,63.2 1260.28,72.8 1267.48,72.8" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
-<text x="1271.48" y="71.65" font-size="10" style="fill: var(--node-title)">handle e2</text>
-<polygon points="1240.48,269 1246.48,272 1240.48,275 1242.48,272" style="fill: var(--wire-error)"/>
-<rect x="1241.48" y="141" width="4" height="14" style="fill: var(--wire-data)"/>
-<polygon points="1424.48,241 1430.48,244 1424.48,247" style="fill: var(--wire-data)"/>
-<path d="M1243.48 148 L1259.48 148" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M1411.48 148 L1415.48 148 Q1419.48 148 1419.48 152 L1419.48 240 Q1419.48 244 1423.48 244 L1427.48 244" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M1411.48 244 L1427.48 244" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<circle cx="1419.48" cy="244" r="3" style="fill: var(--wire-data)"/>
+<rect x="1259" y="56" width="184" height="248" rx="2" style="fill: var(--frame-fill-1); stroke: var(--wire-error); stroke-width: 1"/>
+<polyline points="1271,68 1275.8,68" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<polyline points="1283,63.2 1275.8,63.2 1275.8,72.8 1283,72.8" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<text x="1287" y="71.65" font-size="10" style="fill: var(--node-title)">handle e2</text>
+<polygon points="1256,285 1262,288 1256,291 1258,288" style="fill: var(--wire-error)"/>
+<rect x="1257" y="145" width="4" height="14" style="fill: var(--wire-data)"/>
+<polygon points="1440,253 1446,256 1440,259" style="fill: var(--wire-data)"/>
+<path d="M1259 152 L1275 152" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1427 152 L1431 152 Q1435 152 1435 156 L1435 252 Q1435 256 1439 256 L1443 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1427 256 L1443 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="1435" cy="256" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-arm="ok">
-<rect x="1259.48" y="96" width="152" height="80" rx="2" style="fill: var(--frame-fill-2); stroke: var(--wire-error); stroke-width: 1"/>
-<text x="1271.48" y="111.65" font-size="10" style="fill: var(--ink-muted)">ok</text>
+<rect x="1275" y="96" width="152" height="88" rx="2" style="fill: var(--frame-fill-2); stroke: var(--wire-error); stroke-width: 1"/>
+<text x="1287" y="111.65" font-size="10" style="fill: var(--ink-muted)">ok</text>
 </g>
 <g data-arm="other">
-<rect x="1259.48" y="192" width="152" height="80" rx="2" style="fill: var(--frame-fill-2); stroke: var(--wire-error); stroke-width: 1"/>
-<text x="1271.48" y="207.65" font-size="10" style="fill: var(--ink-muted)">other</text>
+<rect x="1275" y="200" width="152" height="88" rx="2" style="fill: var(--frame-fill-2); stroke: var(--wire-error); stroke-width: 1"/>
+<text x="1287" y="215.65" font-size="10" style="fill: var(--ink-muted)">other</text>
 </g>
 <g data-wire="measured" data-to="yield.0">
-<path d="M1259.48 148 L1411.48 148" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1275 152 L1427 152" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-arm="ok">
-<rect x="1257.48" y="141" width="4" height="14" style="fill: var(--wire-data)"/>
-<rect x="1262.48" y="142.18" width="61.16" height="11.64" style="fill: var(--frame-fill-2)"/>
-<text x="1271.48" y="151.65" font-size="10" style="fill: var(--node-title)">measured</text>
-<polygon points="1408.48,145 1414.48,148 1408.48,151" style="fill: var(--wire-data)"/>
-<rect x="1353.34" y="142.18" width="54.14" height="11.64" style="fill: var(--frame-fill-2)"/>
-<text x="1357.34" y="151.65" font-size="10" style="fill: var(--node-title)">verdict</text>
+<rect x="1273" y="145" width="4" height="14" style="fill: var(--wire-data)"/>
+<rect x="1278" y="146.18" width="61.16" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="1287" y="155.65" font-size="10" style="fill: var(--node-title)">measured</text>
+<polygon points="1424,149 1430,152 1424,155" style="fill: var(--wire-data)"/>
+<rect x="1368.86" y="146.18" width="54.14" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="1372.86" y="155.65" font-size="10" style="fill: var(--node-title)">verdict</text>
 </g>
 <g data-arm="other">
-<polygon points="1408.48,241 1414.48,244 1408.48,247" style="fill: var(--wire-data)"/>
-<rect x="1295.2" y="238.18" width="54.14" height="11.64" style="fill: var(--frame-fill-2)"/>
-<text x="1299.2" y="247.65" font-size="10" style="fill: var(--node-title)">verdict</text>
-<rect x="1349.34" y="237" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="1353.34" y="247.65" font-size="10" style="fill: var(--pill-text)">◂ Error</text>
+<polygon points="1424,253 1430,256 1424,259" style="fill: var(--wire-data)"/>
+<rect x="1310.72" y="250.18" width="54.14" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="1314.72" y="259.65" font-size="10" style="fill: var(--node-title)">verdict</text>
+<rect x="1364.86" y="249" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="1368.86" y="259.65" font-size="10" style="fill: var(--pill-text)">◂ Error</text>
 </g>
 </svg>

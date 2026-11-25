@@ -997,12 +997,15 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         x += plan.channel(column + 1);
         let reach_left = in_column.iter().filter_map(|&local| body.sized.get(local)).map(|sized| sized.left).max().unwrap_or(0);
         let reach_right = in_column.iter().filter_map(|&local| body.sized.get(local)).map(|sized| sized.width + sized.right).max().unwrap_or(0);
+        // The blocks of the column on the grid of 8 of its frame, counted from its origin, as the main chain is (notation
+        // 2.2): the channel before it grows by less than 8, the room it gives its wires left where it was.
+        let start = size::up(x + reach_left);
         for &local in in_column {
             if let Some(at) = x_of.get_mut(local) {
-                *at = x + reach_left;
+                *at = start;
             }
         }
-        x += reach_left + reach_right;
+        x = start + reach_right;
     }
     if let Some(at) = channel_at.get_mut(column_count + 1) {
         *at = x;
@@ -1020,7 +1023,9 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         .chain(plan.lowest.map(|track| track + style::wire_gap()));
     let top = tops.min().unwrap_or(0);
     let bottom = bottoms.max().unwrap_or(0);
-    let mut shift = header + style::frame_pad() - top;
+    // The main chain on the grid of its frame, counted from its origin (notation 2.2): the nodes placed, the nodes moved
+    // by hand and the segments dragged share one grid, so a segment dragged to the height of a terminal is level with it.
+    let mut shift = size::up(header + style::frame_pad() - top);
     // In the frame of the function, the axis goes through the first node of the chain, where the file puts it (notation
     // 2.1). In a loop or an arm, it stays where the placement puts it, which the structure aligns on the chain outside: a
     // node fixed off it goes where it is put, and the chain bends to reach it (decision of the owner, 2026-11-17).
