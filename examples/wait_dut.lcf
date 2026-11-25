@@ -9,7 +9,7 @@ use time
 fn wait_dut(bench: Bench, timeout: duration, err: error = none) -> (present: bool, err: error) {
     t0 = time.now(after: err)
     present, err_out = loop carry p = false, carry e = err {
-        level, _, e1 = scpi.query_f64(bench.relays, "DUT:PRES?", err: e)
+        _, level, e1 = scpi.query_f64(bench.relays, "DUT:PRES?", err: e)
         here = core.gt(level, 0.5)
         absent = core.not(here)
         pause = core.select(here, 0 ms, 100 ms)

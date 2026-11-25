@@ -11,8 +11,8 @@ fn check_power(
     err: error = none,
 ) -> (verdict: Verdict, power: f64[W], err: error) {
     supply, e1 = visa.open(resource, timeout: 2 s, err: err)
-    raw_v, supply2, e2 = scpi.query_f64(supply, "MEAS:VOLT?", err: e1)
-    raw_i, supply3, e3 = scpi.query_f64(supply2, "MEAS:CURR?", err: e2)
+    supply2, raw_v, e2 = scpi.query_f64(supply, "MEAS:VOLT?", err: e1)
+    supply3, raw_i, e3 = scpi.query_f64(supply2, "MEAS:CURR?", err: e2)
     current = core.with_unit(raw_i, [A])
     #close: e4 = visa.close(supply3, err: e3)
     voltage = core.with_unit(raw_v, [V])

@@ -100,7 +100,7 @@ One statement per line, each one node at most.
 
 | Statement | Example | Notes |
 |---|---|---|
-| Binding | `raw, s2, e2 = scpi.query_f64(s, "MEAS:CURR?", err: e1)` | Every output, in the order of the signature; `_` for one left out |
+| Binding | `s2, raw, e2 = scpi.query_f64(s, "MEAS:CURR?", err: e1)` | Every output, in the order of the signature; `_` for one left out |
 | A new name | `err = e4` | No node; how an output is bound to a wire |
 | A named constant | `limit = 2.5 A` | A small node with one output; it takes the type of each place it goes |
 | Building a struct | `p = Pair { low: a, high: b }` | Every field, once |
@@ -191,7 +191,7 @@ fn sweep_current(
         volts = core.unitless(v, [V])
         command = string.format("VOLT {volts:.3}", volts: volts)
         s2, e2 = visa.write(s, command, err: e)
-        raw, s3, e3 = scpi.query_f64(s2, "MEAS:CURR?", err: e2)
+        s3, raw, e3 = scpi.query_f64(s2, "MEAS:CURR?", err: e2)
         current = core.with_unit(raw, [A])
         next e = e3
         next s = s3
@@ -317,7 +317,7 @@ use visa
 fn watch_current(resource: string, period: duration = 200 ms) -> (count: i32, err: error) {
     psu, e1 = visa.open(resource, err: none)
     count, last, e4 = loop carry n = 0, carry s = psu, carry e = e1 {
-        raw, s2, e2 = scpi.query_f64(s, "MEAS:CURR?", err: e)
+        s2, raw, e2 = scpi.query_f64(s, "MEAS:CURR?", err: e)
         amps = core.with_unit(raw, [A])
         e3 = time.wait(period, err: e2)
         shown = ui.set(live_current, amps)

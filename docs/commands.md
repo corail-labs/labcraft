@@ -223,7 +223,7 @@ example, the same through `--json` and MCP (decision of the owner, 2026-11-11):
   "category": "io.timeout", "code": -1073807339,
   "message": "no answer to `MEAS:VOLT:DC?` within 2 s",
   "origin": { "function": "scpi.query_f64", "node": "text", "file": "<labcraft>/scpi/query_f64.lcf", "line": 12,
-              "callers": [ { "function": "check_voltage", "node": "raw", "file": "check_voltage.lcf", "line": 15 } ] },
+              "callers": [ { "function": "check_voltage", "node": "dmm2", "file": "check_voltage.lcf", "line": 15 } ] },
   "others": []
 }
 ```
@@ -394,7 +394,7 @@ How the session keeps its checks is written in the architecture of M0b (section 
 | `run.trace` | *`run`* or *`function`*, *`folder`* (the root), *`frame`*, *`node`*, *`event`*, *`from`* (1), *`limit`* (500) | Reads the trace written by a run (section 8), in pages: the events from number `from` that match the filters, at most `limit` (at most 2,000 *proposed*), with the first line of the trace, the `call` events of the frames they belong to, so that every value decodes, and `next`, the number to give as `from` for the next page, or `null`. `run` reads the trace of that run, or the one going; `function`, the last trace of that function run from `folder`; neither, the run of the session. `node` keeps the events of the nodes of that name, `frame` those of one frame, `event` those of one kind. A run with `trace: none`, or whose trace is no longer the last of its function, gives `run.unknown` with the reason |
 
 `run.trace` is how an agent debugs a run without reading the whole trace, which can reach 256 MiB:
-"what did `raw` bind in each iteration" is one call with `node: "raw"`. It reads the same file as the
+"what did `x` bind in each iteration" is one call with `node: "x"`. It reads the same file as the
 viewer, and needs no file tool of the client.
 
 The parameters of `run.start` are the options of `labcraft-cli run`, named in `snake_case`
@@ -651,12 +651,12 @@ run can be followed and a cut file still reads.
 
 ```text
 {"schema":"labcraft-trace/1","run":"r2","function":"check_voltage","mode":"deterministic","files":[{"file":"check_voltage.lcf","sha256":"…"},{"file":"Verdict.lct","sha256":"…"},{"file":"<labcraft>/scpi/query_f64.lcf","sha256":"…"},{"file":"<labcraft>/visa/open.lcf","sha256":"…"},…]}
-{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"check_voltage","in":[{"name":"resource","type":"string","value":"SIM::DMM0"},{"name":"low","type":"f64[V]","value":"220.0 V"},{"name":"high","type":"f64[V]","value":"240.0 V"},{"name":"err","type":"error","value":null}],"types":{"dmm":"visa.session","e1":"error","raw":"f64","dmm2":"visa.session","e2":"error","measured":"Verdict"}}
+{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"check_voltage","in":[{"name":"resource","type":"string","value":"SIM::DMM0"},{"name":"low","type":"f64[V]","value":"220.0 V"},{"name":"high","type":"f64[V]","value":"240.0 V"},{"name":"err","type":"error","value":null}],"types":{"dmm":"visa.session","e1":"error","dmm2":"visa.session","raw":"f64","e2":"error","measured":"Verdict"}}
 {"seq":2,"t_ms":0.0,"event":"call","frame":1,"parent":0,"node":"dmm","function":"visa.open","in":[…],"types":{…}}
 {"seq":5,"t_ms":0.0,"frame":0,"node":"dmm","event":"ran","out":{"dmm":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e1":null}}
-{"seq":6,"t_ms":0.0,"event":"call","frame":2,"parent":0,"node":"raw","function":"scpi.query_f64","in":[{"name":"session","type":"visa.session","value":{"opaque":"visa.session","resource":"SIM::DMM0","open":true}},{"name":"command","type":"string","value":"MEAS:VOLT:DC?"},{"name":"err","type":"error","value":null}],"types":{"text":"string","s":"visa.session","e1":"error","value":"f64","e2":"error"}}
+{"seq":6,"t_ms":0.0,"event":"call","frame":2,"parent":0,"node":"dmm2","function":"scpi.query_f64","in":[{"name":"session","type":"visa.session","value":{"opaque":"visa.session","resource":"SIM::DMM0","open":true}},{"name":"command","type":"string","value":"MEAS:VOLT:DC?"},{"name":"err","type":"error","value":null}],"types":{"text":"string","s":"visa.session","e1":"error","value":"f64","e2":"error"}}
 {"seq":9,"t_ms":0.0,"frame":2,"node":"text","event":"ran","out":{"text":"230.071217","s":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e1":null}}
-{"seq":12,"t_ms":0.0,"frame":0,"node":"raw","event":"ran","out":{"raw":230.071217,"dmm2":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e2":null}}
+{"seq":12,"t_ms":0.0,"frame":0,"node":"dmm2","event":"ran","out":{"dmm2":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"raw":230.071217,"e2":null}}
 {"seq":24,"t_ms":0.0,"frame":0,"node":"measured","event":"arm","arm":"true"}
 {"seq":41,"t_ms":0.0,"event":"end","status":"ok"}
 ```

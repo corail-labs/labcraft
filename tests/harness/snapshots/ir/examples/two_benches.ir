@@ -7,7 +7,7 @@ fn two_benches(resource_a: string = "SIM::DMM0", resource_b: string = "SIM::DMM1
       region (n, s, e, count, dmm_a, period) -> (m, next.s, e2, halt)
         0 m = primitive core.add(n, 1.0)
         1 full = primitive core.ge(m, count)
-        2 x, _, e1 = call scpi.query_f64(dmm_a, "MEAS:VOLT:DC?", e)  runs
+        2 _, x, e1 = call scpi.query_f64(dmm_a, "MEAS:VOLT:DC?", e)  runs
         3 e2 = primitive time.wait(period, e1)  skip(err: 1)
         4 stop = primitive ui.get(element stop_switch) after(e2)
         5 halt = primitive core.or(full, stop)
@@ -18,7 +18,7 @@ fn two_benches(resource_a: string = "SIM::DMM0", resource_b: string = "SIM::DMM1
       region (n, s, e, count, dmm_b, period) -> (m, next.s, e2, halt)
         0 m = primitive core.add(n, 1.0)
         1 full = primitive core.ge(m, count)
-        2 x, _, e1 = call scpi.query_f64(dmm_b, "MEAS:VOLT:DC?", e)  runs
+        2 _, x, e1 = call scpi.query_f64(dmm_b, "MEAS:VOLT:DC?", e)  runs
         3 e2 = primitive time.wait(period, e1)  skip(err: 1)
         4 stop = primitive ui.get(element stop_switch) after(e2)
         5 halt = primitive core.or(full, stop)

@@ -882,14 +882,14 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
   have no form for it.
   - the root carries `data-schema="labcraft-diagram/1"` and `data-function` (`check_voltage`), and
     `data-drawn="false"` when the function is not drawn;
-  - each node, a structure included, is a `<g data-node="raw">`, named as the terminals of section 4.3
+  - each node, a structure included, is a `<g data-node="dmm2">`, named as the terminals of section 4.3
     name a node (the name of its line, `#close`, `@12`), and its `<title>` holds the full name of what it
     calls (`visa.open`), as its tooltip does (notation 3.2);
   - each wire is a `<g>` with the fields of a wire of a diagnostic (4.2): `data-wire`, the name of its
     value; `data-from`, the terminal it leaves; `data-to`, the terminals it reaches, separated by
     spaces, those that have a form; `data-conversion`, when one of its pills shows a conversion in part (`→`, `→V`,
     notation 4.2), each conversion whole, in the order of its readers, separated by `, ` (`data-conversion="f32→f64"`).
-    In `check_voltage`, `<g data-wire="e2" data-from="raw.err"
+    In `check_voltage`, `<g data-wire="e2" data-from="dmm2.err"
     data-to="e3.err">`: the line `#close: e3 = visa.close(…)` is named `e3`, the name of its line, as `check` names its
     terminals; `e2` also enters the `handle` as its selector, which has no form. One `<g>` holds a value
     in one body: a path per reader, the first from the source, each other from where it leaves those before, its

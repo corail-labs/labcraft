@@ -16,7 +16,7 @@ fn last_session(
         last e
         until true
     }
-    voltage, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
+    dmm2, voltage, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
     #close: e3 = visa.close(dmm2, err: e2)
     err = e3
 }

@@ -70,7 +70,7 @@ fn functions_list_writes_visa_and_scpi_as_appendix_a_does() {
     let scpi = on_examples(|session| ok(session, "functions.list", json!({ "library": "scpi", "filter": "query_f64" })));
     assert_eq!(
         scpi["entries"][0]["signature"],
-        "fn scpi.query_f64(session: visa.session, command: string, err: error = none) -> (value: f64, session: visa.session, err: error)"
+        "fn scpi.query_f64(session: visa.session, command: string, err: error = none) -> (session: visa.session, value: f64, err: error)"
     );
     let own = on_examples(|session| ok(session, "functions.list", json!({ "library": "dmm_driver" })));
     assert_eq!(

@@ -309,7 +309,7 @@ fn the_reader_of_the_viewer_reads_the_trace_of_a_run() {
         inputs: vec![wire("resource", "string"), wire("low", "f64[V]"), wire("high", "f64[V]"), wire("err", "error")],
         nodes: vec![
             node("dmm", vec![wire("dmm", "visa.session"), wire("e1", "error")]),
-            node("raw", vec![wire("raw", "f64"), wire("dmm2", "visa.session"), wire("e2", "error")]),
+            node("dmm2", vec![wire("dmm2", "visa.session"), wire("raw", "f64"), wire("e2", "error")]),
             node("e3", vec![wire("e3", "error")]),
             node("voltage", vec![wire("voltage", "f64[V]")]),
             node("above", vec![wire("above", "bool")]),
@@ -326,8 +326,8 @@ fn the_reader_of_the_viewer_reads_the_trace_of_a_run() {
     assert_eq!(trace.end.as_deref(), Some("ok"));
     assert_eq!(trace.input(0), Some(r#""SIM::DMM0""#));
     assert_eq!(trace.input(1), Some(r#""220.0 V""#));
-    assert_eq!(trace.value(1, 0, &[]), Some("230.071217"));
-    assert_eq!(trace.value(1, 1, &[]), Some(r#"{"opaque":"visa.session","resource":"SIM::DMM0","open":true}"#));
+    assert_eq!(trace.value(1, 0, &[]), Some(r#"{"opaque":"visa.session","resource":"SIM::DMM0","open":true}"#));
+    assert_eq!(trace.value(1, 1, &[]), Some("230.071217"));
     assert_eq!(trace.value(3, 0, &[]), Some(r#""230.071217 V""#));
     assert_eq!(trace.value(6, 0, &[]), Some("true"));
     assert_eq!(trace.value(7, 0, &[]), Some(r#""Verdict.Pass""#));
@@ -608,15 +608,15 @@ fn the_family_traces_reads_without_a_fault() {
     let events = lines.len() as u64 - 1;
     assert_eq!(read_codes(&drawing, base.as_bytes(), ReadLimits { lines: events - 1, ..defaults }), code("LC7103", lines.len()));
     assert_eq!(read_codes(&drawing, base.as_bytes(), ReadLimits { kept: 1, ..defaults }), code("LC7103", 1));
-    // The `ran` of the node `raw`: a value over the 64 KiB a run writes, a value nested deeper than a line reads.
-    let raw = lines.iter().position(|line| line.contains("\"node\":\"raw\"") && line.contains("\"ran\"") && line.contains("\"frame\":0")).unwrap();
+    // The `ran` of the node `dmm2`: a value over the 64 KiB a run writes, a value nested deeper than a line reads.
+    let raw = lines.iter().position(|line| line.contains("\"node\":\"dmm2\"") && line.contains("\"ran\"") && line.contains("\"frame\":0")).unwrap();
     let long =
-        format!("{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"raw\",\"out\":{{\"raw\":\"{}\"}}}}", "a".repeat(65 * 1024));
+        format!("{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"dmm2\",\"out\":{{\"raw\":\"{}\"}}}}", "a".repeat(65 * 1024));
     assert_eq!(read_codes(&drawing, with(raw, &long).as_bytes(), defaults), code("LC7104", raw + 1));
     // A line of an event, just over the limit of a line.
     assert_eq!(read_codes(&drawing, with(raw, &long).as_bytes(), ReadLimits { line: long.len() - 1, ..defaults }), code("LC7103", raw + 1));
     let deep = format!(
-        "{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"raw\",\"out\":{{\"raw\":{}1{}}}}}",
+        "{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"dmm2\",\"out\":{{\"raw\":{}1{}}}}}",
         "[".repeat(300),
         "]".repeat(300)
     );
@@ -625,12 +625,12 @@ fn the_family_traces_reads_without_a_fault() {
     // not the loops around the node. Each event goes before the last line.
     let last = lines.len() - 1;
     for (fields, expected) in [
-        (r#""frame":0,"node":"raw","iter":[-1]"#, "LC7103"),
-        (r#""frame":-1,"node":"raw""#, "LC7103"),
-        (r#""frame":0,"node":"raw","loops":["x"],"iter":[9223372036854775808]"#, "LC7104"),
-        (r#""frame":18446744073709551615,"node":"raw""#, "LC7104"),
+        (r#""frame":0,"node":"dmm2","iter":[-1]"#, "LC7103"),
+        (r#""frame":-1,"node":"dmm2""#, "LC7103"),
+        (r#""frame":0,"node":"dmm2","loops":["x"],"iter":[9223372036854775808]"#, "LC7104"),
+        (r#""frame":18446744073709551615,"node":"dmm2""#, "LC7104"),
         (r#""frame":0,"node":"nowhere""#, "LC7104"),
-        (r#""frame":0,"node":"raw","loops":["x"],"iter":[0]"#, "LC7104"),
+        (r#""frame":0,"node":"dmm2","loops":["x"],"iter":[0]"#, "LC7104"),
     ] {
         let event = format!("{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",{fields},\"out\":{{\"raw\":1.0}}}}");
         assert_eq!(read_codes(&drawing, inserted(last, &event).as_bytes(), defaults), code(expected, last + 1), "{fields}");

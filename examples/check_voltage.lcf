@@ -12,7 +12,7 @@ fn check_voltage(
     err: error = none,
 ) -> (verdict: Verdict, voltage: f64[V], err: error) {
     dmm, e1 = visa.open(resource, timeout: 2 s, err: err)
-    raw, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
+    dmm2, raw, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
     #close: e3 = visa.close(dmm2, err: e2)
     voltage = core.with_unit(raw, [V])
     above = core.ge(voltage, low)

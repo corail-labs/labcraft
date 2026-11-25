@@ -1256,7 +1256,7 @@ use visa
 fn monitor(resource: string, period: f64[s] = 200 ms) -> (count: i32, err: error) {
     dmm, e1 = visa.open(resource, timeout: 2 s)
     count, e4 = loop carry n = 0, carry e = e1 {
-        raw, _, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e)
+        _, raw, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e)
         e3 = time.wait(period, err: e2)
         volts = core.with_unit(raw, [V])
         shown = ui.set(live_voltage, volts)
@@ -1748,7 +1748,7 @@ fn check_voltage(
     err: error = none,
 ) -> (verdict: Verdict, voltage: f64[V], err: error) {
     dmm, e1 = visa.open(resource, timeout: 2 s, err: err)
-    raw, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
+    dmm2, raw, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
     #close: e3 = visa.close(dmm2, err: e2)
     voltage = core.with_unit(raw, [V])
     above = core.ge(voltage, low)
@@ -2539,7 +2539,7 @@ fn visa.query(session: visa.session, command: string,
               err: error = none) -> (text: string, session: visa.session, err: error)
 
 fn scpi.query_f64(session: visa.session, command: string,
-                  err: error = none) -> (value: f64, session: visa.session, err: error)
+                  err: error = none) -> (session: visa.session, value: f64, err: error)
 fn scpi.check_errors(session: visa.session,
                      err: error = none) -> (session: visa.session, err: error)   // SYST:ERR?
 ```

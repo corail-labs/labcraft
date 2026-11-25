@@ -79,7 +79,7 @@ up to your function. Here `sweep_current` (in the skill `labcraft-writing`) ran 
   "code": -1073807339,
   "message": "SIM::PSU0: no answer to `MEAS:CURR?` within 2 s",
   "origin": {
-    "callers": [{ "file": "sweep_current.lcf", "function": "sweep_current", "line": 19, "node": "raw" }],
+    "callers": [{ "file": "sweep_current.lcf", "function": "sweep_current", "line": 19, "node": "s3" }],
     "file": "<labcraft>/scpi/query_f64.lcf",
     "function": "scpi.query_f64",
     "line": 12,
@@ -120,7 +120,7 @@ that never got the session (an `_` on a session output, a branch that drops it).
 
 Every run with `trace: "file"` (the default) keeps its trace; `run_trace` reads it in pages, filtered:
 
-- `run_trace {"node": "raw"}`: what the node `raw` did, in every iteration (`iter`, outermost loop first).
+- `run_trace {"node": "current"}`: what the node `current` did, in every iteration (`iter`, outermost loop first).
 - `run_trace {"event": "skipped"}`: every node that did not run because its `err` held an error, with the
   error it passed on. The first one is where the failure started to spread.
 - `run_trace {"event": "arm"}`: which arm each `match` and `handle` took.
