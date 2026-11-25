@@ -146,8 +146,15 @@ impl Session {
 
     /// Opens the folder: what `view.open` returns. `main`: the project is new, and `main.lcf` is written first.
     pub fn open(&mut self, new: bool) -> Result<Value, CommandError> {
-        if new {
-            self.engine.open_on(Some("main".to_owned()));
+        self.open_showing(new, None)
+    }
+
+    /// As [`Session::open`], showing `function` first when the folder has it, instead of its first one (`labcraft FILE`,
+    /// cli.md 8).
+    pub fn open_showing(&mut self, new: bool, function: Option<String>) -> Result<Value, CommandError> {
+        let function = if new { Some("main".to_owned()) } else { function };
+        if function.is_some() {
+            self.engine.open_on(function);
         }
         self.engine.execute("view.open", &json!({ "folder": "." }))
     }
@@ -214,6 +221,8 @@ pub struct Opening {
     pub style: Option<PathBuf>,
     /// A new project: `main.lcf` is written before it opens.
     pub new: bool,
+    /// The function shown first, when the folder has it, instead of its first one (`labcraft FILE`, cli.md 8).
+    pub function: Option<String>,
     /// How long an editing command of an agent waits for the end of a gesture: `gesture::WAIT`, shorter in the tests.
     pub gesture_wait: Duration,
 }
@@ -254,7 +263,7 @@ impl Handle {
                     return;
                 }
             };
-            let opened = caught(|| session.open(opening.new));
+            let opened = caught(|| session.open_showing(opening.new, opening.function.clone()));
             publish(&session, &shared, &*wake);
             let failed = opened.is_err();
             let _ = answer.send(opened);

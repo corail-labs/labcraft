@@ -23,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 use craft_keymap::{Active, CommandRef, Keymap, Platform};
@@ -1935,6 +1936,24 @@ impl Ide {
         self.ask_move(host, &view, function, nodes, by);
     }
 
+    /// Shows the function of `file`, from the root of the project, its folders joined by `/`, in a tab that stays, as a
+    /// double click does (`labcraft FILE`, cli.md 8): its window, when it has one of its own. A type, whose file has no
+    /// tab yet, and a file that is no function of the project, are said.
+    pub fn show_file(&mut self, host: &dyn Host, file: &str) {
+        let view = host.snapshot().view;
+        match function_of_file(file) {
+            Some(function) if view.functions.iter().any(|listed| listed.function == function) => {
+                let mut outward = Vec::new();
+                self.panel_asked(panels::Asked::Show { function, preview: false }, Some(host), &view, &mut outward);
+            }
+            _ if Path::new(file).extension().is_some_and(|extension| extension == "lct") => {
+                let name = Path::new(file).file_stem().map_or_else(|| file.to_owned(), |stem| stem.to_string_lossy().into_owned());
+                self.say(no_tab(&name, file));
+            }
+            _ => self.say(format!("`{file}` is no function of the project")),
+        }
+    }
+
     /// Opens quick insertion on the canvas of `function` (notation 2.6); the canvas that has the keyboard gets it back
     /// when the list closes.
     fn open_quick(&mut self, view: &Published, function: &str, quick: labcraft_editor::Quick) {
@@ -2902,6 +2921,13 @@ fn going(view: &Published, from: &str, found: kit_text::lsp_types::GotoDefinitio
         return Some(Going::Function(listed.function.clone()));
     }
     view.types.iter().find(|listed| listed.file == file).map(|listed| Going::Type { name: listed.name.clone(), file: listed.file.clone() })
+}
+
+/// The function of the `.lcf` file at `file`, from the root of the project, its folders joined by `/`, named as the
+/// project names it (cli.md 7: `dmm_driver/measure.lcf` is `dmm_driver.measure`); none for another file.
+pub fn function_of_file(file: &str) -> Option<String> {
+    let name = file.strip_suffix(".lcf")?;
+    (!name.is_empty() && name.split('/').all(|part| !part.is_empty())).then(|| name.replace('/', "."))
 }
 
 fn no_tab(name: &str, file: &str) -> String {

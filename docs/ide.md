@@ -329,6 +329,10 @@ A chat panel inside the window, and a visible pointer of the agent, are left for
 - **`New project`** asks for a folder, makes it with a function `main` (`main.lcf`, `fn main() -> () {}`), and opens
   it with `main` shown. The root of a project needs no manifest (spec 1).
 - **`Open folder`** opens any folder of `.lcf` files: the project is the folder (mcp.md 1).
+- **A file opened from the system** (a double click on a `.lcf` or a `.lct` in the Explorer of Windows, or
+  `labcraft FILE`) opens the nearest folder above it that a session opened once (it holds `.labcraft/`), else its own
+  folder, and shows it in a tab that stays; a window that shows that project already shows it, and comes to the front
+  ([cli.md](cli.md) 8).
 - **An example** opens as a copy, in a folder the user chooses, never the files shipped with LabCraft; on the web, in
   memory (section 12).
 

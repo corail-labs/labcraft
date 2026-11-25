@@ -63,8 +63,15 @@ impl Window {
     /// As [`Window::open`], an editing command of an agent waiting at most `gesture_wait` for the end of a gesture.
     fn open_waiting(scratch: &Scratch, answer: impl Fn(&Asks, &str) -> Answer + Send + 'static, gesture_wait: Duration) -> Window {
         let root = scratch.project();
-        let opening =
-            Opening { folder: root.clone(), lib_paths: Vec::new(), user_settings: serde_json::Map::new(), style: None, new: false, gesture_wait };
+        let opening = Opening {
+            folder: root.clone(),
+            lib_paths: Vec::new(),
+            user_settings: serde_json::Map::new(),
+            style: None,
+            new: false,
+            function: None,
+            gesture_wait,
+        };
         let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();
         reply.wait(Duration::from_secs(60)).expect("the project opens").unwrap();
         let agents = Arc::new(Agents::new(&root, Box::new(|| {})));
@@ -517,4 +524,24 @@ fn ai_off_disconnects_the_agents_and_refuses_a_new_one() {
     let mut again = Client::attach(&window, "claude");
     again.ok("file_read", json!({ "path": "check_voltage.lcf" }));
     window.close();
+}
+
+/// `labcraft FILE` for a project that a window shows (cli.md 8): the window is given the file to show, once the proofs
+/// are made, even with AI off, and no agent comes of it; a process that does not hold the token gives it nothing.
+#[test]
+fn a_file_to_show_reaches_the_window_with_ai_off_and_makes_no_agent() {
+    let scratch = Scratch::new("show");
+    let window = Window::open(&scratch, edits);
+    let channel = window.channel.as_ref().unwrap();
+    channel.agents().set_enabled(false);
+    let entry = attach::read_entry(&channel.file()).unwrap();
+    attach::show(&entry, "check_voltage.lcf").unwrap();
+    attach::show(&entry, "Verdict.lct").unwrap();
+    assert_eq!(channel.agents().take_shows(), ["check_voltage.lcf", "Verdict.lct"]);
+    assert!(channel.agents().take_shows().is_empty(), "each is taken once");
+    assert!(channel.agents().connected_list().is_empty(), "no agent");
+    let forged = attach::Entry { token: "0".repeat(64), ..entry };
+    assert!(matches!(attach::show(&forged, "check_voltage.lcf"), Err(attach::NotAttached::Refused(_))));
+    assert!(channel.agents().take_shows().is_empty());
+    assert!(window.close().is_empty(), "the user was asked nothing");
 }

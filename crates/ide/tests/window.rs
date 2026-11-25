@@ -204,6 +204,35 @@ fn a_click_in_project_shows_the_function_in_preview_and_the_next_preview_takes_i
     shot(&mut harness, "preview");
 }
 
+/// `labcraft FILE` (cli.md 8): the function of the file in a tab that stays, as a double click opens it, even after a
+/// preview; a type, whose file has no tab yet, and a file that is no function of the project, are said.
+#[test]
+fn a_file_given_shows_its_function_in_a_tab_that_stays() {
+    let mut harness = harness(fake_with(&[
+        ("/p/power/check_power.lcf", "labcraft 1\n\nfn check_power() -> () {}\n"),
+        ("/p/Volts.lct", "labcraft 1\n\ntype Volts = f64[V]\n"),
+    ]));
+    harness.get_by_label("helper").click();
+    harness.run_steps(4);
+    let state = harness.state_mut();
+    state.ide.show_file(&state.host, "power/check_power.lcf");
+    harness.run_steps(4);
+    let view = harness.state().host.snapshot().view;
+    assert_eq!(view.main.function.as_deref(), Some("power.check_power"));
+    // Its tab stays; the preview of `helper` stays one, until the next preview (ide.md 3).
+    assert_eq!(view.preview.as_deref(), Some("helper"));
+    assert_eq!(view.opened, ["main", "helper", "power.check_power"]);
+    for (file, said) in [
+        ("Volts.lct", "The type `Volts` is defined in `Volts.lct`, which has no tab yet"),
+        ("nowhere.lcf", "`nowhere.lcf` is no function of the project"),
+    ] {
+        let state = harness.state_mut();
+        state.ide.show_file(&state.host, file);
+        harness.run_steps(4);
+        assert!(harness.query_by_label_contains(said).is_some(), "{said}");
+    }
+}
+
 #[test]
 fn the_command_palette_opens_with_its_key_and_runs_a_command_typed_as_json() {
     let mut harness = harness(fake());

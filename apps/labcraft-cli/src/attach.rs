@@ -14,6 +14,10 @@
 //! the window, on the session of the window, and `labcraft-cli mcp` relays ([`relay`]). A file whose port takes no
 //! connection is left over from a window that did not close: the server starts headless. What takes the connection
 //! and does not prove it holds the token stops the server: it is not the window, or not one to trust.
+//!
+//! **A file to show.** `labcraft FILE`, for a file of a project that a window shows already (cli.md 8), sends the
+//! [`Hello`] with `show`, the file from the root of the project: once the proofs are made, the window shows it and the
+//! connection ends ([`show`]). It is no agent: no MCP follows, and the switch of AI does not refuse it.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -60,6 +64,9 @@ pub struct Entry {
 pub struct Hello {
     pub labcraft_attach: u32,
     pub nonce: String,
+    /// A file for the window to show, from the root of its project, its folders joined by `/`: then no MCP follows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show: Option<String>,
 }
 
 /// A line of the window: `ok`, or why not; the first one has its proof and its nonce.
@@ -72,6 +79,10 @@ pub struct Welcome {
     pub proof: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nonce: Option<String>,
+    /// The last line, for a hello with `show`: the window took the file. A window that does not say it took it as an
+    /// agent, being older than `show`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shown: bool,
 }
 
 /// The client's proof that it holds the token, for the nonce of the window.
@@ -327,9 +338,10 @@ pub fn proof(side: &str, nonce: &str, token: &str) -> String {
 }
 
 /// The window's side of a connection it took (`stream`): [`Hello`], its proof and its nonce, the client's proof, then
-/// [`Welcome`], `ok` once `admit` takes the client. All of it within [`HELLO_WAIT`]. Why not, which the client is told.
+/// [`Welcome`], `ok` once `admit` takes the client, given its hello. All of it within [`HELLO_WAIT`]. Why not, which the
+/// client is told.
 #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM")]
-pub fn greet(stream: &mut TcpStream, token: &str, admit: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+pub fn greet(stream: &mut TcpStream, token: &str, admit: impl FnOnce(&Hello) -> Result<(), String>) -> Result<(), String> {
     let deadline = std::time::Instant::now() + HELLO_WAIT;
     let refuse = |stream: &mut TcpStream, why: String| {
         let _ = write_line(stream, &Welcome { ok: false, error: Some(why.clone()), ..Welcome::default() });
@@ -351,10 +363,10 @@ pub fn greet(stream: &mut TcpStream, token: &str, admit: impl FnOnce() -> Result
     if !tokens_match(&answer.proof, &proof("client", &nonce, token)) {
         return refuse(stream, "the token is not this window's".to_owned());
     }
-    if let Err(why) = admit() {
+    if let Err(why) = admit(&hello) {
         return refuse(stream, why);
     }
-    write_line(stream, &Welcome { ok: true, ..Welcome::default() })?;
+    write_line(stream, &Welcome { ok: true, shown: hello.show.is_some(), ..Welcome::default() })?;
     stream.set_read_timeout(None).map_err(|error| error.to_string())
 }
 
@@ -370,14 +382,24 @@ pub enum NotAttached {
 
 /// Connects to the window of `entry`: each side proves that it holds the token ([`proof`]), then the connection is
 /// ready for MCP.
-#[expect(clippy::disallowed_methods, reason = "the command line, never built for WASM")]
 pub fn connect(entry: &Entry) -> Result<TcpStream, NotAttached> {
+    connect_with(entry, None)
+}
+
+/// Asks the window of `entry` to show `file`, from the root of its project, its folders joined by `/` (cli.md 8): done
+/// once the window took it.
+pub fn show(entry: &Entry, file: &str) -> Result<(), NotAttached> {
+    connect_with(entry, Some(file)).map(drop)
+}
+
+#[expect(clippy::disallowed_methods, reason = "the command line and the desktop app, never built for WASM")]
+fn connect_with(entry: &Entry, show: Option<&str>) -> Result<TcpStream, NotAttached> {
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, entry.port));
     let mut stream = TcpStream::connect_timeout(&address, CONNECT_WAIT).map_err(|_| NotAttached::NoWindow)?;
     let refused = |why: String| NotAttached::Refused(why);
     let deadline = std::time::Instant::now() + CONNECT_WAIT;
     let nonce = new_token().map_err(refused)?;
-    write_line(&mut stream, &Hello { labcraft_attach: VERSION, nonce: nonce.clone() }).map_err(refused)?;
+    write_line(&mut stream, &Hello { labcraft_attach: VERSION, nonce: nonce.clone(), show: show.map(str::to_owned) }).map_err(refused)?;
     let read = |stream: &mut TcpStream| -> Result<Welcome, NotAttached> {
         let line = read_line_by(stream, deadline).map_err(|why| refused(format!("port {}: {why}", entry.port)))?;
         let welcome: Welcome = serde_json::from_str(&line).map_err(|_| refused(format!("port {} does not speak as a window", entry.port)))?;
@@ -393,7 +415,10 @@ pub fn connect(entry: &Entry) -> Result<TcpStream, NotAttached> {
     }
     let theirs = challenge.nonce.unwrap_or_default();
     write_line(&mut stream, &Proof { proof: proof("client", &theirs, &entry.token) }).map_err(refused)?;
-    read(&mut stream)?;
+    let last = read(&mut stream)?;
+    if show.is_some() && !last.shown {
+        return Err(refused("the window did not take the file to show: it is older than `labcraft FILE`".to_owned()));
+    }
     stream.set_read_timeout(None).map_err(|error| refused(error.to_string()))?;
     Ok(stream)
 }

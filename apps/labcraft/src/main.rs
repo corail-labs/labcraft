@@ -30,6 +30,7 @@ use labcraft::args::{self, Asked, Options};
 use labcraft::examples;
 use labcraft::frames::{self, Frames};
 use labcraft::session::{self, Handle, Opening};
+use labcraft::target;
 use labcraft_diagram::style;
 use labcraft_editor::Canvas;
 use labcraft_engine::settings as keyed;
@@ -136,7 +137,7 @@ fn main() -> ExitCode {
             return ExitCode::from(WRONG_USAGE);
         }
     };
-    let options = match asked {
+    let mut options = match asked {
         Asked::Help => {
             let _ = write!(std::io::stdout(), "{}", args::USAGE);
             return ExitCode::SUCCESS;
@@ -147,6 +148,24 @@ fn main() -> ExitCode {
         }
         Asked::Open(options) => options,
     };
+    // A file opens its project, and shows it (cli.md 8).
+    if let Some(path) = options.folder.take() {
+        match target::resolve(&path) {
+            Ok(target) => {
+                options.folder = Some(target.folder);
+                options.file = target.file;
+            }
+            Err(message) => {
+                let _ = write!(std::io::stderr(), "labcraft: {message}\n{}", args::USAGE);
+                return ExitCode::from(WRONG_USAGE);
+            }
+        }
+    }
+    if let (Some(folder), Some(file)) = (&options.folder, &options.file)
+        && shown_by_its_window(folder, file)
+    {
+        return ExitCode::SUCCESS;
+    }
     let frame = frame(craft_window::Choice::probe(craft_window::Prefix::new("LABCRAFT")));
     let viewport = egui::ViewportBuilder::default().with_title("LabCraft").with_inner_size([1400.0, 860.0]).with_min_inner_size([640.0, 400.0]);
     // On macOS the system keeps its buttons and frame, and the content reaches under a see-through title bar, so the
@@ -165,6 +184,13 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Whether the window that shows the project at `folder` took `file` to show (cli.md 8): one project per window. When
+/// no window shows it, or its channel does not answer, this process opens it.
+fn shown_by_its_window(folder: &Path, file: &str) -> bool {
+    let Ok(root) = std::fs::canonicalize(folder) else { return false };
+    labcraft_cli::attach::find(&root).is_some_and(|entry| labcraft_cli::attach::show(&entry, file).is_ok())
 }
 
 /// Who draws the frame (ide.md 2, "the top bar is the title bar"). On Windows the app draws it, as VS Code does, so
@@ -217,6 +243,8 @@ struct App {
     connecting: Option<Receiver<Vec<String>>>,
     /// `LABCRAFT_FRAMES`: the time of each frame, and the motion it is measured over.
     timing: Option<Timing>,
+    /// The files that `labcraft FILE` asked to show, taken from the channel, shown by the next `ui` (cli.md 8).
+    shows: Vec<String>,
 }
 
 impl App {
@@ -255,6 +283,7 @@ impl App {
             found: None,
             connecting: None,
             timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
+            shows: Vec::new(),
         };
         app.ide.set_connects_agents(true);
         if let Some(problem) = problem {
@@ -286,6 +315,7 @@ impl App {
             user_settings: self.ide.prefs().settings,
             style: self.options.style.clone(),
             new,
+            function: self.options.file.as_deref().and_then(labcraft_ide::function_of_file),
             gesture_wait: labcraft_engine::gesture::WAIT,
         };
         let wake = ctx.clone();
@@ -331,6 +361,10 @@ impl App {
                     pending.folder.file_name().map_or(folder.clone(), |name| name.to_string_lossy().into_owned())
                 )));
                 self.open_channel(ctx, &pending.folder, &pending.handle);
+                // The file of the command line, once (cli.md 8).
+                if let Some(file) = self.options.file.take() {
+                    self.ide.show_file(&pending.handle, &file);
+                }
                 self.project = Some(pending.handle);
                 self.prefs.update(|prefs| {
                     prefs.recent.retain(|recent| *recent != folder);
@@ -339,7 +373,33 @@ impl App {
                 });
                 self.recent_changed(ctx);
             }
-            Err(error) => self.start.problem = Some(format!("{}: {}", pending.folder.display(), error.message)),
+            Err(error) => {
+                self.options.file = None;
+                self.start.problem = Some(format!("{}: {}", pending.folder.display(), error.message));
+            }
+        }
+    }
+
+    /// The files that `labcraft FILE` asked this window to show, by its channel (cli.md 8): the window brought to the
+    /// front, even from minimized, where eframe calls `logic` and not `ui`; the system may only make it flash in the task
+    /// bar. Each is shown by the next `ui`.
+    fn take_shows(&mut self, ctx: &egui::Context) {
+        let Some(channel) = &self.channel else { return };
+        let asked = channel.agents().take_shows();
+        if asked.is_empty() {
+            return;
+        }
+        self.shows.extend(asked);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        ctx.request_repaint();
+    }
+
+    /// The files taken by [`App::take_shows`], shown.
+    fn show_asked(&mut self) {
+        let Some(project) = &self.project else { return };
+        for file in std::mem::take(&mut self.shows) {
+            self.ide.show_file(project, &file);
         }
     }
 
@@ -551,6 +611,10 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        self.take_shows(ctx);
+    }
+
     #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -566,6 +630,7 @@ impl eframe::App for App {
             }
         }
         self.opened(&ctx);
+        self.show_asked();
         if let Some(found) = self.found.as_ref().and_then(|found| found.try_recv().ok()) {
             self.found = None;
             for (recent, found) in self.start.recent.iter_mut().zip(found) {
