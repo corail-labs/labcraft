@@ -488,11 +488,15 @@ list of diagnostics. The shape of a mark doubles its color (principle
   length of the segment. If the trunk no longer has that segment (the route of an automatic trunk changed its bends),
   the first `via` point of the branch is dropped, in the same step of undo as the move, and the junction becomes
   automatic again; a later `via` point then never becomes the junction, even if it lies on the trunk. A junction that
-  still lies on its trunk, on a part of it that did not move, stays where it is (decision of the owner, 2026-11-17). This
-  holds after every editing command, the move of an agent too (decision of the owner, 2026-11-17). Dropped on an input of
-  its frame, a branch goes down from a junction on a horizontal to the height of the input, or 16 across from one
-  on a vertical, then down *(proposed)*: one `wire.connect` and one `wire.route`, one step. To an input of another
-  frame or an output of the function, its junction is automatic.
+  still lies on its trunk, on a part of it that did not move, stays where it is (decision of the owner, 2026-11-17).
+  When the drawing after the command has no wire of that name (the command removed the trunk, or renamed its reader),
+  the other wires of the same value in the same frame decide (decision of the owner, 2026-11-25): if one goes through
+  the point, the point stays; if some remain but none goes through it, the point is dropped, as for a trunk that moved;
+  if none remains, the branch is alone and keeps its whole route. This holds after every editing command, the move of
+  an agent too (decision of the owner, 2026-11-17). Dropped on an input of its frame, a branch goes down from a
+  junction on a horizontal to the height of the input, or 16 across from one on a vertical, then down *(proposed)*:
+  one `wire.connect` and one `wire.route`, one step. To an input of another frame or an output of the function, its
+  junction is automatic.
 
 **An input left to its default.** An optional input of a node that nothing wires shows a dot of 5 in `ink.muted`, its
 center 12 to the left of its terminal in compact view, within the place where a pill would sit; in standard view, inside
