@@ -147,6 +147,8 @@ vary too much to be a check.
    of the file within 1 s *(proposed)* are one step.
 2. Ctrl+Z gives back the bytes of the file before the external write; redo gives back those after it.
 3. An agent whose `expected_revision` names the old revision gets `file.stale`, with the current revision.
+4. A write that renames a value in the text (spec 11) keeps the place of its node and the routes of its wires: the
+   entries of `layout` take the new name, in the same step, and Ctrl+Z gives back both the text and the `layout`.
 
 **Verified** in CI, with a session of `engine` and writes made by the test to the disk; the watch of the desktop app
 by a test of the app, as in M0v.

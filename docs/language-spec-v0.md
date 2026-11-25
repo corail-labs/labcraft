@@ -1415,13 +1415,26 @@ layout {
   [commands.md](commands.md), section 9).
 - **A node is known by its name**, never by an identifier hidden in the file (Q-10): the editor names
   every node it places (visual notation, N-14). Renaming a value updates the section (IDE and CLI
-  command), its `node` line and its `wire` lines included. Its breakpoints and probes (M5) follow it too. A
-  rename made in the text, by an agent or by hand, while the project is open in the IDE, is recognized when
-  the function and its wires are the same: the IDE moves the entries to the new name, and that rewrite is part
-  of the step of the external write (commands.md 9), undone with it. A rename made while the IDE is closed
-  is not recognized, and its entries follow the rule below. An entry that names a node that
-  does not exist, for example after an agent renamed a value in the text, gives a warning at edit
-  time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
+  command), its `node` line and its `wire` lines included. Its breakpoints and probes (M5) follow it too.
+- **A rename made in the text**, by an agent or by hand, is recognized when LabCraft writes the text
+  (`file.write`, the `Text` panel) or sees it written while a session follows the project (the IDE, or
+  `labcraft-cli mcp`: commands.md 9.1). A name that a line of the function no longer binds, and a name that
+  another line binds instead, are one node when the two lines are the same once the renames of that write are
+  applied: the same function called, constant or kind of structure, the same inputs from the same values, the
+  same patterns, in the same body (that of the function, or the same body of a structure that is the same
+  itself). Who reads the value does not count, so a rename typed by hand, its line first and its readers after,
+  keeps the node, and so does a rename written with a new reader. The entries that named the old name take the
+  new one, in their place in the text, and nothing else of the file changes: the `node` line, the `wire` lines
+  that start or end there, and the `wire` lines that name an input of a structure by a carry or an `in` clause
+  that was renamed; a label, a carry, an `in` clause and a pattern are recognized the same way. That rewrite is
+  part of the step of the write, undone with it (decisions of the owner, 2026-11-25). These renames are not
+  recognized, and their entries follow the rule below: a line that changes besides its names, a name that two
+  lines could have taken (nothing is guessed), a rename to a name that already has entries in the text (they
+  win), an input or an output of the function (`signature.rename` renames it, with its callers), a rename made
+  while no session follows the project, and names passed from line to line, where a name stays bound (`a` and `b`
+  exchanged, or `a` becoming `b` and `b` becoming `c`): its entries stay with it, so the nodes exchange their places.
+- An entry that names a node that does not exist, for example after a rename that was not recognized, gives a
+  warning at edit time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
   attached to the entry. `fmt` reads one file, so it keeps the name of any line whose value is more than
   one plain name: `k = Verdict.Pass` can be placed while `k = step.low` reads a field and draws no node, and `check`
   tells them apart. `fmt` keeps a `node` entry that names a node, an input or an output of the
@@ -2249,7 +2262,7 @@ What the grammar alone does not say:
 | Q-7 | Stopping a loop on error | **Settled (2026-10-31): stop by default** when an `error` carry holds an error, `continue_on_error` to avoid it (6.3) |
 | Q-8 | Retry | Generic `retry` function or documented loop pattern |
 | Q-9 | Error wire on each call: too verbose? | **Settled (2026-10-30): explicit everywhere.** It carries the order of actions; the text matches the diagram exactly |
-| Q-10 | Node identity for git merging | **Settled (2026-11-14): by its name**, the first output or the label, with no hidden identifier (11); the editor names every node it places (visual notation, N-14), and recognizes a rename made in the text. To revisit if M1 shows that a name is not enough |
+| Q-10 | Node identity for git merging | **Settled (2026-11-14): by its name**, the first output or the label, with no hidden identifier (11); the editor names every node it places (visual notation, N-14), and recognizes a rename made in the text (11, decisions of the owner, 2026-11-25). To revisit if M1 shows that a name is not enough |
 | Q-11 | Syntax of queues and events | To be written for M2 |
 | Q-12 | Unit variables in user functions | A type variable already binds a whole type with its unit (3.5); this question covers a variable for a unit alone. F# model: `fn scale<U>(x: f64[U], k: f64) -> (y: f64[U])`, inference. Also to decide: how `U` is told apart from a type variable (a bound, or its position in `[ ]`) |
 | Q-13 | State machine | Reference example written (section 13): readable without dedicated syntax. To be confirmed on a larger machine |

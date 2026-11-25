@@ -17,6 +17,7 @@ kit-shell = { workspace = true }
 kit-text = { workspace = true }
 kit-text-egui = { workspace = true }
 labcraft-diagram = { workspace = true }
+labcraft-edit = { workspace = true }
 labcraft-editor = { workspace = true }
 labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }

@@ -27,10 +27,9 @@ Seven constraints on M1, drawn from the themes below.
    chain. Each structure adds only its head (`check_params`, `head`, `fill`: `match`, `handle`, `for`, `loop` today).
    M2 adds `events` and the access to `ref<T>` by a variant and its head, without rewriting the gesture.
 3. **Identity of the nodes (Q-10)**: settled on 2026-11-14 (spec 11): by name, with no hidden identifier; `value.rename`
-   moves the `layout` line (and, in M5, breakpoints and probes); a rename made in the text, with the IDE open, is
-   recognized (same function, same wires) and keeps the position. To revisit if M1 shows that a name is not enough
-   (Q-10). **Gap:** the recognition of a rename made in the text is in no step of the Rust of M1 (architecture 12, end)
-   nor in `acceptance-m1.md`; M5 depends on it (#212).
+   moves the `layout` line (and, in M5, breakpoints and probes); a rename made in the text, written by LabCraft or
+   seen by a session, is recognized (the same line once renamed) and keeps the position: step 9 of architecture 12.11,
+   scenario 7 of `acceptance-m1.md`. To revisit if M1 shows that a name is not enough (Q-10).
 4. **The IDE window has panels to add** (docking of `craft-ui`): `Panel` (M3) and `Debug` (M5) are "Planned" workspaces
    (ide.md 6), `Panel` is also a view of a tab, and `Pause`, `Breakpoint` and `Watch` are "Planned" entries of the tab
    bar and of the `Run` menu. The bar has a `Stop` (Shift+F5) which is `run.abort` (ide.md 3): an abort. The Stop

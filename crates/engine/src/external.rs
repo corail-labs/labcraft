@@ -183,15 +183,26 @@ pub(crate) fn notice(session: &mut Session) -> Option<(u64, Vec<Revised>)> {
         if now.is_some() && known.as_ref().is_some_and(|seen| seen.content == Content::Missing) && !same_name(session, &path) {
             continue;
         }
-        let after: Option<Arc<[u8]>> = match (&before, now) {
+        let mut after: Option<Arc<[u8]>> = match (&before, now) {
             (Some(before), Some(now)) if **before == *now => Some(Arc::clone(before)),
             (_, now) => now.map(Arc::from),
         };
+        // A rename made in the text moves its entries of `layout` (spec 11): the session writes the file again, and the
+        // step holds those bytes, so that its time no longer says that the file is settled.
+        let mut rewrote = false;
+        if started
+            && let (Some(old), Some(new)) = (&before, &after)
+            && old != new
+            && let Some(bytes) = rewritten(session, &path, old, new)
+        {
+            after = Some(bytes);
+            rewrote = true;
+        }
         if started && before != after {
             latest = latest.max(stamp.map(|(_, modified)| modified));
             changes.push(Change { path: path.clone(), shown: shown.clone(), before, after: after.clone() });
         }
-        let settled = stamp.filter(|(_, modified)| i128::try_from(*modified).is_ok_and(|modified| modified + SETTLED_NS <= looked_at));
+        let settled = stamp.filter(|(_, modified)| !rewrote && i128::try_from(*modified).is_ok_and(|modified| modified + SETTLED_NS <= looked_at));
         session.known.put(path, Seen { shown, content: Content::of(after), stamp: settled });
     }
     session.known.started = true;
@@ -205,6 +216,18 @@ pub(crate) fn notice(session: &mut Session) -> Option<(u64, Vec<Revised>)> {
     let burst = latest.and_then(|modified| i64::try_from(modified).ok()).unwrap_or(time);
     let files = changes.iter().map(|change| (change.shown.clone(), change.after.as_ref().map(|bytes| crate::revision(bytes)))).collect();
     session.history.record_external(time, burst, changes).map(|step| (step, files))
+}
+
+/// The bytes of a function written from outside, with the entries of `layout` of each node they renamed moved to its new
+/// name, once written to the file (spec 11): `None` when they rename none, or the file cannot be written.
+fn rewritten(session: &Session, path: &Path, before: &[u8], after: &[u8]) -> Option<Arc<[u8]>> {
+    let bytes = crate::files::followed(session, path, before, after)?;
+    // A write that came after the one read is not overwritten: the next look sees it.
+    if bytes_now(session, path)?.as_deref() != Some(after) {
+        return None;
+    }
+    session.ws.write(path, &bytes).ok()?;
+    Some(Arc::from(bytes))
 }
 
 /// Whether the path names the file under its own name, not through another spelling that the system takes for it.

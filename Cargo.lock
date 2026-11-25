@@ -2318,6 +2318,7 @@ dependencies = [
  "kit-text",
  "kit-text-egui",
  "labcraft-diagram",
+ "labcraft-edit",
  "labcraft-editor",
  "labcraft-engine",
  "labcraft-format",

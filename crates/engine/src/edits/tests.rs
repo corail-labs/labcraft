@@ -1308,3 +1308,80 @@ fn another_command_still_refuses_the_manifest_as_a_file() {
     assert_eq!(error.code, "path.outside_project");
     assert_eq!(text(&memory, "/p/labcraft.toml"), "name = \"p\"\n");
 }
+
+const NAMED: &str = "labcraft 1
+
+use core
+
+fn f(a: f64, b: f64) -> (out: f64) {
+    v = core.add(a, b)
+    out = core.neg(v)
+}
+
+layout {
+    node v at (40, 80)
+    wire v -> out via (120, 80)
+}
+";
+
+/// `NAMED` with `v` renamed in the body only, as an agent writes it (it never writes `layout`).
+fn renamed_in_the_body() -> String {
+    NAMED.replace("    v = core.add", "    voltage = core.add").replace("core.neg(v)", "core.neg(voltage)")
+}
+
+/// By hand from spec 11: the old name replaced by the new one in the entries of `layout`, nothing else changed.
+const FOLLOWED: &str = "labcraft 1
+
+use core
+
+fn f(a: f64, b: f64) -> (out: f64) {
+    voltage = core.add(a, b)
+    out = core.neg(voltage)
+}
+
+layout {
+    node voltage at (40, 80)
+    wire voltage -> out via (120, 80)
+}
+";
+
+/// Scenario 7, point 4: a rename made outside keeps the place of the node, in the step of the external write.
+#[test]
+fn a_rename_written_outside_keeps_the_entries_of_its_node_in_the_same_step() {
+    let (mut session, memory) = session();
+    ok(&mut session, "file.write", json!({ "path": "f.lcf", "text": NAMED, "check": false }));
+    memory.put("/p/f.lcf", renamed_in_the_body());
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!(text(&memory, "/p/f.lcf"), FOLLOWED, "the session wrote the entries again");
+    assert_eq!((listed["steps"][0]["author"].clone(), listed["steps"][0]["step"].clone()), (json!("external"), json!(2)), "{listed}");
+    session.files_changed();
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!(listed["steps"].as_array().map(Vec::len), Some(2), "its own write is no second step: {listed}");
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/f.lcf"), NAMED, "undo gives back both the text and the layout");
+    ok(&mut session, "history.redo", json!({}));
+    assert_eq!(text(&memory, "/p/f.lcf"), FOLLOWED);
+}
+
+/// `file.write` and `text.save` write the entries of the rename too, `text.save` giving the revision of what it wrote; on
+/// the command line, with no history, `file.write` still does.
+#[test]
+fn a_rename_written_by_a_command_keeps_the_entries_of_its_node() {
+    let (mut session, memory) = session();
+    session.with_window();
+    let agent = Author::Agent("claude".to_owned());
+    ok(&mut session, "file.write", json!({ "path": "f.lcf", "text": NAMED, "check": false }));
+    let written = session.execute_as(&agent, "file.write", &json!({ "path": "f.lcf", "text": renamed_in_the_body(), "check": false }));
+    assert!(written.is_ok(), "{written:?}");
+    assert_eq!(text(&memory, "/p/f.lcf"), FOLLOWED);
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/f.lcf"), NAMED);
+    let saved = ok(&mut session, "text.save", json!({ "path": "f.lcf", "text": renamed_in_the_body() }));
+    assert_eq!((saved["written"].clone(), saved["revision"].clone()), (json!(true), json!(sha(FOLLOWED))));
+    assert_eq!(text(&memory, "/p/f.lcf"), FOLLOWED);
+    let (mut session, memory) = self::session();
+    session.for_command_line();
+    ok(&mut session, "file.write", json!({ "path": "f.lcf", "text": NAMED, "check": false }));
+    ok(&mut session, "file.write", json!({ "path": "f.lcf", "text": renamed_in_the_body(), "check": false }));
+    assert_eq!(text(&memory, "/p/f.lcf"), FOLLOWED);
+}

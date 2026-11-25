@@ -12,7 +12,7 @@ use egui::{Color32, FontId, RichText};
 use kit_text::lsp_types::GotoDefinitionResponse;
 use kit_text::{Code, Highlighter, LanguageService, Published, Span, position_of};
 use labcraft_format::{Lexer, TokenKind};
-use labcraft_types::{Interner, Report};
+use labcraft_types::{Interner, Limits, Report};
 
 pub use crate::service::Known;
 use crate::service::{self, Scanned, Service};
@@ -379,7 +379,17 @@ impl Editing {
     }
 
     fn save(&mut self, host: &dyn Host, how: Save) {
-        let text = self.code.field.text();
+        let mut text = self.code.field.text();
+        // A rename typed here moves its entries of `layout` in the field as in the file (spec 11), so that the field holds
+        // what is written, and what is typed meanwhile is never taken for a change of the file under it.
+        if how == Save::Write
+            && let Some(base) = &self.base
+            && let Some(followed) = labcraft_edit::follow_renames(base.text.as_bytes(), text.as_bytes(), &Limits::default())
+            && let Ok(followed) = String::from_utf8(followed.bytes)
+        {
+            self.code.field.replace_all(&followed);
+            text = followed;
+        }
         let mut params = json!({ "path": self.file, "text": text });
         if let (false, Some(base), Some(object)) = (how == Save::Over, &self.base, params.as_object_mut()) {
             object.insert("expected_revision".to_owned(), json!(base.revision));
@@ -401,6 +411,11 @@ impl Editing {
         match result {
             Ok(saved) if saved.get("written").and_then(Value::as_bool) == Some(true) => {
                 let revision = saved.get("revision").and_then(Value::as_str).unwrap_or_default().to_owned();
+                // The file holds another text than the one sent (a rename moved entries of `layout` that the field had not,
+                // spec 11): read again, the field follows it.
+                if revision != labcraft_engine::revision(saving.text.as_bytes()) {
+                    self.checks = None;
+                }
                 self.code.marks.clear(service::UNPARSED);
                 self.base = Some(Base { text: saving.text, revision, field: saving.field });
                 self.status = Status::Clean;

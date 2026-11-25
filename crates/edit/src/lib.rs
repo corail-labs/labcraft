@@ -30,6 +30,7 @@ mod block;
 mod constant;
 mod delete;
 mod extract;
+mod follow;
 mod fragment;
 mod frame;
 mod imports;
@@ -51,6 +52,7 @@ mod wire;
 
 pub use block::BlockAt;
 pub use extract::extract;
+pub use follow::{Followed, follow_renames};
 pub use fragment::MAX_FRAGMENT;
 pub use frame::Within;
 pub use names::of_type;
