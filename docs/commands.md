@@ -352,8 +352,9 @@ rest is left out and the entry says `truncated`. So `visa.open` is:
 | `library.check` | *`folder`* (the root), *`deny_warnings`* (`false`) | `labcraft-check/1`, exactly what `labcraft-cli check --json` gives (cli.md, section 4.2) |
 | `file.format` | `path` (a file or a folder), *`check_only`* (`false`) | `labcraft-fmt/1`, exactly what `labcraft-cli fmt --json` gives. The files it rewrites are one step of history (9.1) |
 
-`file.write` writes the text as given, but for one change: CR LF becomes LF, as the repository keeps
-its programs (cli.md, section 1 reads both). It does not reformat, so that the next edit of an agent finds
+`file.write` writes the text as given, but for two changes: CR LF becomes LF, as the repository keeps
+its programs (cli.md, section 1 reads both), and the entries of `layout` of a node that the text renamed take its new
+name (spec 11, 9.1), which an agent never writes. It does not reformat, so that the next edit of an agent finds
 the file it wrote; `file.format` puts it in canonical form when asked. It checks the root, and not the
 library of the file alone, since `use` is resolved from the folder that `check` is given (cli.md,
 section 3): the report is the one `library.check` gives. Writing only programs and simulation files keeps
@@ -586,7 +587,7 @@ read.
 
 | Command | Parameters | What it does |
 |---|---|---|
-| `text.save` | `path` (a file that exists), `text`, *`expected_revision`* (none), *`keep`* (`false`) | Reads the text as `check` reads a file (CR LF made LF, at most 4 MiB, as `file.write`). When it parses (spec 14: its grammar is right, whatever its errors of types or of `check`), writes it as `file.write` does, one step of history labelled `Edit Text` (none when the bytes are those of the file), removes its copy in the recovery folder, and returns `{ "written": true, "revision" }`, the revision of the text written. When it does not parse, writes nothing in the project, keeps the text in the recovery folder, and returns `{ "written": false, "kept", "error" }`, `error` being the diagnostic that stops the reading, as `labcraft-check/1` writes one, and `kept` whether the copy could be written. `expected_revision` is the revision of the file that the text was made from, a text: when the file has another one, nothing is written either, the text is kept, and it returns `{ "written": false, "kept", "stale": true, "revision" }`, the revision the file has (decision of the owner, 2026-11-21). With `keep`, it only keeps the text in the recovery folder, and returns `{ "written": false, "kept" }`: the window keeps so a text that the file changed under |
+| `text.save` | `path` (a file that exists), `text`, *`expected_revision`* (none), *`keep`* (`false`) | Reads the text as `check` reads a file (CR LF made LF, at most 4 MiB, as `file.write`). When it parses (spec 14: its grammar is right, whatever its errors of types or of `check`), writes it as `file.write` does, one step of history labelled `Edit Text` (none when the bytes are those of the file), removes its copy in the recovery folder, and returns `{ "written": true, "revision" }`, the revision of the file written: not that of `text` when a rename moved entries of `layout` (9.1), and the panel then shows the file. When it does not parse, writes nothing in the project, keeps the text in the recovery folder, and returns `{ "written": false, "kept", "error" }`, `error` being the diagnostic that stops the reading, as `labcraft-check/1` writes one, and `kept` whether the copy could be written. `expected_revision` is the revision of the file that the text was made from, a text: when the file has another one, nothing is written either, the text is kept, and it returns `{ "written": false, "kept", "stale": true, "revision" }`, the revision the file has (decision of the owner, 2026-11-21). With `keep`, it only keeps the text in the recovery folder, and returns `{ "written": false, "kept" }`: the window keeps so a text that the file changed under |
 | `text.recovered` | | The texts of the recovery folder whose file exists and changed before them (a time that the system does not give counts as before): `{ "texts": [{ "path", "text", "modified" }], "truncated": false }`, `modified` in nanoseconds since 1970, by path. A copy over 4 MiB, or that is not UTF-8, is not given; at most 16 MiB of text in all and 1,000 entries of the folder looked at *(proposed)*, then `truncated`. The window calls it when the project opens |
 | `text.discard` | `path` | Removes the copy of the file in the recovery folder: `{ "discarded": true }`, `false` when there was none |
 
@@ -749,6 +750,11 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
   are one step: those whose files were modified less than 1 s apart, by the time the system gives them. The session
   looks before each command, and when the app says that files changed (decisions of the owner, 2026-11-15): a write
   made while no window watches the files, under `labcraft-cli mcp`, is a step before the next command reads the file.
+- **A rename in the text.** When an external write, a `file.write` or a `text.save` changes a function, the session
+  recognizes the values and labels that the new text renamed (spec 11) and moves their entries of `layout` to the new
+  names, in their place in the text, in the same step: undo gives back the file as it was before the write. For an
+  external write, the session writes the file again; a command writes that text, whose revision `text.save` returns
+  (decisions of the owner, 2026-11-25).
 - **Revisions.** The revision of a file is the hash of its bytes. Every editing command can carry
   `expected_revision`, per file: when it is stale, the command is refused, changes nothing and returns the
   current revision (`file.stale`, section 3), so that an agent that read a file before the user changed it

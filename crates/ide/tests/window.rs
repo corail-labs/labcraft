@@ -1202,6 +1202,59 @@ fn a_text_typed_is_written_after_a_pause_when_it_parses() {
     shot(&mut harness, "text-written");
 }
 
+/// A rename typed in the view, its line first: the entries of `layout` take the new name in the field as in the file, one
+/// step (spec 11). Worked out by hand: `a` becomes `volta` in `node a` and `wire a -> y`, nothing else changes.
+#[test]
+fn a_rename_typed_in_the_text_keeps_the_entries_of_its_node() {
+    let main = "labcraft 1
+
+use core
+
+fn main(x: f64) -> (y: f64) {
+a = core.mul(x, 2.0)
+    y = core.add(a, 1.0)
+}
+
+layout {
+    node a at (40, 80)
+    wire a -> y via (120, 80)
+}
+";
+    let mut harness = harness(fake_with(&[("/p/main.lcf", main)]));
+    harness.state().host.session.borrow_mut().execute("view.set_view", &json!({ "function": "main", "view": "text" })).unwrap();
+    harness.run_steps(4);
+    harness.get_by_label("Text of main.lcf").click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Home);
+    for _ in 0..5 {
+        harness.key_press(Key::ArrowDown);
+    }
+    harness.key_press(Key::Home);
+    harness.run_steps(1);
+    harness.get_by_label("Text of main.lcf").type_text("volt");
+    harness.run_steps(5);
+    let expected = "labcraft 1
+
+use core
+
+fn main(x: f64) -> (y: f64) {
+volta = core.mul(x, 2.0)
+    y = core.add(a, 1.0)
+}
+
+layout {
+    node volta at (40, 80)
+    wire volta -> y via (120, 80)
+}
+";
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(expected));
+    let history = harness.state().host.session.borrow_mut().execute("history.list", &json!({})).unwrap();
+    assert_eq!(history["steps"].as_array().map(Vec::len), Some(1), "one step: {history}");
+    harness.run_steps(4);
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(expected), "the field holds what was written: no second write");
+    assert!(harness.query_by_label_contains("changed").is_none(), "no banner of a file changed under the text");
+}
+
 /// A text that does not parse stays in the view with its banner, and in the recovery folder; the file keeps its text,
 /// and the diagram of the function cannot be edited until the text parses again.
 #[test]

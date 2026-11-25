@@ -1875,6 +1875,16 @@ fuzzing looks for (12.10).
   rename of the case alone, where the system compares names without their case, takes the old name for missing when
   the system reaches it only through the new one. In `labcraft-cli`, which runs one command per process, there is no
   history (commands.md 9.5).
+- **A rename in the text** (spec 11, commands.md 9.1). `labcraft_edit::follow_renames` takes the bytes of a function
+  before and after a write, pairs each name that a line lost with the one another line gained when the two lines are
+  the same once those renames are applied (their tokens, comments left out, in the same body), pass by pass, each pass
+  telling apart the lines that the renames found before it do (at most 64 passes, and 4,096 pairs of lines of one shape
+  compared, *proposed*: past them, nothing is guessed), and rewrites in place
+  the names of the `layout` entries that the pairs move. The session calls it on each `.lcf` of an external write,
+  then writes the file again, unless it changed since, and records those bytes as the step's, and in `file.write` and
+  `text.save` before it writes: the session is the reference. The `Text` panel calls it too, on its field, before it
+  sends `text.save`, so that the field holds what is written; a revision returned that is not that of its text makes
+  it read the file again.
 - **`commands.batch`** applies its commands to the texts in memory, one after the other, writes once at the end and
   records one step; a failure writes nothing.
 - **The gesture lock.** The window says when a gesture starts and ends (`Session::set_gesture`). Meanwhile an
@@ -2218,4 +2228,5 @@ stay.
 8. **The agent attached.** The control channel, the policies of ide.md 8, the gesture lock, what the window shows of
    the agent, `Connect an AI agent`.
 9. **Before the tag.** The scenarios of [acceptance-m1.md](acceptance-m1.md) by hand, 60 frames/s while editing, 8
-   hours of fuzzing of the editing commands, the web page (`Download`), the release.
+   hours of fuzzing of the editing commands, the web page (`Download`), the release; before them, the rename made in
+   the text that keeps its node (spec 11, #212).

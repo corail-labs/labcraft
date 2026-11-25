@@ -85,12 +85,14 @@ pub fn save(session: &mut Session, author: &Author, command: &Command, params: &
             return Ok(json!({ "written": false, "kept": kept, "stale": true, "revision": now }));
         }
     }
-    let written = revision(text.as_bytes());
     let copy = text.clone();
-    if let Err(error) = files::write_text(session, author, command, path, &shown, true, text) {
-        keep(session, &shown, &copy);
-        return Err(error);
-    }
+    let written = match files::write_text(session, author, command, path, &shown, true, text) {
+        Ok(bytes) => revision(&bytes),
+        Err(error) => {
+            keep(session, &shown, &copy);
+            return Err(error);
+        }
+    };
     remove_copy(session, &shown);
     Ok(json!({ "written": true, "revision": written }))
 }

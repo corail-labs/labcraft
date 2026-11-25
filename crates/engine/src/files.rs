@@ -238,7 +238,8 @@ pub(crate) fn writable_text(session: &Session, params: &Params) -> Result<String
     Ok(text.replace("\r\n", "\n"))
 }
 
-/// Writes the text of a file of the project, atomically, as one step of history (commands.md 9.1), with no check.
+/// Writes the text of a file of the project, atomically, as one step of history (commands.md 9.1), with no check: the
+/// text given, with the entries of `layout` of a rename that it makes (spec 11), which are the bytes it gives.
 pub(crate) fn write_text(
     session: &mut Session,
     author: &Author,
@@ -247,7 +248,7 @@ pub(crate) fn write_text(
     shown: &str,
     exists: bool,
     text: String,
-) -> Result<(), CommandError> {
+) -> Result<Arc<[u8]>, CommandError> {
     let shown = shown.to_owned();
     if !exists {
         refuse_case_twin(session, &path, &shown, "path", None)?;
@@ -259,13 +260,28 @@ pub(crate) fn write_text(
         session.ws.create_folders(folder).map_err(|error| unwritable("path", &shown, &error))?;
     }
     let before = before_of(session, &path);
+    let old = match &before {
+        Some(old) => old.clone(),
+        None => bytes_now(session, &path).ok().flatten().map(Arc::from),
+    };
+    let bytes = text.into_bytes();
+    let bytes = old.and_then(|old| followed(session, &path, &old, &bytes)).unwrap_or(bytes);
     session.forget();
-    session.ws.write(&path, text.as_bytes()).map_err(|error| unwritable("path", &shown, &error))?;
-    let after: Arc<[u8]> = Arc::from(text.into_bytes());
+    session.ws.write(&path, &bytes).map_err(|error| unwritable("path", &shown, &error))?;
+    let after: Arc<[u8]> = Arc::from(bytes);
     note(session, &Change { path: path.clone(), shown: shown.clone(), before: None, after: Some(Arc::clone(&after)) }, false);
-    let changes = before.map(|before| vec![Change { path, shown, before, after: Some(after) }]);
+    let changes = before.map(|before| vec![Change { path, shown, before, after: Some(Arc::clone(&after)) }]);
     record_files(session, author, command, changes);
-    Ok(())
+    Ok(after)
+}
+
+/// The bytes that replace `before` in a function file, with the entries of `layout` of each node they renamed moved to
+/// its new name (spec 11, commands.md 9.1): `None` when they rename none, or the file is no function.
+pub(crate) fn followed(session: &Session, path: &Path, before: &[u8], after: &[u8]) -> Option<Vec<u8>> {
+    if !path.extension().is_some_and(|extension| extension == "lcf") {
+        return None;
+    }
+    labcraft_edit::follow_renames(before, after, &session.config.limits).map(|followed| followed.bytes)
 }
 
 /// An existing file of the project that a command may change: a simulation file only if it reads as one.
