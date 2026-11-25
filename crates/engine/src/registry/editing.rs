@@ -66,6 +66,27 @@ const WIRE_ERRORS: &[&str] = &[
     "internal",
 ];
 
+/// `node.reframe`: the refusals of a wire, and a name of the new frame that a node moved bears already.
+const REFRAME_ERRORS: &[&str] = &[
+    "params.unknown",
+    "params.missing",
+    "params.invalid",
+    "path.outside_project",
+    "path.not_found",
+    "path.invalid",
+    "file.unreadable",
+    "file.unwritable",
+    "file.too_large",
+    "file.unparsed",
+    "file.stale",
+    "edit.unknown",
+    "edit.ambiguous",
+    "name.taken",
+    "wire.cycle",
+    "wire.out_of_scope",
+    "internal",
+];
+
 /// `structure.add_carry`, `add_clause`, `add_collect`, `add_last`: a new name, a value of the wrong type for a `for`, a value that the
 /// structure makes (a cycle).
 const PART_ERRORS: &[&str] = &[
@@ -521,6 +542,38 @@ pub(super) fn catalog() -> Vec<Command> {
                 &["file", "node", "at"],
             ),
             EDIT_ERRORS,
+            false,
+        ),
+        editing(
+            "node.reframe",
+            "Move Nodes Into Another Frame",
+            "Move nodes of one frame into another frame: out of a structure, into an arm, into a loop",
+            "Moves nodes of one frame into the frame that `inside` and `arm` name (the body of the function by default), as `docs/commands.md` 6.7 says, one step. `at` places the first node there, on the grid of 8, and the others as far, each fixed; without it they are free. What crosses an edge is judged as for `wire.connect`: a value the new frame sees is passed in; a value that leaves an arm adds an output to each structure it leaves, that arm yielding it and the other arms a hole; a value that leaves a loop goes out as `through` says for it, by its name (`last`, `collect` or `carry`, or a list, one per loop), and is `wire.out_of_scope` without it. A value that leaves keeps its name outside and takes a suffix inside (`renamed`). A move that would make a structure read its own output is `wire.cycle`; a name of the new frame that hides what a node reads (R-3), and an order wire that would cross an edge, `wire.out_of_scope`; a value of the same name in the new frame, `name.taken`. A structure among the nodes is `params.invalid`. `names.nodes` gives the nodes and `names.outputs` the outputs it adds.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("nodes", names("The nodes to move, of one frame.")),
+                    ("inside", string("The structure that takes them; by default, the body of the function.")),
+                    ("arm", string("The arm of `inside` that takes them, by its patterns; by default, the first.")),
+                    ("at", position("Where to fix the first node in its new frame, `[x, y]` in canvas units; without it, the nodes are free.")),
+                    (
+                        "through",
+                        json!({
+                            "description": "For each value that would leave a loop, by its name: `last`, `collect` or `carry` for every loop it leaves, or a list, one per loop from the inside out.",
+                            "type": "object",
+                            "additionalProperties": {
+                                "oneOf": [
+                                    { "type": "string", "enum": ["last", "collect", "carry"] },
+                                    { "type": "array", "items": { "type": "string", "enum": ["last", "collect", "carry"] }, "minItems": 1 }
+                                ]
+                            }
+                        }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "nodes"],
+            ),
+            REFRAME_ERRORS,
             false,
         ),
         editing(

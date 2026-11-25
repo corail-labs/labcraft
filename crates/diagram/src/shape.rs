@@ -721,8 +721,14 @@ impl Drawing {
     /// Where a node is in its frame, in hundredths, as its `node … at` entry would write it (spec 11): what a move by
     /// `[dx, dy]` of a node placed automatically starts from (architecture 12.3).
     pub fn in_frame(&self, placed: usize) -> Option<(i64, i64)> {
+        self.in_frame_of(placed, self.placed.get(placed)?.body)
+    }
+
+    /// Where a node would be in the frame of `body`, in hundredths from its origin: [`Drawing::in_frame`] for a node that
+    /// goes into another frame (notation 2.4).
+    pub fn in_frame_of(&self, placed: usize, body: usize) -> Option<(i64, i64)> {
         let node = self.placed.get(placed)?;
-        let body = self.bodies.get(node.body)?;
+        let body = self.bodies.get(body)?;
         Some((node.x - body.origin.0, node.y + node.over - body.origin.1))
     }
 }

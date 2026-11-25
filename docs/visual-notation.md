@@ -358,6 +358,25 @@ is level with it (decision of the owner, 2026-11-24).
   bottom right, in `ink.muted`, and the edge under the pointer is lit in `select.stroke`; the pointer says what a
   press takes (a hand to move, an arrow to resize). The corner of the frame of the function shows when its edge is
   under the pointer (decisions of the owner, 2026-11-18). Arrange on a structure removes its size.
+- **Moving nodes into another frame.** A drag of nodes released with the pointer over another frame (the frame around,
+  an arm, a loop body, a structure beside) moves them into it, at the drop, fixed there, the first on the grid of that
+  frame and the others as far, in one step of undo (`node.reframe`, [commands.md](commands.md) 6.7; decision of the
+  owner, 2026-11-25). The frame is the deepest one under the pointer: the body of a loop, the arm a `match` or a
+  `handle` shows, the frame of the function outside every structure. The header and the edges of a structure belong
+  to the frame around it. What crosses the edge follows the rules of a wire: a value that the nodes read and that
+  their new frame sees is passed in (spec 6), and nothing is written for it; a value that leaves an arm, theirs or
+  one they read, becomes an output of each structure it leaves, that arm yielding it and the others a hole, as a wire
+  out of an arm does; a value that leaves a loop goes out as a wire drawn out of a loop does (2.5): the type of what
+  reads it chooses a `last`, a `collect` or, for an `error`, a carry, and Alt held at the drop takes the other one. The
+  nodes keep their labels and their values their names, but a value that leaves a structure: it keeps its name
+  outside and takes a suffix inside (N-14), as surrounding does (2.6). Refused, as a wire is: a move that closes a
+  cycle (`wire.cycle`), a value that a name of the new frame would hide (R-3) or an order wire that would cross an edge
+  (R-17) (`wire.out_of_scope`), a value named as an output of the function dropped into its body, which would give
+  that output (R-2), and, for now, a selection that holds a structure; a frame of a structure that no
+  command names (neither a name nor a label, commands.md 9.2) takes no node until it has a label. Shift held at the
+  drop keeps the nodes in their frame, which grows as above.
+  Setting: "drag between frames", `move` by default; `stay` swaps the two, a plain drag keeping the nodes in their
+  frame and Shift and a drag moving them (decisions of the owner, 2026-11-25).
 - **A fixed size shows it**, as a fixed node shows its pin: the corner of a frame whose size `layout` fixes, that of a
   structure or of the function, stays drawn, in `ink.muted`, and on hover: "Size fixed (`frame ys size (…)` in
   `layout`). Right-click › Remove the fixed size". Under the same setting, "mark the fixed nodes" (decision of the
@@ -488,6 +507,11 @@ list of diagnostics. The shape of a mark doubles its color (principle
   `select.stroke`. Over a wire it can take, that wire is drawn in `select.stroke`; releasing it there inserts the node into
   the wire (`node.add` with `into`, one step of undo), and the required inputs it leaves unwired are drawn as holes.
   Elsewhere, a free node.
+- **A frame that would take a drag** (2.4, "Moving nodes into another frame"): while nodes dragged have the pointer
+  over a frame other than their own, its outline is drawn in `select.stroke`, 3 outside it, and the nodes are previewed
+  where the drop puts them. A frame that refuses them is outlined in `mark.invalid`, dashed, and the reason sits beside
+  the pointer, as for a refused wire; releasing there writes nothing, the nodes go back, and the status bar says why.
+  The mark of a loop's passage (`•]`, `[•]`, `↻`) shows beside the pointer when a value would leave a loop.
 - **A fixed node** (2.4): the pin (`pin` of Lucide) in `ink.muted`, 16 across, on the top-left corner of its body;
   its tooltip names the `node … at` entry it comes from. Its size is judged at the real scale, in the editor.
 - **A junction** (2.4): the drag that starts a branch (Alt and a drag, or a plain drag with the setting "drag on a
@@ -543,7 +567,7 @@ in progress writes nothing (2.4).
 | Shift+click, Ctrl+click | a node, a wire | Adds it to the selection, or removes it |
 | Drag | the empty canvas | Selects the nodes that the rectangle touches. Setting: "drag on the empty canvas pans", Shift+drag then selects |
 | Middle drag, wheel, two fingers | anywhere | Pans; Shift+wheel pans sideways; Ctrl+wheel or a pinch zooms around the pointer, as the viewer does |
-| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4), by whole steps of the grid of 8, the node held landing on the grid of its frame and the others going as far: the preview shows them where the drop puts them. From a node of the selection, the nodes of the selection in its frame move, the others stay (decision of the owner, 2026-11-17); from another node, that node, which the drag selects. Escape during the drag puts them back |
+| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4), by whole steps of the grid of 8, the node held landing on the grid of its frame and the others going as far: the preview shows them where the drop puts them. From a node of the selection, the nodes of the selection in its frame move, the others stay (decision of the owner, 2026-11-17); from another node, that node, which the drag selects. Released with the pointer over another frame, `node.reframe`: the nodes go into it (2.4, "Moving nodes into another frame"), and Alt held at the drop takes the other passage out of a loop; Shift held at the drop keeps them in their frame. Escape during the drag puts them back |
 | Drag | an output | Draws a wire to an input (2.5): `wire.connect`. Released on the empty canvas, it opens quick insertion, filtered (below) |
 | Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
 | Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |

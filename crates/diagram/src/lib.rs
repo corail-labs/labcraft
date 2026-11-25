@@ -32,6 +32,7 @@ mod own;
 mod place;
 mod ports;
 mod preview;
+mod reframing;
 mod route;
 mod shape;
 mod shift;
@@ -50,6 +51,7 @@ pub use marks::{MAX_LINES, mark, undrawn};
 pub use own::{BlockFields, OutlineChoice, OwnBlock, written_rgb};
 pub use ports::{Refusal, Verdict, occupied, passage_refusal, wiring};
 pub use preview::{Preview, preview, square};
+pub use reframing::{Leaving, Reframing, reframing};
 pub use route::{on_segment, prefix_to, simplify};
 pub use shape::{
     ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Colour, Corner, Detail, Drawing, Ground, Group, Hint, Holds, IconDrawing, IconDrawn, IconItem,

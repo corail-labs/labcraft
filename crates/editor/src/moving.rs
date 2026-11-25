@@ -6,8 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use egui::{Pos2, Vec2};
-use labcraft_diagram::{Drawing, Preview, preview};
+use labcraft_diagram::{Drawing, Preview, Reframing, preview, reframing};
 
+use crate::frames::InFrame;
 use crate::paint::Painted;
 use crate::rerouting::{snap, unit};
 
@@ -46,20 +47,65 @@ pub(crate) struct Moving {
     pub rerouted: HashMap<usize, usize>,
     /// When the canvas first saw the move asked for, by the time of egui.
     pub asked_at: Option<f64>,
+    /// The frame that a drag would move the nodes into, under the pointer (notation 2.4, "Moving nodes into another
+    /// frame"); none when the drop keeps them in their frame.
+    pub entering: Option<Entering>,
+}
+
+/// Another frame under the pointer of a drag, which the drop moves the nodes into (`node.reframe`).
+pub(crate) struct Entering {
+    /// Its body, by its index in the drawing, and as a command names it.
+    pub body: usize,
+    pub frame: InFrame,
+    /// What it would do with the nodes, judged once for the frame.
+    pub verdict: Reframing,
+    /// Where the pointer is, in units: the reason of a refusal, or the passages out of loops, show beside it.
+    pub pointer: Pos2,
 }
 
 impl Moving {
     pub fn new(drawing: &Drawing, nodes: Vec<usize>, state: State) -> Moving {
         let preview = preview(drawing, &nodes, (0, 0));
         let rerouted = preview.wires.iter().enumerate().map(|(at, (group, _))| (*group, at)).collect();
-        Moving { nodes, by: (0, 0), state, preview, painted: HashMap::new(), rerouted, asked_at: None }
+        Moving { nodes, by: (0, 0), state, preview, painted: HashMap::new(), rerouted, asked_at: None, entering: None }
+    }
+
+    /// The frame under the pointer that the drop would move the nodes into, by its body and as a command names it, or
+    /// none: it is judged when it changes, and the nodes then land on its grid.
+    pub fn enter(&mut self, drawing: &Drawing, entering: Option<(usize, InFrame)>, pointer: Pos2) {
+        let Some((body, frame)) = entering else {
+            self.entering = None;
+            return;
+        };
+        if let Some(known) = self.entering.as_mut().filter(|known| known.body == body) {
+            known.pointer = pointer;
+            return;
+        }
+        let verdict = reframing(drawing, &self.nodes, body);
+        self.entering = Some(Entering { body, frame, verdict, pointer });
+    }
+
+    /// Where the first node is in the frame it lands in, its own or the one it enters, in hundredths from its origin.
+    fn lead_in_frame(&self, drawing: &Drawing) -> Option<(i64, i64)> {
+        let lead = *self.nodes.first()?;
+        match &self.entering {
+            Some(entering) => drawing.in_frame_of(lead, entering.body),
+            None => drawing.in_frame(lead),
+        }
+    }
+
+    /// Where the drop puts the first node in the frame it enters, in units from its origin: `at` of `node.reframe`.
+    pub fn landed(&self, drawing: &Drawing) -> (i64, i64) {
+        let (x, y) = self.lead_in_frame(drawing).unwrap_or_default();
+        (unit(x) + self.by.0, unit(y) + self.by.1)
     }
 
     /// Moves by about `by`, whole steps of the grid in units: as far as puts the first node on the nearest point of the
     /// grid of 8 of its frame, counted from its origin, the others going as far, as `node.move` moves them (notation 2.4),
-    /// so that the preview shows them where the drop writes them. A move by nothing stays one. The preview follows.
+    /// so that the preview shows them where the drop writes them; on the grid of the frame it enters, when it enters one,
+    /// as `node.reframe` places them. A move by nothing stays one. The preview follows.
     pub fn set_by(&mut self, drawing: &Drawing, by: (i64, i64)) {
-        let by = match self.nodes.first().and_then(|&lead| drawing.in_frame(lead)) {
+        let by = match self.lead_in_frame(drawing) {
             Some((x, y)) if by != (0, 0) => {
                 let (x, y) = (unit(x), unit(y));
                 let land = |from: i64, by: i64| snap(from.saturating_add(by).saturating_mul(100), 0) / 100 - from;

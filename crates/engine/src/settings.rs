@@ -57,6 +57,7 @@ pub const MARK_FIXED: &str = "editor.mark_fixed";
 pub const REPLACE_WITH_ALT: &str = "editor.replace_with_alt";
 pub const ACCEPT_MISMATCH: &str = "editor.accept_mismatch";
 pub const DRAG_ON_WIRE: &str = "editor.drag_on_wire";
+pub const DRAG_BETWEEN_FRAMES: &str = "editor.drag_between_frames";
 pub const ROUTE_WITH_SHIFT_ALT: &str = "editor.route_with_shift_alt";
 pub const AUTOPATCH: &str = "editor.autopatch";
 pub const INTO_WIRE: &str = "editor.into_wire";
@@ -113,6 +114,13 @@ pub const KEYS: &[Key] = &[
         "Drag on a wire",
         "Route: a drag moves its segment, and Alt with it starts a branch. Branch: the reverse.",
         Kind::Choice(&["route", "branch"], "route"),
+        true,
+    ),
+    key(
+        DRAG_BETWEEN_FRAMES,
+        "Drag between frames",
+        "Move: nodes dropped over another frame go into it, and Shift keeps them in theirs. Stay: the reverse.",
+        Kind::Choice(&["move", "stay"], "move"),
         true,
     ),
     key(ROUTE_WITH_SHIFT_ALT, "Shift+Alt in place of Alt", "For a desktop that keeps Alt+drag.", Kind::Bool(false), true),
@@ -333,6 +341,7 @@ impl Stores {
             replace_with_alt: on(REPLACE_WITH_ALT),
             accept_mismatch: on(ACCEPT_MISMATCH),
             branch_on_drag: named(DRAG_ON_WIRE) == "branch",
+            stay_between_frames: named(DRAG_BETWEEN_FRAMES) == "stay",
             route_with_shift_alt: on(ROUTE_WITH_SHIFT_ALT),
             autopatch: on(AUTOPATCH),
             into_wire: on(INTO_WIRE),
@@ -384,6 +393,9 @@ pub struct Values {
     pub accept_mismatch: bool,
     /// `editor.drag_on_wire` is `branch`: a plain drag on a wire starts a branch, and Alt with it moves its segment.
     pub branch_on_drag: bool,
+    /// `editor.drag_between_frames` is `stay`: nodes dropped over another frame stay in theirs, and Shift with the drop
+    /// moves them into it.
+    pub stay_between_frames: bool,
     pub route_with_shift_alt: bool,
     pub autopatch: bool,
     pub into_wire: bool,
@@ -688,6 +700,16 @@ mod tests {
         stores.project.insert(DRAG_ON_WIRE.to_owned(), json!("branch"));
         assert!(stores.values().branch_on_drag);
         assert!(find(DRAG_ON_WIRE).unwrap().refuses(&json!("both")).is_some());
+    }
+
+    /// `editor.drag_between_frames` on `stay` swaps the two drops over another frame (notation 2.4); `move` is the default.
+    #[test]
+    fn a_drop_over_another_frame_stays_only_on_stay() {
+        let mut stores = Stores::default();
+        assert!(!stores.values().stay_between_frames);
+        stores.user.insert(DRAG_BETWEEN_FRAMES.to_owned(), json!("stay"));
+        assert!(stores.values().stay_between_frames);
+        assert!(find(DRAG_BETWEEN_FRAMES).unwrap().refuses(&json!("both")).is_some());
     }
 
     #[test]

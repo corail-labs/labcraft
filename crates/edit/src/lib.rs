@@ -40,6 +40,7 @@ mod model;
 mod names;
 mod parts;
 mod places;
+mod reframe;
 mod refs;
 mod rename;
 mod route;
@@ -182,6 +183,15 @@ pub enum Op {
         file: String,
         node: String,
         at: Point,
+    },
+    /// `node.reframe`: the nodes of one frame into the frame of `within`, the first at `at`, each fixed; `through` says how
+    /// each value that leaves a loop goes out of it, by its name.
+    NodeReframe {
+        file: String,
+        nodes: Vec<String>,
+        within: Within,
+        at: Option<Point>,
+        through: BTreeMap<String, Through>,
     },
     /// `node.set_view`: `None` is `default`, which removes the view.
     NodeSetView {
@@ -461,6 +471,7 @@ impl Op {
             | Op::FrameResize { file, .. }
             | Op::TerminalMove { file, .. }
             | Op::NodePlace { file, .. }
+            | Op::NodeReframe { file, .. }
             | Op::NodeSetView { file, .. }
             | Op::LayoutArrange { file, .. }
             | Op::WireRoute { file, .. }
@@ -800,6 +811,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::WireDisconnect { wire, arm, .. } => wire::disconnect(&mut edit, judge, wire, arm.as_deref(), &mut edited)?,
         Op::NodeMove { nodes, by, .. } => layout::move_nodes(&mut edit, judge, nodes, *by, &mut edited)?,
         Op::NodePlace { node, at, .. } => layout::place_node(&mut edit, node, *at, &mut edited)?,
+        Op::NodeReframe { nodes, within, at, through, .. } => reframe::reframe(&mut edit, judge, nodes, within, *at, through, &mut edited)?,
         Op::TerminalMove { terminal, y, .. } => layout::move_terminal(&mut edit, terminal, *y, &mut edited)?,
         Op::FrameResize { inside, size, .. } => layout::resize(&mut edit, judge, inside.as_deref(), size.as_ref().copied(), &mut edited)?,
         Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,

@@ -4,7 +4,7 @@
 use egui::Pos2;
 use labcraft_diagram::Drawing;
 
-use crate::select::{Selection, hit_rect};
+use crate::select::{Index, Selection, hit_rect, inner_rect};
 use crate::{Canvas, Shown, arms_shown};
 
 /// The grid of a gesture (notation 2.4).
@@ -28,6 +28,59 @@ pub struct InFrame {
     pub arm: Option<String>,
 }
 
+/// The frame of a body as a command names it, `inside` and `arm` (commands.md 6.7): none for a body of a structure that no
+/// command names (commands.md 9.2).
+pub(crate) fn in_frame_of(drawing: &Drawing, body: usize) -> Option<InFrame> {
+    let found = drawing.bodies.get(body)?;
+    let Some(owner) = found.owner else { return Some(InFrame::default()) };
+    let structure = drawing.placed.get(owner).filter(|structure| !structure.name.is_empty())?;
+    Some(InFrame { inside: Some(structure.name.clone()), arm: (!found.arm.is_empty()).then(|| found.arm.clone()) })
+}
+
+/// The deepest body of a structure, shown and kept by `keep`, whose area by `area_of` holds `unit`: the smallest of them.
+fn deepest(
+    drawing: &Drawing,
+    index: &Index,
+    visible: &dyn Fn(Option<usize>) -> bool,
+    unit: Pos2,
+    area_of: fn(&Drawing, usize) -> Option<egui::Rect>,
+    keep: &dyn Fn(usize) -> bool,
+) -> Option<usize> {
+    (1..drawing.bodies.len())
+        .filter_map(|body| area_of(drawing, body).filter(|area| area.contains(unit)).map(|area| (body, area.area())))
+        .filter(|&(body, _)| index.body_shown(body, visible) && keep(body))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(body, _)| body)
+}
+
+/// The frame that nodes dragged would enter, with the pointer at `unit` (notation 2.4, "Moving nodes into another frame"):
+/// the deepest body shown whose canvas holds it, the header and the edges of a structure being the frame around it, and
+/// none that the nodes hold; by its body, and as a command names it (`labcraft_diagram::reframing` refuses a structure
+/// that no command names). None when it is the frame of the nodes.
+pub(crate) fn entered(
+    drawing: &Drawing,
+    index: &Index,
+    nodes: &[usize],
+    unit: Pos2,
+    visible: &dyn Fn(Option<usize>) -> bool,
+) -> Option<(usize, InFrame)> {
+    let own = nodes.first().and_then(|&node| drawing.placed.get(node)).map(|node| node.body)?;
+    let held = |body: usize| {
+        let mut at = body;
+        for _ in 0..=drawing.bodies.len() {
+            let Some(owner) = drawing.bodies.get(at).and_then(|found| found.owner) else { return false };
+            if nodes.contains(&owner) {
+                return true;
+            }
+            let Some(node) = drawing.placed.get(owner) else { return false };
+            at = node.body;
+        }
+        false
+    };
+    let body = deepest(drawing, index, visible, unit, inner_rect, &|body| !held(body)).unwrap_or(0);
+    (body != own).then(|| (body, in_frame_of(drawing, body).unwrap_or_default()))
+}
+
 impl Canvas {
     /// The frame shown under `unit`, a point of the canvas in units, and that point in units of that frame on the grid of
     /// 8: the deepest body that shows there, the arm shown of a structure in tabs. The body of the function when the point
@@ -39,20 +92,9 @@ impl Canvas {
 
     /// [`Canvas::frame_under`], and the body of that frame by its index in the drawing.
     pub(crate) fn frame_body(&self, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool, unit: Pos2) -> (InFrame, (i64, i64), usize) {
-        let deepest = (1..drawing.bodies.len())
-            .filter(|&body| self.index.body_shown(body, visible))
-            .filter_map(|body| hit_rect(drawing, body).filter(|area| area.contains(unit)).map(|area| (body, area.area())))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(body, _)| body);
-        let named = deepest.and_then(|body| {
-            let found = drawing.bodies.get(body)?;
-            let structure = drawing.placed.get(found.owner?)?;
-            (!structure.name.is_empty()).then(|| (body, structure.name.clone(), (!found.arm.is_empty()).then(|| found.arm.clone())))
-        });
-        let (body, frame) = match named {
-            Some((body, inside, arm)) => (body, InFrame { inside: Some(inside), arm }),
-            None => (0, InFrame::default()),
-        };
+        let (body, frame) = deepest(drawing, &self.index, visible, unit, hit_rect, &|_| true)
+            .and_then(|body| in_frame_of(drawing, body).map(|frame| (body, frame)))
+            .unwrap_or_default();
         let origin = drawing.bodies.get(body).map_or((0, 0), |found| found.origin);
         let snap = |value: f32| ((value / GRID).round() * GRID) as i64;
         (frame, (snap(unit.x - origin.0 as f32 / 100.0), snap(unit.y - origin.1 as f32 / 100.0)), body)

@@ -12,6 +12,8 @@ use labcraft_types::{Interner, Limits};
 
 use super::*;
 
+mod reframing;
+
 struct Nothing;
 
 impl Libraries for Nothing {

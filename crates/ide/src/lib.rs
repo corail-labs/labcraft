@@ -1903,6 +1903,28 @@ impl Ide {
     fn ask_move(&mut self, host: &dyn Host, view: &Published, function: &str, nodes: &[String], by: (i64, i64)) {
         let Some(file) = file_of(view, function) else { return };
         let moving = json!({ "file": file, "nodes": nodes, "by": [by.0, by.1] });
+        self.send_fixing(host, view, function, &file, "node.move", moving, "Move Nodes");
+    }
+
+    /// Nodes dropped over another frame (notation 2.4): `node.reframe`, with the setting "fix every node at the first
+    /// move" as for `node.move`.
+    fn ask_reframe(&mut self, host: &dyn Host, view: &Published, function: &str, params: Value) {
+        let Some(file) = file_of(view, function) else { return };
+        if let Some(why) = self.diagram_locked(view, &file, true) {
+            self.say(why);
+            return;
+        }
+        let mut params = params;
+        if let Some(object) = params.as_object_mut() {
+            object.insert("file".to_owned(), json!(file));
+        }
+        self.send_fixing(host, view, function, &file, "node.reframe", params, "Move Nodes Into Another Frame");
+    }
+
+    /// A move `id` of nodes on the canvas of `function`; with the setting "fix every node at the first move", in one batch
+    /// after a `node.place` of every other free node where it is.
+    #[allow(clippy::too_many_arguments)]
+    fn send_fixing(&mut self, host: &dyn Host, view: &Published, function: &str, file: &str, id: &str, moving: Value, label: &str) {
         let drawing = view.window_of(function).and_then(|window| window.drawing.clone());
         let fixing: Vec<Value> = match (&drawing, self.settings.fix_every_node) {
             (Some(drawing), true) => drawing
@@ -1920,11 +1942,11 @@ impl Ide {
         };
         // A batch holds at most 1,000 commands (commands.md 6.7): past that, the move alone.
         let reply = if fixing.is_empty() || fixing.len() >= 1_000 {
-            host.send("node.move", moving)
+            host.send(id, moving)
         } else {
             let mut commands = fixing;
-            commands.push(json!({ "id": "node.move", "params": moving }));
-            host.send("commands.batch", json!({ "commands": commands, "label": "Move Nodes" }))
+            commands.push(json!({ "id": id, "params": moving }));
+            host.send("commands.batch", json!({ "commands": commands, "label": label }))
         };
         self.edits.push((function.to_owned(), reply, None));
     }
@@ -2738,6 +2760,7 @@ const EDITS: &[&str] = &[
     "function.rename",
     "node.move",
     "node.place",
+    "node.reframe",
     "node.set_view",
     "layout.arrange",
     "frame.resize",
@@ -2843,6 +2866,7 @@ fn canvas_shown(window: &WindowShown, settings: &Values) -> Shown {
         branch_on_drag: settings.branch_on_drag,
         route_with_shift_alt: settings.route_with_shift_alt,
         into_wire: settings.into_wire,
+        stay_between_frames: settings.stay_between_frames,
     }
 }
 
@@ -3311,6 +3335,15 @@ impl Content<'_> {
             match intent {
                 Intent::Select(selection) => self.ide.ask_select(self.host, function, selection),
                 Intent::Move { nodes, by } => self.ide.ask_move(self.host, view, function, &nodes, by),
+                // Nodes dropped over another frame (notation 2.4): into it, one step.
+                Intent::Reframe { nodes, within, at, through } => {
+                    let through: serde_json::Map<String, Value> = through.into_iter().map(|(value, passages)| (value, json!(passages))).collect();
+                    let mut params = insert::within(json!({ "nodes": nodes, "at": [at.0, at.1] }), &within);
+                    if let (false, Some(object)) = (through.is_empty(), params.as_object_mut()) {
+                        object.insert("through".to_owned(), Value::Object(through));
+                    }
+                    self.ide.ask_reframe(self.host, view, function, params);
+                }
                 // "Remove the fixed position", "Arrange this wire" (notation 2.4).
                 Intent::Arrange(selection) => {
                     if let Some(file) = file_of(view, function) {
