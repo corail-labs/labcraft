@@ -114,6 +114,8 @@ pub enum Kind<'a> {
         icon: Option<&'a Icon>,
         block: Option<Rc<Block>>,
         file: Option<String>,
+        /// The function of the project that it calls, by the name the IDE lists; empty for another call.
+        opens: String,
     },
     /// A struct construction: the name of its type without its library, which goes to the band.
     Construction { ty: String, library: Option<String> },
@@ -408,6 +410,8 @@ struct Callee<'a> {
     icon: Option<&'a Icon>,
     block: Option<Rc<Block>>,
     file: Option<String>,
+    /// The name of a function of the folder given or of one of its sub-libraries, as the IDE lists it; empty for another.
+    opens: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -589,6 +593,7 @@ impl<'a> Builder<'a> {
             icon: callee.icon,
             block: callee.block.clone(),
             file: callee.file.clone(),
+            opens: String::new(),
         };
         let node = Node {
             kind,
@@ -1160,7 +1165,16 @@ impl<'a> Builder<'a> {
                 };
                 // A primitive whose glyph does not read (a unit that is not written) has the ordinary block.
                 let block = if signature.glyph.is_some() && glyph.is_none() { None } else { signature.block.clone() };
-                Kind::Call { qualified, short, library: signature.band.clone(), glyph, icon: signature.icon, block, file: signature.file.clone() }
+                Kind::Call {
+                    qualified,
+                    short,
+                    library: signature.band.clone(),
+                    glyph,
+                    icon: signature.icon,
+                    block,
+                    file: signature.file.clone(),
+                    opens: signature.opens.clone(),
+                }
             }
         };
         (kind, inputs, outputs, signature.always, after)
@@ -1195,6 +1209,7 @@ impl<'a> Builder<'a> {
             icon: None,
             block: None,
             file: None,
+            opens: String::new(),
         };
         // The parameters: name, whether it is a wire at all (not a unit, a category, an element), its type or its family.
         match callee {
@@ -1237,6 +1252,13 @@ impl<'a> Builder<'a> {
                     .filter(|icon| labcraft_check::icon_refused(icon, self.names).is_none());
                 found.file =
                     function.and_then(|function| function.file).and_then(|file| self.checked.files.get(file as usize)).map(|file| file.shown.clone());
+                found.opens = declared
+                    .filter(|declared| declared.checked && found.file.is_some())
+                    .map(|declared| {
+                        let function = self.text(name);
+                        if declared.name.is_empty() { function } else { format!("{}.{function}", declared.name) }
+                    })
+                    .unwrap_or_default();
                 // The section of its file, as for its icon (spec 11.2).
                 let section = function.and_then(|function| {
                     function.terminals.as_ref().or_else(|| {

@@ -1674,3 +1674,66 @@ fn an_edit_of_an_agent_shows_in_its_pill_its_notice_and_its_highlight_and_the_no
     assert!(off.query_by_label("No agent").is_none());
     assert!(!off.state().ide.ai_enabled());
 }
+
+/// A double click on the body of a call to a function of the project shows that function in a tab that stays, not in
+/// preview (notation 2.6, ide.md 3, #330); so does "Open helper" of the menu of the node. On a primitive: nothing, and
+/// no entry. The two presses come in one frame, as a quick double click does.
+#[test]
+fn a_double_click_or_open_on_a_call_shows_the_function_called_in_a_tab_that_stays() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = helper(x)\n    y = core.add(a, 1.0)\n}\n";
+    let button = |at, button, pressed| egui::Event::PointerButton { pos: at, button, pressed, modifiers: egui::Modifiers::NONE };
+    let primary = egui::PointerButton::Primary;
+    // The double click.
+    let mut harness = harness(fake_with(&[("/p/main.lcf", main)]));
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, helper");
+    harness.input_mut().events.extend([
+        egui::Event::PointerMoved(on_a),
+        button(on_a, primary, true),
+        button(on_a, primary, false),
+        button(on_a, primary, true),
+        button(on_a, primary, false),
+    ]);
+    harness.run_steps(6);
+    let view = harness.state().host.snapshot().view;
+    assert_eq!(view.main.function.as_deref(), Some("helper"));
+    assert_eq!(view.preview, None, "a double click keeps the tab");
+    assert_eq!(view.opened, ["main", "helper"]);
+    // A double click on a primitive opens nothing.
+    let mut harness = self::harness(fake_with(&[("/p/main.lcf", main)]));
+    harness.run_steps(4);
+    let (on_y, _) = canvas_element(&harness, "y, core.add");
+    harness.input_mut().events.extend([
+        egui::Event::PointerMoved(on_y),
+        button(on_y, primary, true),
+        button(on_y, primary, false),
+        button(on_y, primary, true),
+        button(on_y, primary, false),
+    ]);
+    harness.run_steps(6);
+    assert_eq!(harness.state().host.snapshot().view.opened, ["main"]);
+    // "Open helper" of the menu of the call; the primitive has no such entry.
+    let secondary = egui::PointerButton::Secondary;
+    let mut harness = self::harness(fake_with(&[("/p/main.lcf", main)]));
+    harness.run_steps(4);
+    let (on_y, _) = canvas_element(&harness, "y, core.add");
+    harness.input_mut().events.extend([egui::Event::PointerMoved(on_y), button(on_y, secondary, true)]);
+    harness.run_steps(1);
+    harness.input_mut().events.push(button(on_y, secondary, false));
+    harness.run_steps(3);
+    assert!(harness.query_by_label("Label…").is_some(), "the menu of the primitive is open");
+    assert!(harness.query_by_label_contains("Open ").is_none(), "no entry for a primitive");
+    harness.key_press(Key::Escape);
+    harness.run_steps(3);
+    let (on_a, _) = canvas_element(&harness, "a, helper");
+    harness.input_mut().events.extend([egui::Event::PointerMoved(on_a), button(on_a, secondary, true)]);
+    harness.run_steps(1);
+    harness.input_mut().events.push(button(on_a, secondary, false));
+    harness.run_steps(3);
+    let item = harness.get_by_label("Open helper").rect().center();
+    click_at(&mut harness, item, egui::Modifiers::NONE);
+    let view = harness.state().host.snapshot().view;
+    assert_eq!(view.main.function.as_deref(), Some("helper"));
+    assert_eq!(view.preview, None);
+    assert_eq!(view.opened, ["main", "helper"]);
+}

@@ -3443,6 +3443,15 @@ impl Content<'_> {
                     let reply = self.host.send("block.set_terminal", json!({ "file": file, "terminal": terminal, "side": side, "place": place }));
                     self.ide.edits.push((function.to_owned(), reply, None));
                 }
+                // A function of the project, shown in a tab, not in preview (ide.md 3), or in its window (ide.md 9).
+                Intent::Open { function } => {
+                    // The list names a function by its file: one whose file has another name (`LC2023`) has no tab.
+                    if view.functions.iter().any(|listed| listed.function == function) {
+                        self.asked.push(panels::Asked::Show { function, preview: false });
+                    } else {
+                        self.ide.say(format!("`{function}` has no tab: no file of the project is named after it"));
+                    }
+                }
                 Intent::ResetBlock { file } => {
                     let reply = self.host.send("block.reset", json!({ "file": file }));
                     self.ide.edits.push((function.to_owned(), reply, None));
