@@ -384,7 +384,7 @@ fn type_now(edit: &Edit, judge: &dyn Judge, value: &Value) -> crate::ValueType {
 /// The loop at `loc` takes `value` out: a carry of its type that holds its last value (`carry v2: T = ?`, `next v2 = v`,
 /// or `carry e2 = none` for an `error`), the carry and its output named after it (N-14), or a `collect` or a `last`, its
 /// output named after it. The name of the output.
-fn pass(edit: &mut Edit, loc: &Loc, value: Name, passage: Passage, ty: Option<&str>) -> Result<Name, EditError> {
+pub(crate) fn pass(edit: &mut Edit, loc: &Loc, value: Name, passage: Passage, ty: Option<&str>) -> Result<Name, EditError> {
     let output = fresh(edit.text(value), &taken(edit));
     let output = edit.intern(&output);
     let statement = scope::statement(edit.body_function()?, loc).ok_or_else(|| EditError::internal("a loop that went"))?;

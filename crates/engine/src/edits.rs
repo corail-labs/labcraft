@@ -46,6 +46,7 @@ pub const EDITING: &[&str] = &[
     "frame.resize",
     "terminal.move",
     "node.place",
+    "node.reframe",
     "node.set_view",
     "layout.arrange",
     "wire.route",
@@ -212,12 +213,27 @@ fn within(params: &Params, inside: &str, arm: &str) -> Within {
 fn through(params: &Params) -> Result<Option<Through>, CommandError> {
     let Some(given) = params.get("through").filter(|value| !value.is_null()) else { return Ok(None) };
     let invalid = || CommandError::of("params.invalid", "through", "`through` is `last`, `collect` or `carry`, or a list of them, one per loop");
-    let passage = |value: &serde_json::Value| value.as_str().and_then(passage_of).ok_or_else(invalid);
+    through_value(given, &invalid).map(Some)
+}
+
+/// One `through`: a passage for every loop, or a non-empty list of them, one per loop; `invalid` otherwise.
+fn through_value(given: &Value, invalid: &dyn Fn() -> CommandError) -> Result<Through, CommandError> {
+    let passage = |value: &Value| value.as_str().and_then(passage_of).ok_or_else(invalid);
     match given.as_array() {
-        Some(list) if !list.is_empty() => Ok(Some(Through::Each(list.iter().map(passage).collect::<Result<_, _>>()?))),
+        Some(list) if !list.is_empty() => Ok(Through::Each(list.iter().map(passage).collect::<Result<_, _>>()?)),
         Some(_) => Err(invalid()),
-        None => Ok(Some(Through::All(passage(given)?))),
+        None => Ok(Through::All(passage(given)?)),
     }
+}
+
+/// `through` of `node.reframe`: for each value, by its name, what `through` of `wire.connect` takes (commands.md 6.7).
+fn through_each(params: &Params) -> Result<BTreeMap<String, Through>, CommandError> {
+    let Some(given) = params.get("through").filter(|value| !value.is_null()) else { return Ok(BTreeMap::new()) };
+    let invalid = || {
+        CommandError::of("params.invalid", "through", "`through` maps a value to `last`, `collect` or `carry`, or to a list of them, one per loop")
+    };
+    let Some(map) = given.as_object() else { return Err(invalid()) };
+    map.iter().map(|(name, value)| Ok((name.clone(), through_value(value, &invalid)?))).collect()
 }
 
 /// A passage out of a loop as `through` and `structure.set_passage` write it.
@@ -256,6 +272,13 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         // `size` is required (the schema), and `null` removes the entry (notation 2.4).
         "frame.resize" => Op::FrameResize { file, inside: params.str("inside").map(str::to_owned), size: point(params, "size")? },
         "node.place" => Op::NodePlace { file, node: params.text("node")?.to_owned(), at: required_point(params, "at")? },
+        "node.reframe" => Op::NodeReframe {
+            file,
+            nodes: texts(params, "nodes")?.unwrap_or_default(),
+            within: within(params, "inside", "arm"),
+            at: point(params, "at")?,
+            through: through_each(params)?,
+        },
         "terminal.move" => {
             let y = params.get("y").and_then(Value::as_i64).ok_or_else(|| CommandError::of("params.invalid", "y", "`y` is an integer"))?;
             Op::TerminalMove { file, terminal: terminal(params)?, y }

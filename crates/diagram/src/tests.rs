@@ -2,6 +2,8 @@
 //! decisions of step 2 of M0v; none comes from the output of the code. A cell is 1233/2048 of the size: at 12,
 //! `n` cells are `n × 1233 × 1200 / 2048` hundredths, rounded to the nearest (7.22 units for one).
 
+mod reframing;
+
 use std::borrow::Cow;
 
 use labcraft_check::{Checked, Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};

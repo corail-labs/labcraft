@@ -693,3 +693,139 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
             .unwrap();
     });
 }
+
+/// What the canvas says of nodes dragged over another frame is what `node.reframe` does at the drop (notation 2.4,
+/// "Moving nodes into another frame"; #208): on each function of `examples/` and of the wiring cases, each named node
+/// dropped into each other frame that a command names, judged on the drawing by `labcraft_diagram::reframing`, then given
+/// to the command with the frame, and for each value that leaves loops a passage per loop (a `last`, or a `collect` by
+/// turns). A move that the canvas takes the command writes, and one that it refuses the command refuses with the same
+/// code; a move that the canvas refuses is given a `through` for what the command asks of it first, so that it judges
+/// the rest. Each move written is undone before the next. Every pair of a small function, and of a large one a pair in so
+/// many, the same each run.
+#[test]
+fn the_canvas_judges_a_move_into_another_frame_as_node_reframe_does() {
+    let memory = examples_and_wiring_cases();
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(labcraft_format::STACK_SIZE)
+            .spawn_scoped(scope, || {
+                let config = Config {
+                    root: PathBuf::from("/p"),
+                    lib_paths: Vec::new(),
+                    limits: Limits::default(),
+                    shipped: labcraft_cli::shipped(),
+                    natives: labcraft_libs::natives(),
+                    clock: Arc::new(labcraft_engine::Still),
+                    process: 0,
+                };
+                let workspace: Arc<dyn labcraft_engine::Workspace> = memory.clone();
+                let mut session = Session::new(workspace, config, true).unwrap();
+                session.with_window();
+                ok(&mut session, "view.open", json!({ "folder": "." }));
+                let listed: Vec<(String, String)> = session
+                    .view()
+                    .functions
+                    .iter()
+                    .filter(|listed| listed.drawable)
+                    .map(|listed| (listed.function.clone(), listed.file.clone()))
+                    .collect();
+                let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+                let mut wrong = Vec::new();
+                for (function, file) in listed {
+                    ok(&mut session, "view.show_function", json!({ "function": function }));
+                    let Some(drawing) = session.view().main.drawing.clone() else { continue };
+                    let path = format!("/p/{file}");
+                    let text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
+                    // The frames that a command names: the body of the function, and each body of a named structure.
+                    let frames: Vec<(usize, Value)> = (0..drawing.bodies.len())
+                        .filter_map(|body| match drawing.bodies[body].owner {
+                            None => Some((body, json!({}))),
+                            Some(owner) => {
+                                let structure = &drawing.placed[owner].name;
+                                let arm = &drawing.bodies[body].arm;
+                                match (structure.is_empty(), arm.is_empty()) {
+                                    (true, _) => None,
+                                    (false, true) => Some((body, json!({ "inside": structure }))),
+                                    (false, false) => Some((body, json!({ "inside": structure, "arm": arm }))),
+                                }
+                            }
+                        })
+                        .collect();
+                    let mut pairs: Vec<(usize, usize, &Value)> = Vec::new();
+                    for (node, placed) in drawing.placed.iter().enumerate().filter(|(_, placed)| !placed.name.is_empty()) {
+                        pairs.extend(frames.iter().filter(|(body, _)| *body != placed.body).map(|(body, within)| (node, *body, within)));
+                    }
+                    let step = pairs.len().div_ceil(300).max(1);
+                    for (rank, (node, body, within)) in pairs.into_iter().step_by(step).enumerate() {
+                        let verdict = labcraft_diagram::reframing(&drawing, &[node], body);
+                        let name = drawing.placed[node].name.clone();
+                        let mut params = json!({ "file": file, "nodes": [name] });
+                        if let (Some(object), Some(frame)) = (params.as_object_mut(), within.as_object()) {
+                            object.extend(frame.clone());
+                        }
+                        let said = match &verdict {
+                            labcraft_diagram::Reframing::Takes { leaving } => {
+                                if !leaving.is_empty() {
+                                    let through: serde_json::Map<String, Value> = leaving
+                                        .iter()
+                                        .map(|value| {
+                                            let passage = if rank % 2 == 1 { "collect" } else { "last" };
+                                            (value.value.clone(), json!(vec![passage; value.exits.len()]))
+                                        })
+                                        .collect();
+                                    params["through"] = Value::Object(through);
+                                }
+                                "takes".to_owned()
+                            }
+                            labcraft_diagram::Reframing::Refused(refusal) => refusal.code.to_owned(),
+                        };
+                        let mut given = session.execute("node.reframe", &params);
+                        // A move that the canvas refuses gives no `through`: the command, which judges what leaves a loop
+                        // before the cycles, asks for it first. Each value it names leaves by its last value, until it
+                        // judges the rest.
+                        let mut named = 0;
+                        while said != "takes"
+                            && named < 16
+                            && let Err(error) = &given
+                            && let Some(value) = error
+                                .message
+                                .strip_prefix('`')
+                                .and_then(|rest| rest.split_once("` would leave a loop"))
+                                .map(|(value, _)| value.to_owned())
+                        {
+                            params["through"][value] = json!("last");
+                            given = session.execute("node.reframe", &params);
+                            named += 1;
+                        }
+                        let did = match &given {
+                            Ok(_) => "takes".to_owned(),
+                            Err(error) => error.code.to_owned(),
+                        };
+                        *counts.entry(format!("{said} / {did}")).or_insert(0) += 1;
+                        if did == "takes" && params.get("through").is_some() {
+                            *counts.entry("through".to_owned()).or_insert(0) += 1;
+                        }
+                        if said != did {
+                            let message = given.as_ref().err().map(|error| error.message.clone()).unwrap_or_default();
+                            wrong.push(format!("{function}: {name} into {within}: the canvas says {said}, the command {did} ({message})"));
+                        }
+                        if given.as_ref().is_ok_and(|result| !result["step"].is_null()) {
+                            ok(&mut session, "history.undo", json!({}));
+                            assert_eq!(String::from_utf8(memory.get(&path).unwrap()).unwrap(), text, "undo gives the bytes back");
+                        }
+                    }
+                }
+                eprintln!("{counts:?}");
+                assert!(wrong.is_empty(), "{} of {}:\n{}", wrong.len(), counts.values().sum::<usize>(), wrong.join("\n"));
+                // Each verdict is met, agreed on.
+                for code in ["takes", "wire.cycle", "params.invalid", "name.taken"] {
+                    assert!(counts.get(&format!("{code} / {code}")).is_some_and(|&count| count > 3), "{code}: {counts:?}");
+                }
+                // A few moves take a value out of a loop, as `through` says.
+                assert!(counts.get("through").is_some_and(|&count| count > 3), "{counts:?}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    });
+}

@@ -182,7 +182,7 @@ pub(crate) fn pick_place<'p>(
 }
 
 /// Fixes the node of this designation at `at`: its `node … at` entry, made or changed, its view kept (spec 11).
-fn fix(edit: &mut Edit, loc: &Loc, designation: Designation, at: Point, parameter: &'static str) -> Result<(), EditError> {
+pub(crate) fn fix(edit: &mut Edit, loc: &Loc, designation: Designation, at: Point, parameter: &'static str) -> Result<(), EditError> {
     crate::add::in_range(at, parameter)?;
     let point = labcraft_graph::Point { id: edit.id(), x: coordinate(edit, at.x), y: coordinate(edit, at.y) };
     let node = NodeRef { id: edit.id(), is_label: designation.is_label, name: designation.name };
@@ -226,7 +226,7 @@ fn report(edit: &Edit, locs: &[Loc], labelled: &[(Loc, String)], edited: &mut Ed
 const GRID: i64 = 8;
 
 /// `value` on the nearest line of the grid of its frame, the larger one on a tie.
-fn on_grid(value: i64) -> i64 {
+pub(crate) fn on_grid(value: i64) -> i64 {
     value.saturating_add(GRID / 2).div_euclid(GRID).saturating_mul(GRID)
 }
 

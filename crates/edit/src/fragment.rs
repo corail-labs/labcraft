@@ -199,7 +199,7 @@ fn resolve(edit: &Edit, nodes_of: &Index, nodes: &[String]) -> Result<Vec<Loc>, 
 }
 
 /// Whether a line belongs only in the body of a loop: `next x = …`, `collect`, `until`.
-fn loop_only(statement: &labcraft_graph::Statement) -> bool {
+pub(crate) fn loop_only(statement: &labcraft_graph::Statement) -> bool {
     match &statement.kind {
         StatementKind::Gather(_, _) | StatementKind::Until(_) => true,
         StatementKind::Binding { targets, .. } => targets.iter().any(|target| matches!(target, Target::Next(..))),

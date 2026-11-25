@@ -31,13 +31,7 @@ impl Canvas {
         if bodies.any(|other| other != body) {
             return None;
         }
-        let drawn = drawing.bodies.get(body)?;
-        let Some(owner) = drawn.owner else { return Some(InFrame::default()) };
-        let structure = drawing.placed.get(owner)?;
-        if structure.name.is_empty() {
-            return None;
-        }
-        Some(InFrame { inside: Some(structure.name.clone()), arm: (!drawn.arm.is_empty()).then(|| drawn.arm.clone()) })
+        crate::frames::in_frame_of(drawing, body)
     }
 
     /// Where a paste puts the top-left corner of its fragment, on the grid: under `pointer` when it is on the canvas, in

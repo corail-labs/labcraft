@@ -455,7 +455,7 @@ fn value_of(name: &str) -> String {
 }
 
 /// A name that a body binds, which `from` takes as it is: not `_`, not `next.x`.
-fn is_plain(value: &str) -> bool {
+pub(crate) fn is_plain(value: &str) -> bool {
     !value.is_empty() && value != "_" && !value.contains('.') && !value.starts_with('@')
 }
 
@@ -537,14 +537,19 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
 
 /// The values of a drawing that a name gives in each body: the ports where a wire starts, notches left out, by body and
 /// name.
-struct Values<'a> {
+pub(crate) struct Values<'a> {
     by_name: HashMap<(usize, &'a str), Vec<&'a Port>>,
 }
 
 impl<'a> Values<'a> {
     fn of(drawing: &'a Drawing) -> Values<'a> {
+        Values::except(drawing, &|_| false)
+    }
+
+    /// The values of the drawing but those of the ports that `left_out` takes out.
+    pub(crate) fn except(drawing: &'a Drawing, left_out: &dyn Fn(&Port) -> bool) -> Values<'a> {
         let mut by_name: HashMap<(usize, &str), Vec<&Port>> = HashMap::new();
-        for port in drawing.ports.iter().filter(|port| !port.input && !port.notch && !port.name.is_empty()) {
+        for port in drawing.ports.iter().filter(|port| !port.input && !port.notch && !port.name.is_empty() && !left_out(port)) {
             by_name.entry((port.body, port.name.as_str())).or_default().push(port);
         }
         Values { by_name }
@@ -651,19 +656,8 @@ impl Port {
 
 /// A value the reader cannot see: of another arm or structure (commands.md 6.7). Otherwise the loops that the wire leaves,
 /// from the inside out, each of which takes the value out (`through`); none for a value that the reader sees.
-fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &Port) -> Result<Vec<usize>, Refusal> {
-    let chain = |body: usize| {
-        let mut bodies = vec![body];
-        let mut at = body;
-        while let Some(owner) = drawing.bodies.get(at).and_then(|found| found.owner)
-            && let Some(node) = drawing.placed.get(owner)
-            && !bodies.contains(&node.body)
-        {
-            bodies.push(node.body);
-            at = node.body;
-        }
-        bodies
-    };
+pub(crate) fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &Port) -> Result<Vec<usize>, Refusal> {
+    let chain = |body: usize| chain(drawing, body);
     let value = &source.name;
     let of_target = chain(target.body);
     if let Some(at) = of_target.iter().position(|&body| body == source.body) {
@@ -703,6 +697,20 @@ fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &
         return Ok(exits);
     }
     Err(Refusal { code: "wire.out_of_scope", message: format!("`{value}` cannot be seen from there: it is a value of another arm or structure") })
+}
+
+/// A body and those around it, from the inside out, up to the body of the function.
+pub(crate) fn chain(drawing: &Drawing, body: usize) -> Vec<usize> {
+    let mut bodies = vec![body];
+    let mut at = body;
+    while let Some(owner) = drawing.bodies.get(at).and_then(|found| found.owner)
+        && let Some(node) = drawing.placed.get(owner)
+        && !bodies.contains(&node.body)
+    {
+        bodies.push(node.body);
+        at = node.body;
+    }
+    bodies
 }
 
 /// Whether a wire from `made_by`, deeper than `reader`, closes a cycle once the structures around `made_by` give its value

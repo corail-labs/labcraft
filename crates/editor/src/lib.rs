@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use egui::{Color32, PointerButton, Pos2, Rect, Response, Sense, Ui, Vec2};
 use labcraft_diagram::style;
-use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
+use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Leaving, Overlay, Reframing, Series, Shape, TabKind, Trace};
 
 mod blockdrag;
 mod blockview;
@@ -118,6 +118,9 @@ pub struct Shown {
     /// The setting "inserting into a wire" (notation 2.6): a function of the panel `Palette` dropped on a wire that it
     /// can take goes into it. On in the IDE by default; the host says it.
     pub into_wire: bool,
+    /// The setting "drag between frames" on `stay` (notation 2.4): a plain drag of nodes released over another frame
+    /// keeps them in their frame, and Shift with it moves them into it. Off by default: a plain drag moves them.
+    pub stay_between_frames: bool,
 }
 
 impl Shown {
@@ -134,6 +137,11 @@ pub enum Intent {
     /// `node.move`: these nodes of one frame, as a command names them, by `[dx, dy]` in units (notation 2.4). The canvas
     /// shows them there until the next drawing, or until the host calls [`Canvas::cancel_move`].
     Move { nodes: Vec<String>, by: (i64, i64) },
+    /// `node.reframe`: these nodes of one frame, as a command names them, into the frame `within`, the first at `at` in
+    /// units of that frame (notation 2.4, "Moving nodes into another frame"). `through`: for each value that leaves a
+    /// loop, by its name, how each loop it leaves takes it out, from the inside out (commands.md 6.7). The canvas shows
+    /// them there until the next drawing, or until the host calls [`Canvas::cancel_move`].
+    Reframe { nodes: Vec<String>, within: InFrame, at: (i64, i64), through: Vec<(String, Vec<&'static str>)> },
     /// `layout.arrange` on these nodes: "Remove the fixed position" (notation 2.4).
     Arrange(Selection),
     /// `wire.connect` from an output to an input, as a command names them (commands.md 9.2): a wire dropped, or wired
@@ -809,8 +817,7 @@ impl Canvas {
 
     /// `node.move` for these nodes by `by`; none for a move by nothing, which leaves the nodes where they are.
     fn move_intent(&mut self, drawing: &Drawing, nodes: &[usize], by: (i64, i64)) -> Option<Intent> {
-        let names: Vec<String> =
-            nodes.iter().filter_map(|&at| drawing.placed.get(at)).map(|placed| placed.name.clone()).filter(|name| !name.is_empty()).collect();
+        let names = names_of(drawing, nodes);
         if by == (0, 0) || names.is_empty() {
             self.moving = None;
             return None;
@@ -1769,16 +1776,44 @@ impl Canvas {
             && let moving::State::Dragging { from } = moving.state
             && let Some(at) = response.interact_pointer_pos()
         {
-            moving.set_by(drawing, moving::snapped(unit_of(at) - from));
+            // Over another frame, the drop moves the nodes into it; Shift keeps them in theirs, and the setting swaps the
+            // two (notation 2.4).
+            let pointer = unit_of(at);
+            let entering = if modifiers.shift == shown.stay_between_frames {
+                frames::entered(drawing, &self.index, &moving.nodes, pointer, &visible)
+            } else {
+                None
+            };
+            moving.enter(drawing, entering, pointer);
+            moving.set_by(drawing, moving::snapped(pointer - from));
             ctx.request_repaint();
         }
         if response.drag_stopped_by(PointerButton::Primary)
             && let Some(moving) = self.moving.as_mut().filter(|moving| matches!(moving.state, moving::State::Dragging { .. }))
         {
-            moving.state = moving::State::Asked;
-            let (nodes, by) = (moving.nodes.clone(), moving.by);
-            let asked = self.move_intent(drawing, &nodes, by);
-            input.intents.extend(asked);
+            // Where the first node lands in the frame it enters, before the frame is let go.
+            let at = moving.landed(drawing);
+            match moving.entering.take() {
+                Some(entering) => match entering.verdict {
+                    Reframing::Takes { leaving } => {
+                        moving.state = moving::State::Asked;
+                        let nodes = names_of(drawing, &moving.nodes);
+                        let through = leaving_through(drawing, &leaving, modifiers.alt);
+                        input.intents.push(Intent::Reframe { nodes, within: entering.frame, at, through });
+                    }
+                    // Refused: the nodes go back, and the status bar says why (notation 2.5).
+                    Reframing::Refused(refusal) => {
+                        self.moving = None;
+                        input.intents.push(Intent::Say(refusal.message));
+                    }
+                },
+                None => {
+                    moving.state = moving::State::Asked;
+                    let (nodes, by) = (moving.nodes.clone(), moving.by);
+                    let asked = self.move_intent(drawing, &nodes, by);
+                    input.intents.extend(asked);
+                }
+            }
         }
         if response.drag_stopped_by(PointerButton::Primary) {
             if let Some(Drag::Rectangle { from, to, adding }) = self.drag.take() {
@@ -2495,6 +2530,7 @@ impl Canvas {
             self.paint_grips(&painter, frame, &selected_nodes, theme, &to_screen);
         }
         self.paint_wiring(&painter, frame, theme, &to_screen);
+        self.paint_entering(&painter, frame, theme, &to_screen);
         // The rectangle of selection under way, in `select.stroke`.
         if let Some(Drag::Rectangle { from, to, .. }) = self.drag {
             let area = Rect::from_two_pos(to_screen(from.to_vec2()), to_screen(to.to_vec2()));
@@ -2695,22 +2731,45 @@ impl Canvas {
             }
         }
         if let Some(refusal) = refused {
-            let corner = screen(wiring::reason_at(wiring.at));
-            let galley = painter.layout(refusal.message, egui::FontId::proportional(13.0), theme.color("mark.invalid"), 360.0);
-            let area = Rect::from_min_size(corner, galley.size()).expand(4.0);
-            painter.rect(area, 3.0, theme.color("canvas.fill"), egui::Stroke::new(1.0, theme.color("mark.invalid")), egui::StrokeKind::Inside);
-            painter.galley(corner, galley, theme.color("mark.invalid"));
+            paint_note(painter, theme, screen(wiring::reason_at(wiring.at)), refusal.message, theme.color("mark.invalid"));
         }
         if let Some(marks) = passing {
-            let corner = screen(wiring::reason_at(wiring.at));
-            let ink = theme.color(start.style.token);
-            let galley = painter.layout(marks, egui::FontId::proportional(13.0), ink, 360.0);
-            let area = Rect::from_min_size(corner, galley.size()).expand(4.0);
-            painter.rect(area, 3.0, theme.color("canvas.fill"), egui::Stroke::new(1.0, ink), egui::StrokeKind::Inside);
-            painter.galley(corner, galley, ink);
+            paint_note(painter, theme, screen(wiring::reason_at(wiring.at)), marks, theme.color(start.style.token));
         }
         if wiring.state == wiring::State::Dragging {
             frame.ctx.request_repaint();
+        }
+    }
+
+    /// The frame that nodes dragged would enter (notation 2.5): outlined in `select.stroke`, 3 outside it, with the marks
+    /// of the passages out of loops beside the pointer; one that refuses them, dashed in `mark.invalid`, with the reason
+    /// beside the pointer.
+    fn paint_entering(&self, painter: &egui::Painter, frame: &Frame, theme: Theme, to_screen: &dyn Fn(Vec2) -> Pos2) {
+        let Some(moving) = self.moving.as_ref().filter(|moving| matches!(moving.state, moving::State::Dragging { .. })) else { return };
+        let Some(entering) = &moving.entering else { return };
+        let Some(area) = select::body_rect(&frame.drawing, entering.body) else { return };
+        let zoom = self.viewport.zoom;
+        let area = Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2())).expand(3.0 * zoom);
+        let width = (style::mark_width() as f32 / 100.0 * zoom).max(1.0);
+        let (ink, text) = match &entering.verdict {
+            Reframing::Takes { leaving } => {
+                painter.rect_stroke(area, 0.0, egui::Stroke::new(width, theme.color("select.stroke")), egui::StrokeKind::Outside);
+                let alt = frame.ctx.input(|input| input.modifiers.alt);
+                let marks: Vec<String> = leaving_through(&frame.drawing, leaving, alt)
+                    .into_iter()
+                    .map(|(value, through)| format!("{value}: {}", wiring::passage_marks(&through)))
+                    .collect();
+                (theme.color("select.stroke"), marks.join("\n"))
+            }
+            Reframing::Refused(refusal) => {
+                let ink = theme.color("mark.invalid");
+                let corners = [area.left_top(), area.right_top(), area.right_bottom(), area.left_bottom(), area.left_top()];
+                painter.extend(egui::Shape::dashed_line(&corners, egui::Stroke::new(width, ink), 6.0 * zoom, 4.0 * zoom));
+                (ink, refusal.message.clone())
+            }
+        };
+        if !text.is_empty() {
+            paint_note(painter, theme, to_screen(wiring::reason_at(entering.pointer).to_vec2()), text, ink);
         }
     }
 
@@ -2868,6 +2927,32 @@ pub(crate) fn arms_shown(drawing: &Drawing, shown: &Shown) -> Vec<bool> {
         result.push(around && arm.arm == chosen);
     }
     result
+}
+
+/// A note beside the pointer, its top-left corner at `corner` on the screen: the reason of a refusal, or the passages out
+/// of loops, in `ink` on the canvas (notation 2.5).
+fn paint_note(painter: &egui::Painter, theme: Theme, corner: Pos2, text: String, ink: egui::Color32) {
+    let galley = painter.layout(text, egui::FontId::proportional(13.0), ink, 360.0);
+    let area = Rect::from_min_size(corner, galley.size()).expand(4.0);
+    painter.rect(area, 3.0, theme.color("canvas.fill"), egui::Stroke::new(1.0, ink), egui::StrokeKind::Inside);
+    painter.galley(corner, galley, ink);
+}
+
+/// The names of these nodes, by their index in [`Drawing::placed`], as a command names them: those that have one.
+fn names_of(drawing: &Drawing, nodes: &[usize]) -> Vec<String> {
+    nodes.iter().filter_map(|&at| drawing.placed.get(at)).map(|placed| placed.name.clone()).filter(|name| !name.is_empty()).collect()
+}
+
+/// `through` of `node.reframe`: for each value that leaves loops, the passages that the type of what reads it chooses, Alt
+/// the other ones (notation 2.5, "Out of a loop").
+fn leaving_through(drawing: &Drawing, leaving: &[Leaving], alt: bool) -> Vec<(String, Vec<&'static str>)> {
+    leaving
+        .iter()
+        .filter_map(|value| {
+            let (source, reader) = (drawing.ports.get(value.source)?, drawing.ports.get(value.reader)?);
+            Some((value.value.clone(), wiring::passages(drawing, source, reader, &value.exits, alt)))
+        })
+        .collect()
 }
 
 #[cfg(test)]
