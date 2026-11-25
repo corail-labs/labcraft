@@ -91,7 +91,7 @@ fn window(channel: &Path, root: &Path) -> (attach::Published, Arc<AtomicUsize>, 
         .stack_size(labcraft_format::STACK_SIZE)
         .spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            if attach::greet(&mut stream, &token, || Ok(())).is_err() {
+            if attach::greet(&mut stream, &token, |_| Ok(())).is_err() {
                 return;
             }
             let session = session(&root);
@@ -265,7 +265,7 @@ fn mcp_ends_when_the_window_closes() {
     let token = published.token().to_owned();
     let window = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        attach::greet(&mut stream, &token, || Ok(())).unwrap();
+        attach::greet(&mut stream, &token, |_| Ok(())).unwrap();
         stream.shutdown(std::net::Shutdown::Both).unwrap();
     });
     let mut child = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))

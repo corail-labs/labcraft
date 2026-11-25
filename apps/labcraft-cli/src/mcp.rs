@@ -14,7 +14,7 @@ use crate::disk::Disk;
 
 /// Why a root is refused (`docs/mcp.md`, 1): the user's home folder, a folder above it, or the root of a drive, from
 /// which an agent would reach every program under it.
-fn too_wide(root: &Path, home: Option<&Path>) -> Option<&'static str> {
+pub fn too_wide(root: &Path, home: Option<&Path>) -> Option<&'static str> {
     if root.parent().is_none() {
         return Some("is the root of a drive");
     }

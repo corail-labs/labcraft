@@ -5,7 +5,7 @@
     wix build -arch x64 -d Version=0.4.0 -bindpath Stage=dist\labcraft-0.4.0-windows-x64 -o labcraft.msi labcraft.wxs
 
   Per machine, in Program Files\LabCraft; a Start menu shortcut to `labcraft`; the folder added to the PATH of the
-  system, for `labcraft-cli`. The upgrade code never changes: a later version replaces an earlier one.
+  system, for `labcraft-cli`; the types `.lcf` and `.lct`, opened by `labcraft`. The upgrade code never changes: a later version replaces an earlier one.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
@@ -36,8 +36,25 @@
     </Feature>
 
     <ComponentGroup Id="Programs" Directory="INSTALLFOLDER">
+      <!-- With the program, its two types (#332): a double click on a `.lcf` or a `.lct` opens it in LabCraft, which
+           opens its project (cli.md 8); and its App Paths, so that Win+R `labcraft` starts it. The uninstall removes them
+           with the program. -->
       <Component>
         <File Id="labcraft.exe" Source="!(bindpath.Stage)\labcraft.exe" KeyPath="yes" />
+        <ProgId Id="LabCraft.Function" Description="LabCraft function" Icon="labcraft.exe" IconIndex="0">
+          <Extension Id="lcf">
+            <Verb Id="open" TargetFile="labcraft.exe" Argument="-- &quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <ProgId Id="LabCraft.Type" Description="LabCraft type" Icon="labcraft.exe" IconIndex="0">
+          <Extension Id="lct">
+            <Verb Id="open" TargetFile="labcraft.exe" Argument="-- &quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\labcraft.exe">
+          <RegistryValue Type="string" Value="[#labcraft.exe]" />
+          <RegistryValue Name="Path" Type="string" Value="[INSTALLFOLDER]" />
+        </RegistryKey>
       </Component>
       <!-- A shortcut is not a file: Windows Installer wants a value of the registry for its key path (ICE43, ICE57). -->
       <Component Id="StartMenu" Directory="ProgramMenuFolder">

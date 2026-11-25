@@ -142,6 +142,7 @@ fn spawn(folder: &std::path::Path, lib_paths: Vec<std::path::PathBuf>, style: Op
         user_settings: serde_json::Map::new(),
         style,
         new: false,
+        function: None,
         gesture_wait: labcraft_engine::gesture::WAIT,
     };
     let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();

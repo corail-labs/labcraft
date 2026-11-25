@@ -1067,8 +1067,22 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 ## 8. `labcraft`, the desktop IDE
 
 ```text
-labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
+labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER | FILE]
 ```
+
+- **`FILE`**, a `.lcf` or a `.lct` (the extension in any case, as the Explorer gives it; only a lower-case one is a
+  program of the project, spec 2), opens its project and shows it, as a double click on
+  it in the Explorer does once the installer of Windows has registered the two types (#332). Its project is the nearest
+  folder that holds `.labcraft/` (a folder a session opened once: its journal, its settings), from the folder of the
+  file up, at most 64 folders *(proposed)*, never the home folder, a folder above it or the root of a drive
+  ([mcp.md](mcp.md), 1); with none, the folder of the file. The function of a `.lcf` is shown first, in a tab that
+  stays, as a double click opens it (ide.md 3); a `.lct`, whose type has no tab yet (ide.md 4), opens its project and
+  says so; a `.lcf` that is no function of the project, too. When a window shows that project already, that window
+  shows the file and comes to the front (the system may only make it flash in the task bar), and the process ends: one
+  project per window, which keeps its own `--lib-path`, theme and `--style`. It asks through the control channel of the window (mcp.md 1), proving that it holds the token
+  of the window, as `labcraft-cli mcp` does; it is no agent, and the switch of AI does not refuse it. A window whose
+  channel does not answer is not asked: the process opens the project in a window of its own. Another file is a wrong
+  usage (exit 2).
 
 - It opens `FOLDER` as a project in the window of [ide.md](ide.md), as `diagram` reads it (section 7.1): the
   functions named from it, `--lib-path` as for `check`, the limits of section 1 at their defaults. It draws the

@@ -1,4 +1,4 @@
-//! `labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]` (`docs/cli.md`, section 8).
+//! `labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER | FILE]` (`docs/cli.md`, section 8).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -7,7 +7,10 @@ use labcraft_diagram::Theme;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
+    /// The folder given, or the project of the file given ([`crate::target`]).
     pub folder: Option<PathBuf>,
+    /// The file given, from `folder`, its folders joined by `/`: shown once the project is open. Not read here.
+    pub file: Option<String>,
     pub lib_paths: Vec<PathBuf>,
     /// The theme the viewer starts in; without it, the one of its preferences.
     pub theme: Option<Theme>,
@@ -16,10 +19,12 @@ pub struct Options {
 }
 
 pub const USAGE: &str = "\
-usage: labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
+usage: labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER | FILE]
 
 Opens FOLDER, a folder of LabCraft files, as a project in the window of the IDE, and draws its functions again
-when its files change. Without FOLDER, the window opens on the start page.
+when its files change. Without FOLDER, the window opens on the start page. FILE, a .lcf or a .lct, opens the
+nearest folder above it that was opened as a project (it holds .labcraft), else its own folder, and shows it; a
+window that shows that project already shows it instead.
 
 options:
   --lib-path DIR       also look for libraries in this folder; can be given several times
@@ -71,7 +76,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Asked, String> 
             Some(option) if !paths_only && option.starts_with('-') && option.len() > 1 => return Err(format!("unknown option `{option}`")),
             _ => {
                 if options.folder.is_some() {
-                    return Err("one folder at most".to_owned());
+                    return Err("one folder or file at most".to_owned());
                 }
                 options.folder = Some(PathBuf::from(arg));
             }
@@ -95,6 +100,7 @@ mod tests {
             parsed(&["--lib-path", "a", "--theme", "dark", "--lib-path", "b", "examples"]),
             Ok(Asked::Open(Options {
                 folder: Some("examples".into()),
+                file: None,
                 lib_paths: vec!["a".into(), "b".into()],
                 theme: Some(Theme::Dark),
                 style: None
@@ -108,7 +114,7 @@ mod tests {
     #[test]
     fn wrong_usage_says_why() {
         for (args, said) in [
-            (&["a", "b"][..], "one folder at most"),
+            (&["a", "b"][..], "one folder or file at most"),
             (&["--theme", "blue"][..], "--theme takes light or dark"),
             (&["--theme", "dark", "--theme", "light"][..], "--theme is given twice"),
             (&["--lib-path"][..], "--lib-path needs a folder"),

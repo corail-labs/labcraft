@@ -125,6 +125,8 @@ pub struct Agents {
     enabled: AtomicBool,
     /// Asks the window for a frame: a question came or went.
     wake: Box<dyn Fn() + Send + Sync>,
+    /// The files that `labcraft FILE` asked the window to show (cli.md 8), from the root, not taken yet.
+    shows: Mutex<Vec<String>>,
 }
 
 impl Agents {
@@ -142,7 +144,20 @@ impl Agents {
             asked: AtomicBool::new(false),
             enabled: AtomicBool::new(true),
             wake,
+            shows: Mutex::new(Vec::new()),
         }
+    }
+
+    /// `labcraft FILE` asks the window to show `file`, from the root (cli.md 8): no agent, so the switch of AI does not
+    /// refuse it.
+    pub fn ask_show(&self, file: String) {
+        self.shows.lock().unwrap_or_else(PoisonError::into_inner).push(file);
+        (self.wake)();
+    }
+
+    /// The files asked to be shown since the window last took them, the oldest first.
+    pub fn take_shows(&self) -> Vec<String> {
+        std::mem::take(&mut *self.shows.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -784,14 +799,24 @@ fn accept(listener: &TcpListener, closing: &AtomicBool, streams: &Streams, servi
     }
 }
 
-/// One connection: the proofs of the token, then MCP until it closes.
+/// One connection: the proofs of the token, then MCP until it closes; or a file to show, and nothing after.
 fn serve_connection(mut stream: TcpStream, serving: &Serving) {
-    let mut connection = None;
-    let greeted = attach::greet(&mut stream, &serving.token, || {
-        connection = Some(serving.agents.connected()?);
+    let (mut connection, mut show) = (None, None);
+    let greeted = attach::greet(&mut stream, &serving.token, |hello| {
+        match &hello.show {
+            Some(file) => show = Some(file.clone()),
+            None => connection = Some(serving.agents.connected()?),
+        }
         Ok(())
     });
     serving.greeting.fetch_sub(1, Ordering::SeqCst);
+    // Shown once the client was told it is: otherwise it opens the project in a window of its own.
+    if let Some(file) = show {
+        if greeted.is_ok() {
+            serving.agents.ask_show(file);
+        }
+        return;
+    }
     let Some(connection) = connection else { return };
     if let Ok(held) = stream.try_clone() {
         serving.agents.hold_stream(connection, held);

@@ -457,11 +457,13 @@ On Windows the job also builds an MSI, `labcraft-<version>-windows-x64.msi`, wit
 archives, also as `labcraft-windows-x64.msi`, a name that does not change with the version, for a link or an update
 (#331). Its version is that of `Cargo.toml` without its suffix, since Windows Installer reads three numbers. It
 installs per machine in `Program Files\LabCraft`, with a Start menu shortcut to `labcraft` and the folder in the
-`PATH` of the system, for `labcraft-cli`; its upgrade code never changes, so that a later version replaces an earlier
+`PATH` of the system, for `labcraft-cli`; it registers the types `.lcf` ("LabCraft function") and `.lct` ("LabCraft
+type"), opened by `labcraft.exe -- "%1"` with the icon of the program (cli.md 8, `FILE`), and the App Paths of
+`labcraft.exe`, so that Win+R `labcraft` starts it (#332); its upgrade code never changes, so that a later version replaces an earlier
 one, and the same version replaces itself (decisions of the owner, 2026-11-24); a file in use never restarts the
 machine. `wix build` and `wix msi validate` treat a warning as an error, but ICE61, which that replacement brings. `packaging/windows/try-msi.ps1` tries it on the runner: installed silently,
 `labcraft-cli version`, `check` of the installed examples and `labcraft --version` from the installed folder, the
-`PATH` and the shortcut, then uninstalled, leaving none of them.
+`PATH`, the shortcut, the two types and the App Paths, then uninstalled, leaving none of them.
 
 The binaries are not signed for the platforms yet. Windows is signed through SignPath (#255), on a tag pushed only,
 once the repository has the secret `SIGNPATH_API_TOKEN` and the variable `SIGNPATH_ORGANIZATION_ID`: the job sends
@@ -2153,7 +2155,8 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
 - **`labcraft`** (desktop): eframe, the disk with atomic writes and `append`, the watch of the files (11.5), a thread of
   `format::STACK_SIZE` per project for its session, the window of `ide`, a window of the system for each detached tab
   (`craft-window`), and the control channel of mcp.md 1: a listener on `127.0.0.1`, the token and the port in a file of
-  the folder of the user that only the user can read, one channel per project. The files are no longer read-only.
+  the folder of the user that only the user can read, one channel per project, which also takes the file that
+  `labcraft FILE` asks it to show (cli.md 8). The files are no longer read-only.
   In step 1a, one project per window is one process per project: a project opened from a window that shows one starts
   the program again on that folder, with the same `--lib-path` and `--style`. `New project` makes the folder, refuses
   one that is not empty (`path.exists`) and writes `main.lcf` (`labcraft 1`, then `fn main() -> () {}`) by

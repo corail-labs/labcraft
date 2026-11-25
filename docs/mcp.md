@@ -62,6 +62,9 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   and refuses it, or does not prove it holds the token, stops the server (exit 2, the reason and the file on stderr), as
   does a window whose switch of AI is off ([ide.md](ide.md) 8): it would otherwise edit the project of a window from a
   session of its own, or give the agent what another process says. When the window closes the connection, `mcp` ends (exit 1).
+  The same channel takes `labcraft FILE` for a project that the window shows ([cli.md](cli.md) 8): its first line
+  names the file to show, from the root, the proofs are made the same way, and the connection ends there, with no MCP
+  and no agent.
 - **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its resources are released. Attached, only a
   run that the agent started is aborted, not one of the user.
 

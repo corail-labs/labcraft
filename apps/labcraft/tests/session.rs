@@ -333,6 +333,7 @@ pub fn spawn(folder: &Path, lib_paths: Vec<PathBuf>, style: Option<PathBuf>, new
         user_settings: serde_json::Map::new(),
         style,
         new,
+        function: None,
         gesture_wait: labcraft_engine::gesture::WAIT,
     };
     let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();
