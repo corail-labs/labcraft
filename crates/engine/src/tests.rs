@@ -840,6 +840,65 @@ fn a_file_written_by_a_command_is_read_again_by_the_next_command_of_the_viewer()
     assert_eq!(view.errors, 1);
 }
 
+/// A project whose `main` calls `tinted`, which writes its own `color`: the block of the call is painted as written, unless the
+/// reader asks for neutral blocks (spec 11.2).
+fn tinted_project() -> (Session, Arc<Counting>) {
+    let (session, counting) = session();
+    counting.memory.put("/p/tinted.lcf", "labcraft 1\n\nfn tinted(x: f64) -> (y: f64) {\n    y = x\n}\n\nterminals {\n    color \"#2F6F9F\"\n}\n");
+    counting.memory.put("/p/main.lcf", "labcraft 1\n\nfn main(x: f64) -> (y: f64) {\n    y = tinted(x)\n}\n");
+    (session, counting)
+}
+
+/// The tint that the body of a block takes from `color "#2F6F9F"` in the light theme: `node.fill`, `#FFFFFF`, mixed with
+/// it at 16 % (visual notation 8, the tint of the body): 255 - 208 * 0.16 = 221.72 -> 222, 255 - 144 * 0.16 = 231.96 ->
+/// 232, 255 - 96 * 0.16 = 239.64 -> 240, that is 0xDEE8F0, as the drawing holds it: 222 * 65536 + 232 * 256 + 240.
+const TINT: &str = "14608624";
+
+/// Whether a drawing paints a block in [`TINT`].
+fn tinted(drawing: &labcraft_diagram::Drawing) -> bool {
+    format!("{drawing:?}").contains(TINT)
+}
+
+#[test]
+fn a_drawing_kept_for_a_file_that_no_longer_draws_follows_block_fill() {
+    let (mut session, counting) = tinted_project();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    let entry = ok(&mut session, "view.show_function", json!({ "function": "main" }));
+    let drawn = session.view().main.drawing.clone().unwrap();
+    assert!(tinted(&drawn), "the colour the file writes {entry} {}", session.view().errors);
+    counting.memory.put("/p/main.lcf", "labcraft 1\n\nfn main(x: f64) -> (y: f64) {\n    y = nowhere(x)\n}\n");
+    let entry = ok(&mut session, "view.show_function", json!({ "function": "main" }));
+    assert_eq!(entry["drawn"].as_bool(), Some(false), "{entry}");
+    assert!(session.view().main.kept);
+    ok(&mut session, "settings.set", json!({ "key": "appearance.block_fill", "value": "neutral" }));
+    let view = session.view();
+    assert!(view.main.kept, "still the drawing of the last good file");
+    let shown = view.main.drawing.clone().unwrap();
+    assert!(!tinted(&shown), "neutral: no colour of the file");
+    assert!(view.errors > 0, "the diagnostics of the file stay");
+    // And back: the colour the file writes again.
+    ok(&mut session, "settings.set", json!({ "key": "appearance.block_fill", "value": "code" }));
+    let shown = session.view().main.drawing.clone().unwrap();
+    assert!(session.view().main.kept && tinted(&shown));
+}
+
+#[test]
+fn a_drawing_kept_for_a_file_that_no_longer_draws_follows_color_by_type() {
+    let (mut session, counting) = session();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    // By default the wires are coloured by type.
+    assert!(session.view().main.drawing.clone().unwrap().by_type);
+    counting.memory.put("/p/double.lcf", DOUBLE_BROKEN);
+    let entry = ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(entry["drawn"].as_bool(), Some(false), "{entry}");
+    ok(&mut session, "settings.set", json!({ "key": "appearance.color_by_type", "value": false }));
+    let view = session.view();
+    assert!(view.main.kept && !view.main.drawing.as_ref().unwrap().by_type);
+    ok(&mut session, "settings.set", json!({ "key": "appearance.color_by_type", "value": true }));
+    let view = session.view();
+    assert!(view.main.kept && view.main.drawing.as_ref().unwrap().by_type);
+}
+
 #[test]
 fn a_function_skipped_is_shown_without_a_drawing() {
     let (mut session, _) = session();
