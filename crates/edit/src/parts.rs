@@ -50,7 +50,7 @@ fn put_back(edit: &mut Edit, loc: &Loc, statement: Statement) -> Result<(), Edit
 
 /// One statement read from its text, in a function of its own, with the names of `edit`: what the grammar reads is what
 /// a command writes. The message of the parser when it does not read; none when it reads as something else.
-fn read_one(edit: &mut Edit, text: &str) -> Result<Option<Statement>, String> {
+pub(crate) fn read_one(edit: &mut Edit, text: &str) -> Result<Option<Statement>, String> {
     let wrapped = format!("labcraft 1\n\nfn f() -> () {{\n{text}}}\n");
     let limits = edit.limits().clone();
     let reading = read(wrapped.as_bytes(), &mut edit.names, &limits);

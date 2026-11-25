@@ -1575,6 +1575,7 @@ impl Ide {
                 | keys::SURROUND_HANDLE
                 | keys::SURROUND_FOR
                 | keys::SURROUND_LOOP
+                | keys::EXTRACT_FUNCTION
                 | keys::ADD_ARM
                 | keys::ADD_CARRY
                 | keys::ADD_CLAUSE
@@ -1978,6 +1979,40 @@ impl Ide {
         self.values = Some(values::ValueList::new(function.to_owned(), file, kind, around, screen, seen, canvas));
     }
 
+    /// "Make a function…" (notation 2.6): the field of the name of the new function on the nodes selected on the canvas of
+    /// `function`, `new_function` proposed, numbered when a file of its folder has it (N-14). `nodes`: those of the
+    /// context menu; none, the selection.
+    fn extract(&mut self, view: &Published, function: &str, nodes: Option<Vec<String>>) {
+        let Some(file) = file_of(view, function) else { return };
+        if let Some(why) = self.diagram_locked(view, &file, true) {
+            self.say(why);
+            return;
+        }
+        let Some(window) = view.window_of(function) else { return };
+        let nodes = nodes.unwrap_or_else(|| canvas_shown(window, &self.settings).selection.nodes.clone());
+        if nodes.is_empty() {
+            self.say("Make a function: select the nodes to move into it");
+            return;
+        }
+        let folder = file.rsplit_once('/').map(|(folder, _)| folder);
+        let taken: std::collections::BTreeSet<String> = view
+            .functions
+            .iter()
+            .filter_map(|listed| {
+                let (other, stem) = match listed.file.rsplit_once('/') {
+                    Some((other, name)) => (Some(other), name),
+                    None => (None, listed.file.as_str()),
+                };
+                (other == folder).then(|| stem.trim_end_matches(".lcf").to_owned())
+            })
+            .collect();
+        let proposed = labcraft_editor::fresh("new_function", &taken);
+        let opened = self.drawn.get_mut(function).is_some_and(|drawn| drawn.canvas.edit_extract(nodes, proposed));
+        if !opened {
+            self.say("Make a function: the nodes selected are not drawn, or a field waits for its answer");
+        }
+    }
+
     /// Why the window does not edit the function of `file` now, if it does not: its text does not parse, and nothing of
     /// the window edits it (commands.md 9.1); or, for a command on what the canvas shows (`on_drawing`: the selection, the
     /// function shown, the inspector), it no longer draws, and the drawing kept is not the file (ide.md 3).
@@ -2217,6 +2252,7 @@ impl Ide {
                 | keys::SURROUND_HANDLE
                 | keys::SURROUND_FOR
                 | keys::SURROUND_LOOP
+                | keys::EXTRACT_FUNCTION
                 | keys::ADD_ARM
                 | keys::ADD_CARRY
                 | keys::ADD_CLAUSE
@@ -2372,6 +2408,12 @@ impl Ide {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(host), Some(function), Some(kind)) = (host, function, keys::surround_kind(&id)) else { return };
                 self.surround(host, view, &function, kind, None);
+            }
+            // "Make a function…" (notation 2.6): the field of its name on the selection.
+            keys::EXTRACT_FUNCTION => {
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let Some(function) = function else { return };
+                self.extract(view, &function, None);
             }
             // The parts of the one structure selected (notation 2.6): as its context menu gives them.
             keys::ADD_ARM | keys::ADD_CARRY | keys::ADD_CLAUSE | keys::CONTINUE_ON_ERROR | keys::PARALLEL => {
@@ -2594,6 +2636,7 @@ fn field_command(file: &str, kind: labcraft_editor::FieldKind, text: &str, accep
         }
         FieldKind::AddTerminal { input } => ("signature.add", terminal_params(file, input, text)),
         FieldKind::FunctionName => ("function.rename", json!({ "file": file, "name": text })),
+        FieldKind::Extract { nodes } => ("function.extract", json!({ "file": file, "nodes": nodes, "name": text })),
     }
 }
 
@@ -3350,6 +3393,7 @@ impl Content<'_> {
                 }
                 // "Surround with ▸" of the context menu of a node (notation 2.6).
                 Intent::Surround { kind, nodes } => self.ide.surround(self.host, view, function, kind, Some(nodes)),
+                Intent::Extract { nodes } => self.ide.extract(view, function, Some(nodes)),
                 // A terminal of a node made an input or an output of the function, in one step (notation 2.4).
                 Intent::MakeTerminal { terminal, ty, from, to } => {
                     if let Some(file) = file_of(view, function) {

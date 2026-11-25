@@ -519,6 +519,7 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 | Command | Parameters | What it does |
 |---|---|---|
 | `function.create` | `path`, *`doc`*, *`expected_revision`* | Writes a new function, `fn name() -> () {}`, named after its file (R-22). An existing file is `path.exists` |
+| `function.extract` | `file`, `nodes`, `name`, *`expected_revision`* | Moves the nodes, of one frame, into a new function `name`, in the folder of `file`, and puts a call to it in their place, one step over both files; see 9.8. What the nodes read from outside becomes its inputs, what they give outside its outputs, named as the values. `names.function`, `names.file` and `names.node` give what it made |
 | `function.rename` | `file`, `name`, *`expected_revision`* | Renames the function and its file, in its folder (R-22). It updates every call and every reference to it in the project, in the same step (decision of the owner, 2026-11-15): a call (`f(…)`, `lib.f(…)`, `a.b.f(…)` from a sub-library) and a function passed as a value (`measure: f`), but not a value of the function that holds it whose name it bears (spec 4). A new name that a file it changes already gives a value, a generic variable or a library it uses, which would read the renamed uses as that, is `name.taken`, and nothing is written (decision of the owner, 2026-11-19). `names.file` gives its new file; a name whose file exists is `path.exists`. The tabs and the windows that show the function follow it |
 | `function.set_doc` | `file`, `doc`, *`expected_revision`* | Writes the documentation comment (`///`); an empty text removes it |
 | `signature.add` | `file`, `terminal`, `type`, *`default`* (required), *`position`* (the last, before `err`), *`expected_revision`* | Adds an input (`input x`) or an output (`output x`). Callers are not changed: a new required input gives each of them `LC2101`. An output named like a value that a line of the body of the function binds is given by that line, as the text writes it (spec 5.2). A `type` of a library adds its `use`, and renames a value named after that library (9.2) |
@@ -544,7 +545,7 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 | `history.redo` | | Redoes the last step undone, under the same rules |
 | `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
 | `commands.execute` | `id`, *`params`* (`{}`) | Runs the command `id` with `params`, as its own tool would (mcp.md 2): the MCP server reaches through it every command that is not a tool of its own. It returns what that command returns, and its errors. Its effects are those of the command it runs: the policy of an agent (ide.md 8), the author, the line of the journal and the label of the step are that command's. `commands.execute` itself and `commands.batch` are `params.invalid`, and so is `commands.execute` inside a batch |
-| `commands.batch` | `commands`, *`label`* (the labels of its commands), *`expected_revision`* | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 6.7 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window, `function.create`, `function.rename`, `type.create` and `type.rename`, which make or rename a file, `library.set_mask`, which writes a manifest, and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`). Before its commands, each node that they name by its line (`@N`, 9.2) and that the `layout` section cannot name gets its label, as `node.move` gives it, in one pass over the text before the batch, and each `@N` is read as that label: a label that a command gives can move lines (spec 5.2), and a later `@N` would name another node (decision of the owner, 2026-11-17). The `renamed` of the first command that names it says so. In a parameter that names a node, a wire or an input (9.2), `$i` names the node that the earlier command `i` of the batch named, its `names.node`: `[{ "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } }, { "id": "wire.connect", "params": { "file": "f.lcf", "from": "reading", "to": "$0.x" } }]` is quick insertion from a wire (notation 2.6), one step; a node renamed later in the batch (folded into an output, given a label) keeps its `$i` under its new name. A `$i` is a whole name, at the start of the parameter or of the end of a wire after its arrow, followed by `.`, a space or nothing, its number without a leading zero (`$0`, `$0.x`, `reading -> $0.x`; not `$0x`, `$01`), and the `$i` of one command bring at most 1 MiB *(proposed)*; otherwise, or for a `$i` of a command that is not earlier, or that named no node, it is `params.invalid` (decision of the owner, 2026-11-17) |
+| `commands.batch` | `commands`, *`label`* (the labels of its commands), *`expected_revision`* | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 6.7 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window, `function.create`, `function.extract`, `function.rename`, `type.create` and `type.rename`, which make or rename a file, `library.set_mask`, which writes a manifest, and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`). Before its commands, each node that they name by its line (`@N`, 9.2) and that the `layout` section cannot name gets its label, as `node.move` gives it, in one pass over the text before the batch, and each `@N` is read as that label: a label that a command gives can move lines (spec 5.2), and a later `@N` would name another node (decision of the owner, 2026-11-17). The `renamed` of the first command that names it says so. In a parameter that names a node, a wire or an input (9.2), `$i` names the node that the earlier command `i` of the batch named, its `names.node`: `[{ "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } }, { "id": "wire.connect", "params": { "file": "f.lcf", "from": "reading", "to": "$0.x" } }]` is quick insertion from a wire (notation 2.6), one step; a node renamed later in the batch (folded into an output, given a label) keeps its `$i` under its new name. A `$i` is a whole name, at the start of the parameter or of the end of a wire after its arrow, followed by `.`, a space or nothing, its number without a leading zero (`$0`, `$0.x`, `reading -> $0.x`; not `$0x`, `$01`), and the `$i` of one command bring at most 1 MiB *(proposed)*; otherwise, or for a `$i` of a command that is not earlier, or that named no node, it is `params.invalid` (decision of the owner, 2026-11-17) |
 | `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from", "project" }] }`, in the order of the table of 9.7; `from` is `project`, `user` or `default`, and `project` says whether a project may hold the key. An unknown key is `params.invalid` |
 | `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project (9.7), and returns `{ "before": …, "scope": "user" }`, `before` being what that store held, `null` for nothing. `value: null` takes the key out of the store: the other store or the default gives it again (`Reset`). A setting is not a program, so this is not a step of history. An unknown key, a value of the wrong type, or `scope: "project"` for a key that a project may not hold, is `params.invalid` |
 
@@ -1006,6 +1007,53 @@ saying so (decision of the owner, 2026-11-15).
 The settings of AI and of the agents (`ai.*`, ide.md 8) are the user's: an agent neither reads nor writes them
 (`agent.not_allowed`), and `settings.get` without a key leaves them out for it. Where the
 panels are, the detached windows and the insertions of the user are the state of the window, kept with it, not keys.
+
+### 9.8 Making a function from a selection
+
+`function.extract` moves nodes into a new function, and puts a call to it in their place, as one step of undo over
+both files (decisions of the owner, 2026-11-24).
+
+- **The nodes** are in one frame, as for `structure.surround` (9.6): the body of the function, of a loop, or an arm;
+  a structure goes with all it holds. Nodes of several frames, or none, are `params.invalid`, and so is a `next`, a
+  `collect`, a `last` or an `until`, which stays in its loop (R-6). So is a node that reads or writes a panel element
+  (`ui.get`, `ui.set`, spec 10): the elements belong to their call (spec 8.2), and in a new function the node would
+  reach other ones (Q-24).
+- **The new file** is `name.lcf`, in the folder of `file`: the same library, so the call needs no `use`. It holds the
+  `use` lines that its body needs, the signature, and the lines of the nodes in the order of the text, what each
+  holds (constants, the nodes inside a structure) and the order wires between them; no documentation comment. A
+  `name` that is not an identifier or is a keyword is `name.invalid`; one that a function or a type of the library
+  already bears, that names a library that the file imports, or that the caller gives a value or a generic variable,
+  which would read the call as that (as for `function.rename`), is `name.taken`; an existing file is `path.exists`.
+  Nothing is written then.
+- **Inputs.** Each value that the nodes read and that is bound outside them (an input of the function, a line, a
+  carry, an `in` clause, a pattern) is an input, in the order of the text where the nodes first read it, named as
+  the value, with no default, of the type that `check` gives it; the new file imports the library that such a type
+  names (`visa.session`). A value whose type is not known yet, or whose type names a generic variable of the caller,
+  is `params.invalid`, and the message names it: wiring it or typing it comes first. An order wire from outside (`after: #beep`) goes to the call.
+- **Outputs.** Each value that the nodes bind and that is read outside them, an output of the function included, is
+  an output, in the order of the text, named as the value: the call binds the same names, so what reads them outside
+  does not change. A labelled node of the selection named by an order wire from outside (`after: #close`) gives its
+  label to the call; two such labels are `params.invalid`. When nothing leaves, the call has no output and gets a
+  label, `#name`, numbered when taken (N-14). A node outside that reads what the nodes make and that they read is
+  `wire.cycle`: the call would read its own output.
+- **The error chain**, as in 9.6: when exactly one value of type `error` enters the nodes and exactly one leaves
+  them, and no other value of the new function bears `err`, they become `err: error = none`, the last input, and
+  `err`, the last output (spec 7). Inside, the readers of the error that entered read `err`, which `renamed` lists; the
+  error that leaves is renamed `err`, or, when the nodes also read it, given by a line `err = e2`, since a reader of
+  `err` reads the input (R-2).
+- **The call** is one line, where the first line of the nodes was: its positional arguments in the order of the
+  inputs, `err:` named, as the examples write it (`raw, dmm2, e2 = read_dmm(resource, err: err)`).
+- **Places.** In the caller, the entries of `layout` of the nodes and of the wires between them leave, and the call
+  gets a `node … at` entry at the top-left corner of the box of the nodes as drawn, so that it stands where they were;
+  the route of a wire that crossed the edge of the selection goes, and the automatic routing draws it. In the new
+  function, each node gets an entry, the nodes keeping their places relative to one another, the top-left corner of
+  their box where the automatic placement of that function puts the top-left corner of its nodes, and the wires
+  between them keep their `via` points, as for `fragment.paste`.
+- **What stays.** The `use` lines of the caller stay, as after `node.delete`. The callers of the caller do not
+  change: its signature does not.
+- `names.function` gives the name of the new function, `names.file` its file, and `names.node` the call, as a command
+  names it; `files` gives both files. Undo removes the new file and gives the caller back, byte for byte (9.1).
+  Like `function.create`, it makes a file: `commands.batch` refuses it.
 
 ## 10. Left for later
 

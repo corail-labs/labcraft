@@ -856,7 +856,7 @@ fn read_carry(edit: &mut Edit, inner: &[scope::Step], error: Name, carry: Name) 
 }
 
 /// A `node … at` entry for a node that has none.
-fn push_entry(edit: &mut Edit, named: Designation, at: Point, view: Option<View>) -> Result<(), EditError> {
+pub(crate) fn push_entry(edit: &mut Edit, named: Designation, at: Point, view: Option<View>) -> Result<(), EditError> {
     crate::add::in_range(at, "nodes")?;
     let point = labcraft_graph::Point { id: edit.id(), x: crate::add::coordinate(edit, at.x), y: crate::add::coordinate(edit, at.y) };
     let node = NodeRef { id: edit.id(), is_label: named.is_label, name: named.name };

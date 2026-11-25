@@ -612,6 +612,16 @@ first, then in the order of the text. Enter surrounds, Escape cancels and writes
 (`true` and `false`, each variant), and the nodes go into the first. A `loop` surrounds at once (decision of the owner,
 2026-11-18).
 
+**Making a function.** "Make a function…", in the context menu of a selection, the menu `Edit` and the command
+palette, moves the selected nodes, of one frame, into a new function of the same folder, and puts a call to it in
+their place (`function.extract`, [commands.md](commands.md), 9.8), one step over both files; the call stands where the
+nodes were, and what reads their values outside still reads them. A field opens on the selection with the name
+`new_function`, numbered when taken (N-14), selected: Enter makes the function, Escape writes nothing, and a name that
+is taken or invalid keeps the field open with its reason. What the nodes read from outside becomes the inputs of the
+function, what they give outside its outputs, named as the values; an error that enters and one that leaves become its
+`err`. The entry is greyed, its tooltip saying why, for nodes of several frames; for a value that crosses with no known
+type, or a node that reads a panel element, the field says why and writes nothing (decisions of the owner, 2026-11-24).
+
 **The parts of a structure.** Each gesture is one step of undo ([commands.md](commands.md), 6.7). "Add arm…", "Add
 carry…", "Add clause…", "Continue on error" and "Parallel" are also in the menu `Edit` and the command palette, on the one
 structure selected:

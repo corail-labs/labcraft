@@ -53,7 +53,7 @@ pub use frames::{InFrame, STRUCTURES, Seen};
 pub use parts::PartAsked;
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
-pub use signature::{default_is_cut, frame_default, frame_height, frame_terminal, own_name};
+pub use signature::{default_is_cut, frame_default, frame_height, frame_terminal, fresh, own_name};
 pub use touched::{HIGHLIGHT_SECONDS, Touched, touched};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
@@ -175,6 +175,9 @@ pub enum Intent {
     /// or the selection that holds it) with a structure of this kind (`match`, `handle`, `for`, `loop`), and first asks for
     /// its value where it needs one.
     Surround { kind: &'static str, nodes: Vec<String> },
+    /// "Make a function…" of the context menu of a node (notation 2.6): the host opens the field of its name on `nodes`
+    /// (the node right-clicked, or the selection that holds it), [`Canvas::edit_extract`].
+    Extract { nodes: Vec<String> },
     /// A field in place written (notation 2.6): the host sends its command, and calls [`Canvas::close_field`] when it is
     /// done or [`Canvas::field_refused`] with the message of a refusal.
     Field { kind: FieldKind, text: String },
@@ -1351,7 +1354,11 @@ impl Canvas {
         // The block of a function of the project: its terminals can go back to their defaults (notation 2.4).
         let callee = frame.drawing.placed.get(placed).map(|found| found.callee.clone()).unwrap_or_default();
         let mut reset = false;
-        let (mut arrange, mut label, mut surround) = (false, false, None);
+        let (mut arrange, mut label, mut surround, mut extract) = (false, false, None, false);
+        // The node right-clicked, or the selection when it holds that node.
+        let around = if name.is_empty() || shown.selection.nodes.contains(&name) { shown.selection.nodes.clone() } else { vec![name.clone()] };
+        let frames: std::collections::BTreeSet<usize> =
+            frame.drawing.placed.iter().filter(|found| !found.name.is_empty() && around.contains(&found.name)).map(|found| found.body).collect();
         let shown_arm = |index: usize| frame.arms.get(index).copied().unwrap_or(false);
         let (context_arm, context_port) = (self.context_arm, self.context_port);
         let mut part = None;
@@ -1381,6 +1388,13 @@ impl Canvas {
                     }
                 }
             });
+            // Greyed for nodes of several frames (commands.md 9.8).
+            let one_frame = frames.len() <= 1 && !around.is_empty();
+            let button = ui.add_enabled(one_frame, egui::Button::new("Make a function…"));
+            if button.on_disabled_hover_text("The nodes of a function are in one frame").clicked() {
+                extract = true;
+                ui.close();
+            }
             // Built while the menu shows, not on each frame of the canvas.
             if let Some(parts) = parts::PartsMenu::of(&frame.drawing, placed, context_arm, context_port, &shown_arm) {
                 part = parts.ui(ui);
@@ -1419,9 +1433,11 @@ impl Canvas {
             None => {}
         }
         if let Some(kind) = surround {
-            // The node right-clicked, or the selection when it holds that node.
-            let nodes = if name.is_empty() || shown.selection.nodes.contains(&name) { shown.selection.nodes.clone() } else { vec![name.clone()] };
-            input.intents.push(Intent::Surround { kind, nodes });
+            input.intents.push(Intent::Surround { kind, nodes: around.clone() });
+            self.context = None;
+        }
+        if extract {
+            input.intents.push(Intent::Extract { nodes: around });
             self.context = None;
         }
         if unsize {

@@ -95,6 +95,9 @@ pub const SURROUND_MATCH: &str = "ide.surround_match";
 pub const SURROUND_HANDLE: &str = "ide.surround_handle";
 pub const SURROUND_FOR: &str = "ide.surround_for";
 pub const SURROUND_LOOP: &str = "ide.surround_loop";
+/// "Make a function…" (notation 2.6): the nodes selected moved into a new function, after the field of its name
+/// (`function.extract`, commands.md 9.8; decisions of the owner, 2026-11-24).
+pub const EXTRACT_FUNCTION: &str = "ide.extract_function";
 
 /// The kind of structure of a command "Surround with ▸".
 pub fn surround_kind(id: &str) -> Option<&'static str> {
@@ -196,6 +199,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (SURROUND_HANDLE, "Surround with handle"),
     (SURROUND_FOR, "Surround with for"),
     (SURROUND_LOOP, "Surround with loop"),
+    (EXTRACT_FUNCTION, "Make a function from the selection"),
     (ADD_ARM, "Add an arm to the structure selected"),
     (ADD_CARRY, "Add a carry to the loop selected"),
     (ADD_CLAUSE, "Add a clause to the for selected"),
@@ -327,6 +331,7 @@ pub fn menus(ai: bool) -> MenuBar {
             item(SURROUND_HANDLE, "Surround with handle…"),
             item(SURROUND_FOR, "Surround with for…"),
             item(SURROUND_LOOP, "Surround with loop"),
+            item(EXTRACT_FUNCTION, "Make a function…"),
             item(ADD_ARM, "Add arm…"),
             item(ADD_CARRY, "Add carry…"),
             item(ADD_CLAUSE, "Add clause…"),

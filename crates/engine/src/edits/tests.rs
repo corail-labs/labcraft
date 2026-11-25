@@ -781,6 +781,121 @@ fn a_new_function_is_one_step_that_undo_removes() {
     assert_eq!(memory.get("/p/h.lcf"), None);
 }
 
+/// The coordinates of the `node NAME at (x, y)` entry of a text.
+fn entry(text: &str, name: &str) -> (i64, i64) {
+    let rest = text.split(&format!("    node {name} at (")).nth(1).unwrap_or_else(|| panic!("no entry for {name}: {text}"));
+    let (x, rest) = rest.split_once(", ").unwrap();
+    let y = rest.split_once(')').unwrap().0;
+    (x.parse().unwrap(), y.parse().unwrap())
+}
+
+/// Three nodes become a function of their own (commands.md 9.8, scenario 9 of acceptance-m1.md): what they read from
+/// outside its inputs, what is read outside its output, named as the values; the call where the nodes were, the nodes
+/// apart as they were; one step over both files, which undo takes back. The texts are written by hand from 9.8.
+#[test]
+fn nodes_become_a_function_and_a_call_in_their_place() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(v: f64[V], low: f64[V], high: f64[V]) -> (ok: bool) {\n    above = core.ge(v, low)\n    below = core.le(v, high)\n    in_range = core.and(above, below)\n    ok = in_range\n}\n\nlayout {\n    node above at (40, 80)\n    node below at (40, 160)\n    node in_range at (120, 120)\n}\n";
+    memory.put("/p/h.lcf", before);
+    let result = ok(&mut session, "function.extract", json!({ "file": "h.lcf", "nodes": ["above", "below", "in_range"], "name": "in_limits" }));
+    assert_eq!(result["names"], json!({ "function": "in_limits", "file": "in_limits.lcf", "node": "in_range" }));
+    let caller = "labcraft 1\n\nuse core\n\nfn h(v: f64[V], low: f64[V], high: f64[V]) -> (ok: bool) {\n    in_range = in_limits(v, low, high)\n    ok = in_range\n}\n\nlayout {\n    node in_range at (40, 80)\n}\n";
+    assert_eq!(text(&memory, "/p/h.lcf"), caller);
+    let made = text(&memory, "/p/in_limits.lcf");
+    let (x, y) = entry(&made, "above");
+    let expected = format!(
+        "labcraft 1\n\nuse core\n\nfn in_limits(v: f64[V], low: f64[V], high: f64[V]) -> (in_range: bool) {{\n    above = core.ge(v, low)\n    below = core.le(v, high)\n    in_range = core.and(above, below)\n}}\n\nlayout {{\n    node above at ({x}, {y})\n    node below at ({x}, {})\n    node in_range at ({}, {})\n}}\n",
+        y + 80,
+        x + 80,
+        y + 40
+    );
+    assert_eq!(made, expected);
+    // The new file first: it is written before the caller.
+    assert_eq!(result["files"], json!([{ "file": "in_limits.lcf", "revision": sha(&made) }, { "file": "h.lcf", "revision": sha(caller) }]));
+    assert_eq!(result["summary"]["errors"], 0, "{result}");
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    assert_eq!(memory.get("/p/in_limits.lcf"), None);
+    ok(&mut session, "history.redo", json!({}));
+    assert_eq!((text(&memory, "/p/h.lcf"), text(&memory, "/p/in_limits.lcf")), (caller.to_owned(), made));
+}
+
+/// One error that enters and one that leaves become the `err` of the new function, the last on each side; the caller
+/// still binds its own names (commands.md 9.8, 9.6). A name that is taken or is no name, and a batch, are refused.
+#[test]
+fn the_error_chain_becomes_err_and_a_taken_name_is_refused() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse time\n\nfn w(err: error = none) -> (err: error) {\n    e1 = time.wait(1 s, err: err)\n    e2 = time.wait(2 s, err: e1)\n    err = time.wait(3 s, err: e2)\n}\n";
+    memory.put("/p/w.lcf", before);
+    let agent = Author::Agent("claude".to_owned());
+    let taken = refused(&mut session, &agent, "function.extract", json!({ "file": "w.lcf", "nodes": ["e1"], "name": "f" }));
+    assert_eq!((taken.code, taken.parameter.as_deref()), ("name.taken", Some("name")));
+    let library = refused(&mut session, &agent, "function.extract", json!({ "file": "w.lcf", "nodes": ["e1"], "name": "time" }));
+    assert_eq!(library.code, "name.taken");
+    // A value of the caller: the call would read as that value (as for `function.rename`).
+    let value = refused(&mut session, &agent, "function.extract", json!({ "file": "w.lcf", "nodes": ["e1"], "name": "e2" }));
+    assert_eq!(value.code, "name.taken");
+    let invalid = refused(&mut session, &agent, "function.extract", json!({ "file": "w.lcf", "nodes": ["e1"], "name": "2nd" }));
+    assert_eq!(invalid.code, "name.invalid");
+    let batch = json!({ "commands": [{ "id": "function.extract", "params": { "file": "w.lcf", "nodes": ["e1"], "name": "g2" } }] });
+    assert_eq!(refused(&mut session, &agent, "commands.batch", batch).code, "params.invalid");
+    assert_eq!(text(&memory, "/p/w.lcf"), before);
+    let result = ok(&mut session, "function.extract", json!({ "file": "w.lcf", "nodes": ["e1", "e2"], "name": "wait_twice" }));
+    assert_eq!(result["names"]["node"], "e2");
+    // The nodes were placed automatically: the call is fixed where the drawing had them, and so are they in the new
+    // function, which the drawing gives (9.8); their places are checked by the test above, on entries written by hand.
+    let caller = text(&memory, "/p/w.lcf");
+    let (x, y) = entry(&caller, "e2");
+    assert_eq!(
+        caller,
+        format!(
+            "labcraft 1\n\nuse time\n\nfn w(err: error = none) -> (err: error) {{\n    e2 = wait_twice(err: err)\n    err = time.wait(3 s, err: e2)\n}}\n\nlayout {{\n    node e2 at ({x}, {y})\n}}\n"
+        )
+    );
+    let made = text(&memory, "/p/wait_twice.lcf");
+    let body = "labcraft 1\n\nuse time\n\nfn wait_twice(err: error = none) -> (err: error) {\n    e1 = time.wait(1 s, err: err)\n    err = time.wait(2 s, err: e1)\n}\n";
+    assert!(made.starts_with(body), "{made}");
+    // The entry of the node that gave `e2` follows its new name.
+    let (e1, err) = (entry(&made, "e1"), entry(&made, "err"));
+    assert!(err.0 > e1.0, "{made}");
+    assert_eq!(result["summary"]["errors"], 0, "{result}");
+    // An error that leaves and that the nodes read too is given by a line `err = e2`: renamed, its reader would read the
+    // input `err` (R-2).
+    let read = "labcraft 1\n\nuse time\n\nfn r(err: error = none) -> (err: error) {\n    e1 = time.wait(1 s, err: err)\n    e2 = time.wait(2 s, err: e1)\n    e3 = time.wait(3 s, err: e2)\n    err = e2\n}\n";
+    memory.put("/p/r.lcf", read);
+    ok(&mut session, "function.extract", json!({ "file": "r.lcf", "nodes": ["e1", "e2", "e3"], "name": "three" }));
+    let caller = text(&memory, "/p/r.lcf");
+    assert!(
+        caller.starts_with("labcraft 1\n\nuse time\n\nfn r(err: error = none) -> (err: error) {\n    e2 = three(err: err)\n    err = e2\n}\n"),
+        "{caller}"
+    );
+    let made = text(&memory, "/p/three.lcf");
+    let body = "labcraft 1\n\nuse time\n\nfn three(err: error = none) -> (err: error) {\n    e1 = time.wait(1 s, err: err)\n    e2 = time.wait(2 s, err: e1)\n    e3 = time.wait(3 s, err: e2)\n    err = e2\n}\n";
+    assert!(made.starts_with(body), "{made}");
+    // A node that reads the input `err` and binds the output of its name (R-2): the input enters, the output leaves.
+    let both = "labcraft 1\n\nuse time\n\nfn m(err: error = none) -> (err: error) {\n    err = time.wait(1 s, err: err)\n}\n";
+    memory.put("/p/m.lcf", both);
+    ok(&mut session, "function.extract", json!({ "file": "m.lcf", "nodes": ["err"], "name": "once" }));
+    let caller = text(&memory, "/p/m.lcf");
+    assert!(caller.starts_with("labcraft 1\n\nuse time\n\nfn m(err: error = none) -> (err: error) {\n    err = once(err: err)\n}\n"), "{caller}");
+    let made = text(&memory, "/p/once.lcf");
+    assert!(
+        made.starts_with("labcraft 1\n\nuse time\n\nfn once(err: error = none) -> (err: error) {\n    err = time.wait(1 s, err: err)\n}\n"),
+        "{made}"
+    );
+    // A text not in canonical form: the types are those of its canonical form, which the command writes.
+    let loose = "labcraft 1\n\nuse core\n\nfn n(x: f64) -> (y: f64) {\n    y = core.add(a, 1.0)\n    a = core.mul(x, 2.0)\n}\n";
+    memory.put("/p/n.lcf", loose);
+    ok(&mut session, "function.extract", json!({ "file": "n.lcf", "nodes": ["y"], "name": "plus_one" }));
+    let caller = text(&memory, "/p/n.lcf");
+    assert!(
+        caller.starts_with("labcraft 1\n\nuse core\n\nfn n(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    y = plus_one(a)\n}\n"),
+        "{caller}"
+    );
+    let made = text(&memory, "/p/plus_one.lcf");
+    assert!(made.starts_with("labcraft 1\n\nuse core\n\nfn plus_one(a: f64) -> (y: f64) {\n    y = core.add(a, 1.0)\n}\n"), "{made}");
+}
+
 /// A project of `f` and a caller `main`, which names the input `gain` of `f`.
 fn called() -> (Session, Arc<Memory>) {
     let memory = Arc::new(Memory::new());
