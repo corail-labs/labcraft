@@ -229,12 +229,31 @@ fn hint_rect(drawing: &Drawing, hint: usize) -> Option<Rect> {
 /// that it can be grabbed (notation 2.6).
 pub(crate) const EDGE_GRAB: f32 = 6.0;
 
-/// The canvas of a body inside its frame: the frame without its header and its edges, which are the structure.
+/// The canvas of a body inside its frame: the frame without its header and its edges, which are the structure. For an
+/// arm in tabs the header ends at the bottom of the row of tabs, so the strip between it and the frame is canvas too
+/// (visual notation 5.2), unless the arm starts higher: then its own header and edges decide.
 pub(crate) fn inner_rect(drawing: &Drawing, body: usize) -> Option<Rect> {
     let frame = body_rect(drawing, body)?;
-    let header = drawing.bodies.get(body)?.header as f32 / 100.0;
-    let inner = Rect::from_min_max(Pos2::new(frame.min.x + EDGE_GRAB, frame.min.y + header.max(EDGE_GRAB)), frame.max - Vec2::splat(EDGE_GRAB));
-    Some(inner)
+    let drawn = drawing.bodies.get(body)?;
+    // An arm in tabs: the header of its structure ends at the bottom of the row of tabs, and what is under it is canvas.
+    // An arm that grows upward may start above that bottom: its own header then decides, so the canvas is never cut.
+    let own = frame.min.y + (drawn.header as f32 / 100.0).max(EDGE_GRAB);
+    let top = drawn.owner.and_then(|owner| tabs_bottom(drawing, owner)).map_or(own, |bottom| bottom.min(own));
+    Some(Rect::from_min_max(Pos2::new(frame.min.x + EDGE_GRAB, top), frame.max - Vec2::splat(EDGE_GRAB)))
+}
+
+/// The area that counts as the frame of a body for a gesture on the canvas (selection rectangle, quick insertion, wire
+/// released): its frame, and for an arm in tabs also the strip between the bottom of the row of tabs and its frame,
+/// which is canvas of that arm.
+pub(crate) fn hit_rect(drawing: &Drawing, body: usize) -> Option<Rect> {
+    let frame = body_rect(drawing, body)?;
+    let bottom = drawing.bodies.get(body)?.owner.and_then(|owner| tabs_bottom(drawing, owner));
+    Some(bottom.filter(|&bottom| bottom < frame.min.y).map_or(frame, |bottom| Rect::from_min_max(Pos2::new(frame.min.x, bottom), frame.max)))
+}
+
+/// The bottom of the row of tabs of a structure shown in tabs, in units; none for another structure.
+pub(crate) fn tabs_bottom(drawing: &Drawing, placed: usize) -> Option<f32> {
+    drawing.tabs.iter().filter(|tab| tab.structure == placed).map(|tab| tab.y + tab.height).max().map(|bottom| bottom as f32 / 100.0)
 }
 
 /// Whether a point is on a node: in its box, and for a structure not inside one of its frames shown, which is canvas of
@@ -321,7 +340,7 @@ pub(crate) fn click(found: &Found, hit: Option<Hit>, adding: bool) -> Found {
 pub(crate) fn frame_at(drawing: &Drawing, index: &Index, at: Pos2, visible: &dyn Fn(Option<usize>) -> bool) -> usize {
     (1..drawing.bodies.len())
         .filter(|&body| index.body_shown(body, visible))
-        .filter_map(|body| Some((body, body_rect(drawing, body)?)))
+        .filter_map(|body| Some((body, hit_rect(drawing, body)?)))
         .filter(|(_, area)| area.contains(at))
         .min_by(|(_, a), (_, b)| a.area().total_cmp(&b.area()))
         .map_or(0, |(body, _)| body)

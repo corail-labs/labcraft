@@ -4,7 +4,7 @@
 use egui::Pos2;
 use labcraft_diagram::Drawing;
 
-use crate::select::{Selection, body_rect};
+use crate::select::{Selection, hit_rect};
 use crate::{Canvas, Shown, arms_shown};
 
 /// The grid of a gesture (notation 2.4).
@@ -41,7 +41,7 @@ impl Canvas {
     pub(crate) fn frame_body(&self, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool, unit: Pos2) -> (InFrame, (i64, i64), usize) {
         let deepest = (1..drawing.bodies.len())
             .filter(|&body| self.index.body_shown(body, visible))
-            .filter_map(|body| body_rect(drawing, body).filter(|area| area.contains(unit)).map(|area| (body, area.area())))
+            .filter_map(|body| hit_rect(drawing, body).filter(|area| area.contains(unit)).map(|area| (body, area.area())))
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(body, _)| body);
         let named = deepest.and_then(|body| {
