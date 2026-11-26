@@ -191,6 +191,8 @@ pub enum Outward {
     NewProject(Option<String>),
     /// `project.open`: open the folder given, or one asked for.
     OpenFolder(Option<String>),
+    /// `project.download`: save the project held in memory as a zip (ide.md 12); only the web page asks it.
+    Download,
     OpenRecent(usize),
     /// Copy this example into a folder the user chooses, and open the copy (ide.md 10).
     OpenExample(usize),
@@ -299,8 +301,11 @@ pub struct Ide {
     session: u64,
     /// The generation of the publication last read: a new session counts from 0 again.
     generation: u64,
-    /// The project is in memory (`StartList::in_memory`): the status bar says so, not "saved".
+    /// The project is in memory (`StartList::in_memory`): the status bar says so, not "saved", and `Download` saves it
+    /// (ide.md 12).
     in_memory: bool,
+    /// The commands an app asked for ([`Ide::ask`]), run at the next frame with the keys.
+    asked: Vec<CommandRef>,
     drawn: HashMap<String, Drawn>,
     /// The view `Block` of each function, what it keeps between two frames (ide.md 3).
     blocks: HashMap<String, block::BlockPane>,
@@ -433,6 +438,7 @@ impl Ide {
             session: 0,
             generation: 0,
             in_memory: false,
+            asked: Vec::new(),
             drawn: HashMap::new(),
             blocks: HashMap::new(),
             texts: HashMap::new(),
@@ -711,6 +717,8 @@ impl Ide {
     /// Draws the window in `ui`, the whole of the viewport: with no host, the start page alone.
     pub fn show(&mut self, ui: &mut egui::Ui, host: Option<&dyn Host>, start: &StartList) -> Vec<Outward> {
         let mut outward = Vec::new();
+        // Read before the keys, the menus and the palette of this frame.
+        self.in_memory = start.in_memory;
         let snapshot = host.map(Host::snapshot).unwrap_or_default();
         self.follow_settings(&snapshot.view, host);
         if self.installed_look != self.settings.look {
@@ -755,7 +763,8 @@ impl Ide {
         // The keys first, so that a key the keymap takes reaches no widget. A run of Ctrl and the arrows ends before what
         // a key does (notation 2.6).
         // A press of the pointer ends it too: on the top bar, Undo would come before the move.
-        let hits = self.key_hits(ui.ctx());
+        let mut hits = self.key_hits(ui.ctx());
+        hits.append(&mut self.asked);
         if (!hits.is_empty() || ui.input(|input| input.pointer.any_pressed()))
             && let Some(host) = host
         {
@@ -770,7 +779,11 @@ impl Ide {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         let menus = self.menus(&view, host.is_some());
-        let entries = if self.palette.is_open() { catalog::palette_entries(&self.keymap, host.is_some(), self.offers_agents()) } else { Vec::new() };
+        let entries = if self.palette.is_open() {
+            catalog::palette_entries(&self.keymap, host.is_some(), self.offers_agents(), self.in_memory)
+        } else {
+            Vec::new()
+        };
         let workspaces = catalog::workspaces();
         let palette_key = keys::key_of(&self.keymap, &CommandRef::new(keys::PALETTE));
         let right: Vec<Segment> =
@@ -850,7 +863,6 @@ impl Ide {
                 self.failures.clear();
             }
         }
-        self.in_memory = start.in_memory;
         let status = self.status(&view);
         let status_bar = egui::Panel::bottom("ide-status")
             .frame(kit_shell::theme::bar_frame(&tokens).inner_margin(egui::Margin::symmetric(8, 3)))
@@ -1494,7 +1506,7 @@ impl Ide {
     /// The menus, laid out for the platform, with their keys and their states: those of the function shown act on the
     /// window that has focus.
     fn menus(&self, view: &Published, project: bool) -> MenuBar {
-        let mut bar = craft_menu::layout(&keys::menus(self.offers_agents()), Target::current(), &LayoutOptions::new("LabCraft")).bar;
+        let mut bar = craft_menu::layout(&keys::menus(self.offers_agents(), self.in_memory), Target::current(), &LayoutOptions::new("LabCraft")).bar;
         craft_menu::apply_keymap(&mut bar, &self.keymap);
         let shown = self.target(view).function.as_deref();
         let tab = shown.map(|function| tab_of(view, function)).unwrap_or_default();
@@ -1951,6 +1963,12 @@ impl Ide {
         self.edits.push((function.to_owned(), reply, None));
     }
 
+    /// Runs the command `id`, without parameters, at the next frame, as a key, a menu or the palette runs it: for an app
+    /// that drives the window itself (the smoke test of the web page, scenario 8 of M1).
+    pub fn ask(&mut self, id: &str) {
+        self.asked.push(CommandRef::new(id));
+    }
+
     /// Asks for a move as the canvas of `function` would: for an app that drives the canvas itself (the scripted drag of
     /// `LABCRAFT_FRAMES`, scenario 6 of M1).
     pub fn ask_canvas_move(&mut self, host: &dyn Host, function: &str, nodes: &[String], by: (i64, i64)) {
@@ -2339,6 +2357,9 @@ impl Ide {
                 let folder = params.get("folder").and_then(Value::as_str).filter(|folder| !folder.is_empty()).map(str::to_owned);
                 outward.push(if id == "project.new" { Outward::NewProject(folder) } else { Outward::OpenFolder(folder) });
             }
+            keys::DOWNLOAD if !self.in_memory => self.say(format!("Download: {}", catalog::DOWNLOAD_ON_DISK)),
+            keys::DOWNLOAD if host.is_none() => self.say("Download: open a project first"),
+            keys::DOWNLOAD => outward.push(Outward::Download),
             keys::PALETTE => self.open_palette(view),
             keys::HOME => {
                 if host.is_some() {

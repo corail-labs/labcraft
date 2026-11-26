@@ -1,7 +1,9 @@
 //! A folder dropped on the page, or chosen, read once (`docs/architecture.md`, 11.5). The page does not judge it: it
 //! gives the session the tree that a walk of `engine` would see, its folders and its program files, and the walk of
-//! `engine` judges it, with its bounds and its diagnostics (`LC0010`), as on the desktop. The page only bounds what it
-//! lists and what it reads: no more than that walk can reach, and [`MAX_READ`] in all.
+//! `engine` judges it, with its bounds and its diagnostics (`LC0010`), as on the desktop; and the settings of the
+//! project, its `.labcraft/config.toml`, [`MAX_CONFIG`] at most. The page only bounds what it lists and what it reads:
+//! no more than that walk can reach, and [`MAX_READ`] in all; and it refuses a folder that a zip could not hold
+//! ([`too_many`]).
 
 use std::path::Path;
 
@@ -13,6 +15,11 @@ use labcraft_types::Limits;
 /// at a restart.
 pub const MAX_READ: u64 = 64 * 1024 * 1024;
 
+/// The settings of the project, which the page reads with its program files (ide.md 12).
+pub const CONFIG: &str = ".labcraft/config.toml";
+/// The most bytes of [`CONFIG`] that the page takes: a larger one is left out, and said.
+pub const MAX_CONFIG: u64 = 1024 * 1024;
+
 /// The files and folders that the page lists of a folder dropped at most: a walk of `engine` takes no more than
 /// [`BOUNDS`] of each, and the rest is never looked at.
 pub const MAX_LISTED: usize = 4 * BOUNDS.files;
@@ -23,12 +30,19 @@ pub fn enters(path: &str) -> bool {
     !path.split('/').any(hidden) && path.split('/').count() < BOUNDS.levels
 }
 
+/// Whether the page lists what a folder of a drop holds: one that [`enters`] says, and `.labcraft`, for [`CONFIG`].
+pub fn lists(path: &str) -> bool {
+    enters(path) || Some(path) == CONFIG.split('/').next()
+}
+
 /// What the page gives the session of a folder: the files to read, by their index in the list given, and the folders
 /// that no file read makes.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Plan {
     pub read: Vec<usize>,
     pub folders: Vec<String>,
+    /// [`CONFIG`], when the folder has it.
+    pub config: Option<usize>,
 }
 
 /// Of the files and folders listed, paths relative to the folder given with `/`: the program files that a walk of
@@ -62,7 +76,52 @@ pub fn plan(files: &[String], folders: &[String]) -> Plan {
     given.sort();
     given.dedup();
     given.truncate(BOUNDS.files + 1);
-    Plan { read, folders: given }
+    let config = files.iter().position(|path| path == CONFIG);
+    Plan { read, folders: given, config }
+}
+
+/// Why the page refuses what was dropped or chosen, when it holds no program file to read and a zip: the page opens a
+/// folder, not a zip, which the user unzips first.
+pub fn only_a_zip(files: &[String], plan: &Plan) -> Option<String> {
+    if !plan.read.is_empty() {
+        return None;
+    }
+    let zip = files.iter().find(|path| Path::new(path).extension().is_some_and(|extension| extension.eq_ignore_ascii_case("zip")))?;
+    Some(format!("`{zip}` is a zip, and the web page opens a folder only: unzip it, then drop the folder or choose it with Open folder"))
+}
+
+/// Why the page leaves out [`CONFIG`] of `size` bytes, if it does: over [`MAX_CONFIG`].
+pub fn config_too_large(size: u64) -> Option<String> {
+    (size > MAX_CONFIG).then(|| format!("`{CONFIG}` holds {size} bytes, over {} MiB: its settings are left out", MAX_CONFIG >> 20))
+}
+
+/// The entries of the zip of what the page holds, as [`archive`](crate::archive) counts them: the files, and the folders
+/// that hold none of the files and folders given.
+pub fn entries(files: &[String], folders: &[String]) -> usize {
+    // Every folder above a path given holds something.
+    let mut holding = std::collections::HashSet::new();
+    for path in files.iter().chain(folders) {
+        let mut at = path.as_str();
+        while let Some((above, _)) = at.rsplit_once('/') {
+            if !holding.insert(above) {
+                break;
+            }
+            at = above;
+        }
+    }
+    files.len() + folders.iter().filter(|folder| !holding.contains(folder.as_str())).count()
+}
+
+/// Why the page refuses a folder that a zip without zip64 could not hold, which `Download` could then not save: what
+/// the desktop app opens in place.
+pub fn too_many(files: &[String], folders: &[String]) -> Option<String> {
+    let count = entries(files, folders);
+    (count > crate::archive::MAX_ENTRIES).then(|| {
+        format!(
+            "This folder has {count} entries; the web page holds at most {}, which a zip can hold. Open it in the desktop app.",
+            crate::archive::MAX_ENTRIES
+        )
+    })
 }
 
 /// What the page reads of the program files of a folder: each at most one byte past the largest file that `check`
@@ -122,6 +181,42 @@ mod tests {
         assert_eq!(plan.read, [6, 0, 4, 5]);
         assert_eq!(plan.folders, ["empty", "sub"]);
         assert!(!enters(".git") && !enters("sub/.cache") && enters("sub"));
+    }
+
+    /// The settings of the project are read, those of a folder inside it are not; `.labcraft` is listed for them.
+    #[test]
+    fn the_settings_of_the_project_are_read_beside_its_program_files() {
+        let files = paths(&["a.lcf", "sub/.labcraft/config.toml", ".labcraft/config.toml", ".labcraft/journal/1.jsonl"]);
+        let plan = plan(&files, &paths(&[".labcraft"]));
+        assert_eq!((plan.read.as_slice(), plan.config), ([0].as_slice(), Some(2)));
+        assert!(plan.folders.is_empty(), "a hidden folder is not given");
+        assert_eq!(super::plan(&paths(&["a.lcf"]), &[]).config, None);
+        assert!(lists(".labcraft") && !lists(".labcraft/journal") && !lists(".git"));
+        assert_eq!(config_too_large(MAX_CONFIG), None);
+        assert!(config_too_large(MAX_CONFIG + 1).is_some_and(|why| why.contains("1 MiB") && why.contains(CONFIG)));
+    }
+
+    /// A zip alone is refused with what to do; a zip beside program files is not the matter of the page.
+    #[test]
+    fn a_zip_dropped_alone_is_refused_with_what_to_do() {
+        let zip = paths(&["examples.ZIP"]);
+        let refused = only_a_zip(&zip, &plan(&zip, &[])).unwrap();
+        assert!(refused.contains("`examples.ZIP`") && refused.contains("unzip it"), "{refused}");
+        let beside = paths(&["a.lcf", "old.zip"]);
+        assert_eq!(only_a_zip(&beside, &plan(&beside, &[])), None);
+        let nothing = paths(&["notes.txt"]);
+        assert_eq!(only_a_zip(&nothing, &plan(&nothing, &[])), None, "the walk of `engine` says there is nothing to check");
+    }
+
+    /// The entries of a zip: each file, and each folder that holds nothing given; past the limit of a zip, refused.
+    #[test]
+    fn a_folder_past_the_entries_of_a_zip_is_refused() {
+        assert_eq!(entries(&paths(&["a.lcf", "sub/b.lcf"]), &paths(&["sub", "empty", "deep", "deep/er"])), 4);
+        let at_most = crate::archive::MAX_ENTRIES;
+        let files: Vec<String> = (0..at_most - 1).map(|index| format!("f{index}.lcf")).collect();
+        assert_eq!(too_many(&files, &paths(&["empty"])), None, "at the limit");
+        let refused = too_many(&files, &paths(&["empty", "other"])).unwrap();
+        assert!(refused.contains(&format!("{} entries", at_most + 1)) && refused.contains("desktop app"), "{refused}");
     }
 
     #[test]

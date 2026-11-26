@@ -178,6 +178,9 @@ pub(super) const SETTINGS_ERRORS: &[&str] =
 const WINDOW_ERRORS: &[&str] =
     &["command.not_enabled", "agent.not_allowed", "params.unknown", "params.missing", "params.invalid", "edit.unknown", "internal"];
 
+/// `project.download`: the zip has the limits of its format, and a path of the project must name an entry of it.
+const DOWNLOAD_ERRORS: &[&str] = &["command.not_enabled", "agent.not_allowed", "params.unknown", "file.too_large", "path.invalid", "internal"];
+
 /// `view.select` names what it selects as an editing command does (commands.md 9.2).
 const SELECT_ERRORS: &[&str] = &[
     "command.not_enabled",
@@ -1349,6 +1352,14 @@ pub(super) fn catalog() -> Vec<Command> {
             "Opens the folder as a project: in this window when it shows the start page, in a new window otherwise.",
             object(&[("folder", string("The folder to open, anywhere on the computer."))], &["folder"]),
             PROJECT_ERRORS,
+        ),
+        window(
+            "project.download",
+            "Download Project",
+            "Save the project held in memory as a zip",
+            "Saves the project as a zip, `NAME.zip`, written from the files that the session holds: on the web page, which holds the project in memory. In the desktop app, whose files are on the disk, the window says so and saves nothing. A project past the limits of a zip without zip64 is `file.too_large`, a path that cannot name an entry `path.invalid`.",
+            object(&[], &[]),
+            DOWNLOAD_ERRORS,
         ),
         Command {
             direct: true,

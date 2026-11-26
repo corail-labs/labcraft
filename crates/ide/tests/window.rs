@@ -111,6 +111,8 @@ struct State {
     fonts: bool,
     /// What the window asked the app for, every frame together.
     outward: Vec<Outward>,
+    /// What the app gives the start page: `in_memory` as the web page gives it.
+    start: StartList,
 }
 
 fn harness(host: Fake) -> Harness<'static, State> {
@@ -136,10 +138,10 @@ fn harness_with(host: Fake, prefs: Prefs) -> Harness<'static, State> {
                 install_fonts(ui.ctx());
                 return;
             }
-            let outward = state.ide.show(ui, Some(&state.host), &StartList::default());
+            let outward = state.ide.show(ui, Some(&state.host), &state.start);
             state.outward.extend(outward);
         },
-        State { ide, host, fonts: false, outward: Vec::new() },
+        State { ide, host, fonts: false, outward: Vec::new(), start: StartList::default() },
     );
     harness.run_steps(4);
     harness
@@ -311,6 +313,21 @@ fn the_palette_gives_the_folder_typed_to_the_app() {
     assert_eq!(harness.state().outward, [Outward::OpenFolder(Some("/q".to_owned()))]);
     run_in_palette(&mut harness, "project.new {\"folder\": \"/r\"}");
     assert_eq!(harness.state().outward.last(), Some(&Outward::NewProject(Some("/r".to_owned()))));
+}
+
+/// `Download` (ide.md 12), asked as the menu and the palette ask it: the app saves the zip of a project held in memory,
+/// as the web page holds it; a project on the disk is not downloaded, and the window says why.
+#[test]
+fn download_asks_the_app_for_the_zip_of_a_project_in_memory_only() {
+    let mut harness = harness(fake());
+    harness.state_mut().ide.ask("project.download");
+    harness.run_steps(3);
+    assert!(!harness.state().outward.contains(&Outward::Download));
+    assert!(harness.query_by_label_contains("web page only").is_some(), "the window says why");
+    harness.state_mut().start.in_memory = true;
+    harness.state_mut().ide.ask("project.download");
+    harness.run_steps(3);
+    assert_eq!(harness.state().outward, [Outward::Download]);
 }
 
 /// Step 1b (ide.md 9): a tab detaches into a window of its own, which floats in the window here (kittest has one

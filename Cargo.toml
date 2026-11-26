@@ -82,6 +82,12 @@ egui_kittest = { version = "0.37", default-features = false, features = ["wgpu"]
 # The SVG loader, for the icons of the window (Lucide, `assets/icons/lucide/`).
 egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
 
+# The zip of `Download` on the web page (apps/labcraft-web): raw deflate in Rust, and its CRC-32.
+crc32fast = "1.5"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+# A reader of zips independent of the writer of the page, for its tests and `cargo xtask web-smoke` only.
+zip = { version = "9.8", default-features = false, features = ["deflate"] }
+
 # The web viewer (apps/labcraft-web), in the browser only.
 js-sys = "0.3"
 wasm-bindgen = "0.2"

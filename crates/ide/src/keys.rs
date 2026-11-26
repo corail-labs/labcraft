@@ -9,6 +9,9 @@ use serde_json::json;
 
 use crate::pane::PANELS;
 
+/// `Download`, a command of the window: the project held in memory as a zip, on the web only (ide.md 12).
+pub const DOWNLOAD: &str = "project.download";
+
 /// The actions of the window that are not commands of the session.
 pub const PALETTE: &str = "ide.palette";
 pub const HOME: &str = "ide.home";
@@ -286,20 +289,18 @@ pub fn set_view(view: &str, split: Option<&str>) -> CommandRef {
     CommandRef::with_params("view.set_view", json!({ "view": view, "split": split }))
 }
 
-/// The menus `File`, `Edit`, `View`, `Run`, `Help`, before the layout of the platform.
-/// The menus; `Connect an AI agent` in `Help` only with `ai`, where the window shows something of AI (ide.md 8).
-pub fn menus(ai: bool) -> MenuBar {
+/// The menus `File`, `Edit`, `View`, `Run`, `Help`, before the layout of the platform: `Connect an AI agent` in `Help`
+/// only with `ai`, where the window shows something of AI (ide.md 8); `Download` in `File` only with `in_memory`, where
+/// the project is held in memory, as on the web (ide.md 12).
+pub fn menus(ai: bool, in_memory: bool) -> MenuBar {
     let item = |id: &str, label: &str| Node::Item(Item::new(CommandRef::new(id), label));
     let file = Menu::new(
         "File",
-        vec![
-            item("project.new", "New project…"),
-            item("project.open", "Open folder…"),
-            Node::Separator,
-            item(HOME, "Start page"),
-            item(SETTINGS, "Settings…"),
-            item("view.close_function", "Close the tab"),
-        ],
+        vec![item("project.new", "New project…"), item("project.open", "Open folder…")]
+            .into_iter()
+            .chain(in_memory.then(|| item(DOWNLOAD, "Download")))
+            .chain([Node::Separator, item(HOME, "Start page"), item(SETTINGS, "Settings…"), item("view.close_function", "Close the tab")])
+            .collect(),
     )
     .role(MenuRole::File);
     let edit = Menu::new(
@@ -420,6 +421,26 @@ mod tests {
                 assert!(binding(key).is_some(), "{key}");
             }
         }
+    }
+
+    /// `Download`, right after `Open folder…`, only where the project is in memory (ide.md 12).
+    #[test]
+    fn download_is_in_the_file_menu_of_a_project_in_memory_only() {
+        let file = |in_memory: bool| -> Vec<String> {
+            let bar = menus(false, in_memory);
+            let children = bar.menus.first().map(|menu| menu.children.clone()).unwrap_or_default();
+            children
+                .into_iter()
+                .filter_map(|node| match node {
+                    Node::Item(item) => Some(item.command.id),
+                    _ => None,
+                })
+                .collect()
+        };
+        let in_memory = file(true);
+        let at = in_memory.iter().position(|id| id == DOWNLOAD).unwrap();
+        assert_eq!(in_memory.get(at - 1).map(String::as_str), Some("project.open"));
+        assert!(!file(false).iter().any(|id| id == DOWNLOAD));
     }
 
     #[test]

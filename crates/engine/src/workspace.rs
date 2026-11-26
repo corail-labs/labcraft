@@ -312,6 +312,23 @@ impl Memory {
             .collect()
     }
 
+    /// Every folder under `folder`, not itself, that holds nothing: what the zip of the web page keeps beside the files
+    /// (ide.md 12).
+    pub fn empty_folders(&self, folder: impl AsRef<Path>) -> Vec<PathBuf> {
+        let folder = lexical(folder.as_ref());
+        let nodes = self.lock();
+        let mut under = nodes.by_path.range(folder.clone()..).take_while(|(path, _)| path.starts_with(&folder)).peekable();
+        let mut empty = Vec::new();
+        while let Some((path, node)) = under.next() {
+            // The paths are in order: a folder that holds something is followed by what it holds.
+            let holds = under.peek().is_some_and(|(next, _)| next.starts_with(path));
+            if matches!(node, Node::Folder) && !holds && *path != folder {
+                empty.push(path.clone());
+            }
+        }
+        empty
+    }
+
     /// The bytes of a file, a link followed.
     pub fn get(&self, path: impl AsRef<Path>) -> Option<Vec<u8>> {
         let nodes = self.lock();
@@ -648,6 +665,18 @@ mod tests {
         let after = memory.files("/p");
         let changed: Vec<&Path> = after.iter().filter(|seen| !before.contains(seen)).map(|(path, _)| path.as_path()).collect();
         assert_eq!(changed, [Path::new("/p/a.lcf"), Path::new("/p/b.lcf")], "a write and a rename are both seen");
+    }
+
+    #[test]
+    fn the_empty_folders_under_a_folder_are_those_that_hold_nothing() {
+        let memory = Memory::new();
+        memory.put_folder("/p");
+        memory.put("/p/a/x.lcf", "");
+        memory.put_folder("/p/a b");
+        memory.put_folder("/p/deep/er");
+        memory.put_folder("/pq");
+        assert_eq!(memory.empty_folders("/p"), [PathBuf::from("/p/a b"), PathBuf::from("/p/deep/er")]);
+        assert!(Memory::new().empty_folders("/p").is_empty());
     }
 
     #[test]
