@@ -13,6 +13,7 @@ use labcraft_engine::{CommandError, Config, Memory, Session, Still};
 use labcraft_types::{Limits, Report};
 use serde_json::{Value, json};
 
+use crate::archive::{self, Entry, Stamp};
 use crate::protocol::{Answer, Changed, Failure, File, Folder, Listed, Listing, Problem, Seen, SeenWindow, ToWorker};
 
 /// Where the folder given lies in the memory of the worker: every path of a report is shown from it.
@@ -50,7 +51,8 @@ impl Host {
     /// Answers a message; [`ToWorker::Trap`] is the worker's to do, and is answered here as an unknown command.
     pub fn handle(&mut self, message: ToWorker) -> Answer {
         let mut request = None;
-        let zoom = matches!(message, ToWorker::Zoom(..));
+        // A zoom writes no file.
+        let writes = !matches!(message, ToWorker::Zoom(..));
         let result = match message {
             ToWorker::Open { folder, user_settings, skipped, show, detached } => self.open(folder, &user_settings, skipped, show, detached),
             ToWorker::UserSettings(keys) => {
@@ -72,9 +74,33 @@ impl Host {
                 }
                 Ok(Value::Null)
             }
+            ToWorker::Download(stamp) => {
+                // Its answer carries the zip, beside its result.
+                return match self.download(stamp) {
+                    Ok(zip) => {
+                        let result = Ok(json!({ "bytes": zip.len() }));
+                        self.answer(None, result, false, Some(zip))
+                    }
+                    Err(error) => self.answer(None, Err(error), false, None),
+                };
+            }
             ToWorker::Trap => Err(CommandError::new("command.unknown", "`Trap` is the worker's own")),
         };
-        self.answer(request, result, !zoom)
+        self.answer(request, result, writes, None)
+    }
+
+    /// The zip of the files of the session (ide.md 12), each changed at `stamp`: the files of the project that the page
+    /// keeps a copy of ([`files`]: not the journal), and each empty folder, by path; as the session holds them, not as
+    /// the page last heard.
+    fn download(&self, stamp: Stamp) -> Result<Vec<u8>, CommandError> {
+        let Some(memory) = &self.memory else { return Err(CommandError::new("command.not_enabled", "open a project first")) };
+        // The journal is the session's, as in `files`: a folder, which may be empty.
+        let journal = Path::new(ROOT).join(JOURNAL);
+        let folders = memory.empty_folders(ROOT).into_iter().filter(|path| !path.starts_with(&journal)).filter_map(|path| relative(&path));
+        let files = files(memory).into_keys().filter_map(|path| Some(Entry::File { path: relative(&path)?, bytes: memory.get(&path)? }));
+        let mut entries: Vec<Entry> = files.chain(folders.map(Entry::Folder)).collect();
+        entries.sort_by(|a, b| entry_path(a).cmp(entry_path(b)));
+        archive::write(&entries, stamp).map_err(|refused| CommandError::new(refused.code, refused.message))
     }
 
     fn open(
@@ -143,15 +169,16 @@ impl Host {
         }
     }
 
-    /// The answer to a message; `wrote`: whether it may have changed files (a zoom does not).
-    fn answer(&mut self, request: Option<u64>, result: Result<Value, CommandError>, wrote: bool) -> Answer {
+    /// The answer to a message; `wrote`: whether it may have changed files (a zoom and a download do not); `zip`: that
+    /// of a download.
+    fn answer(&mut self, request: Option<u64>, result: Result<Value, CommandError>, wrote: bool, zip: Option<Vec<u8>>) -> Answer {
         let result = result.map(|value| value.to_string()).map_err(|error| Failure { code: error.code.to_owned(), message: error.message });
         let files = if wrote { self.changed() } else { None };
         if let (Some(files), Some(on_files)) = (&files, self.on_files) {
             on_files(files);
         }
         let Some(session) = &mut self.session else {
-            return Answer { request, result, seen: Seen::default(), listing: None, drawings: Vec::new(), files };
+            return Answer { request, result, seen: Seen::default(), listing: None, drawings: Vec::new(), files, zip };
         };
         // What the watcher of the files does on the desktop: the session reads, checks and draws again.
         if files.is_some() {
@@ -174,7 +201,7 @@ impl Host {
                 drawings.push((function.clone(), drawing.clone()));
             }
         }
-        Answer { request, result, seen: seen(view), listing, drawings, files }
+        Answer { request, result, seen: seen(view), listing, drawings, files, zip }
     }
 
     /// The files written, renamed or removed since the last answer; not the journal, which is the session's: a new
@@ -195,6 +222,12 @@ impl Host {
         changed.removed.sort();
         self.files = now;
         (!changed.written.is_empty() || !changed.removed.is_empty()).then_some(changed)
+    }
+}
+
+fn entry_path(entry: &Entry) -> &str {
+    match entry {
+        Entry::File { path, .. } | Entry::Folder(path) => path,
     }
 }
 
@@ -438,5 +471,65 @@ mod tests {
         assert!(answer.result.is_ok());
         assert_eq!(answer.seen.main.function.as_deref(), Some("double"));
         assert!(answer.drawings.is_empty());
+    }
+
+    #[test]
+    fn a_download_before_a_folder_is_refused() {
+        let answer = Host::new(None).handle(ToWorker::Download(Stamp::default()));
+        assert_eq!(answer.result.map_err(|failure| failure.code), Err("command.not_enabled".to_owned()));
+        assert_eq!(answer.zip, None);
+    }
+
+    /// The zip holds what the session holds: the files written, the store of the project and its `.gitignore`, the
+    /// empty folders; not the journal. Read back by another reader, the `zip` crate.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_download_holds_the_files_of_the_session() {
+        use std::io::Read as _;
+        let given = Arc::new(Folder {
+            name: "f".to_owned(),
+            files: vec![File { path: "double.lcf".to_owned(), bytes: DOUBLE.as_bytes().to_vec() }],
+            folders: vec!["empty".to_owned()],
+        });
+        let mut host = Host::new(None);
+        assert!(host.handle(open(given)).result.is_ok());
+        let text = DOUBLE.replace("core.add(x, x)", "core.mul(x, 2.0)");
+        assert!(host.handle(command("file.write", json!({ "path": "double.lcf", "text": text }))).result.is_ok());
+        let set = host.handle(command("settings.set", json!({ "key": "editor.drag_pans", "value": true, "scope": "project" })));
+        assert!(set.result.is_ok(), "{:?}", set.result);
+        let answer = host.handle(ToWorker::Download(Stamp { year: 2026, month: 11, day: 25, hour: 9, minute: 5, second: 0 }));
+        assert!(answer.result.is_ok(), "{:?}", answer.result);
+        assert!(answer.files.is_none(), "a download writes nothing");
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(answer.zip.unwrap())).unwrap();
+        let names: Vec<String> = zip.file_names().map(|name| name.unwrap().into_owned()).collect();
+        assert_eq!(names, [".labcraft/.gitignore", ".labcraft/config.toml", "double.lcf", "empty/"]);
+        let mut read = |name: &str| {
+            let mut bytes = String::new();
+            zip.by_name(name).unwrap().read_to_string(&mut bytes).unwrap();
+            bytes
+        };
+        assert_eq!(read("double.lcf"), text);
+        assert!(read(".labcraft/config.toml").contains("drag_pans = true"));
+        let modified = zip.by_name("double.lcf").unwrap().last_modified().unwrap();
+        assert_eq!((modified.year(), modified.day(), modified.hour(), modified.minute()), (2026, 25, 9, 5));
+    }
+
+    /// The journal is a folder of the session: with nothing in it yet, it is no empty folder of the zip either; nor is
+    /// `.labcraft`, which holds it. Nothing was edited.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_download_leaves_out_an_empty_journal() {
+        let given = Arc::new(Folder {
+            name: "f".to_owned(),
+            files: vec![File { path: "double.lcf".to_owned(), bytes: DOUBLE.as_bytes().to_vec() }],
+            folders: vec![JOURNAL.to_owned(), format!("{JOURNAL}/inside"), "empty".to_owned()],
+        });
+        let mut host = Host::new(None);
+        assert!(host.handle(open(given)).result.is_ok());
+        let answer = host.handle(ToWorker::Download(Stamp::default()));
+        assert!(answer.result.is_ok(), "{:?}", answer.result);
+        let zip = zip::ZipArchive::new(std::io::Cursor::new(answer.zip.unwrap())).unwrap();
+        let names: Vec<String> = zip.file_names().map(|name| name.unwrap().into_owned()).collect();
+        assert_eq!(names, ["double.lcf", "empty/"]);
     }
 }

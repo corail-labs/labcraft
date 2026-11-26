@@ -9,6 +9,7 @@
 //! - Any other trap (reading or checking the folder): the worker restarts once for that set of files; a second trap
 //!   shows `LC0099` for the folder until another folder is opened. A file that traps cannot restart the worker forever.
 //! - The history goes with the worker that trapped; the files stay (12.9).
+//! - A download in flight when the worker traps fails, and is not asked again: the files stay, and the user asks again.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -22,6 +23,7 @@ use labcraft_ide::{Host, Reply, Snapshot};
 use labcraft_types::{Code, Diagnostic, Position, Report, Span};
 use serde_json::Value;
 
+use crate::archive::Stamp;
 use crate::protocol::{Folder, FromWorker, Listing, Seen, SeenWindow, ToWorker, decode, encode};
 
 /// What the page must do.
@@ -41,6 +43,7 @@ enum Request {
     Command { request: u64, id: String, params: Value },
     Zoom(String, f32),
     UserSettings(String),
+    Download(Stamp),
     Trap,
 }
 
@@ -53,6 +56,8 @@ enum Waiting {
     Ready,
     /// The answer to the message in flight, and the command it is, if it is one.
     Answer(Option<u64>),
+    /// The answer to [`ToWorker::Download`]: its zip.
+    Zip,
 }
 
 /// The traps of the folder open that no drawing explains.
@@ -111,6 +116,12 @@ pub struct Supervisor {
     published: Arc<Published>,
     /// The session wrote, renamed or removed a file since the folder was opened.
     edited: bool,
+    /// The zips of the downloads, or why there is none, in order, until the page takes them.
+    downloaded: VecDeque<Result<Vec<u8>, String>>,
+    /// The changes of the files the worker said, counted: what the last zip holds, and what the page saved.
+    changes: u64,
+    zipped: u64,
+    saved: Option<u64>,
 }
 
 impl Supervisor {
@@ -135,11 +146,22 @@ impl Supervisor {
     /// It shows `function` when the folder has it (what the address of the page asks for), else its first function, and
     /// then says that the folder has none of that name, until another function is shown.
     pub fn open(&mut self, folder: Folder, function: Option<String>) -> Vec<Action> {
+        if self.waiting == Waiting::Zip {
+            self.fail_download("another folder was opened");
+        }
         self.fail_all("another folder was opened");
         let mut counts = self.counts;
         counts.generation += 1;
         counts.opened += 1;
-        *self = Supervisor { folder: Some(Arc::new(folder)), asked: function, counts, ..Supervisor::new(std::mem::take(&mut self.user_settings)) };
+        // What the page has still to say of a download stays.
+        let downloaded = std::mem::take(&mut self.downloaded);
+        *self = Supervisor {
+            folder: Some(Arc::new(folder)),
+            asked: function,
+            counts,
+            downloaded,
+            ..Supervisor::new(std::mem::take(&mut self.user_settings))
+        };
         self.publish();
         self.pending.push_back(Request::Open);
         self.start()
@@ -168,6 +190,32 @@ impl Supervisor {
             None => self.pending.push_back(Request::Zoom(function.to_owned(), zoom)),
         }
         self.next()
+    }
+
+    /// The files of the session as a zip (`Download`, ide.md 12), each changed at `stamp`, which
+    /// [`Supervisor::take_download`] then gives. One download at a time: another one asked meanwhile is refused, and
+    /// said.
+    pub fn download(&mut self, stamp: Stamp) -> Vec<Action> {
+        if let Some(why) = self.refused() {
+            self.fail_download(&why);
+            return Vec::new();
+        }
+        if self.waiting == Waiting::Zip || self.pending.iter().any(|request| matches!(request, Request::Download(_))) {
+            self.fail_download("the zip asked for before is being written: it is saved once written");
+            return Vec::new();
+        }
+        self.pending.push_back(Request::Download(stamp));
+        self.next()
+    }
+
+    /// A download fails, with `why`, which the page says.
+    fn fail_download(&mut self, why: &str) {
+        self.downloaded.push_back(Err(format!("Download: {why}")));
+    }
+
+    /// The zip of a download asked for, or why there is none, in the order they came.
+    pub fn take_download(&mut self) -> Option<Result<Vec<u8>, String>> {
+        self.downloaded.pop_front()
     }
 
     /// Traps the worker, for the smoke test of the page.
@@ -202,7 +250,8 @@ impl Supervisor {
                 return Vec::new();
             }
             Ok(FromWorker::Answer(answer)) => {
-                let answer = *answer;
+                let mut answer = *answer;
+                let zip = answer.zip.take();
                 // The command in flight has its answer; one that comes without it (a message the worker could not read)
                 // still ends it.
                 if let Waiting::Answer(Some(request)) = self.waiting
@@ -211,8 +260,25 @@ impl Supervisor {
                 {
                     let _ = reply.send(Err(CommandError::internal("the worker of the session did not take this command")));
                 }
+                let downloading = self.waiting == Waiting::Zip;
                 self.waiting = Waiting::Nothing;
                 self.drawing = None;
+                // A download that failed is the page's to say, as one that succeeded is its to save.
+                if downloading {
+                    match (&answer.result, zip) {
+                        (Ok(_), Some(bytes)) => {
+                            // The changes said before the answer are in the zip; those after it, not.
+                            self.zipped = self.changes;
+                            self.downloaded.push_back(Ok(bytes));
+                        }
+                        (Err(failure), _) => {
+                            let why = failure.message.clone();
+                            self.fail_download(&why);
+                            return self.next();
+                        }
+                        (Ok(_), None) => self.fail_download("the worker of the session gave no zip"),
+                    }
+                }
                 // A message that is no command and failed (a folder that does not open): the page says it, and what the
                 // session showed stays.
                 if answer.request.is_none()
@@ -278,6 +344,9 @@ impl Supervisor {
                 }
             }
             Err(error) => {
+                if self.waiting == Waiting::Zip {
+                    self.fail_download(&error);
+                }
                 self.waiting = Waiting::Nothing;
                 self.failure = Some(error);
             }
@@ -290,6 +359,7 @@ impl Supervisor {
         let Some(folder) = &mut self.folder else { return };
         Arc::make_mut(folder).changed(changed);
         self.edited = true;
+        self.changes += 1;
         // Other files: a trap before them is not counted against them.
         if self.traps == Traps::Once {
             self.traps = Traps::None;
@@ -306,6 +376,9 @@ impl Supervisor {
         {
             let _ =
                 reply.send(Err(CommandError::internal("the session stopped on this command, which is a bug of LabCraft (LC0099): it starts again")));
+        }
+        if self.waiting == Waiting::Zip {
+            self.fail_download("the session stopped while it wrote the zip, which is a bug of LabCraft (LC0099): it starts again");
         }
         if let Some(function) = self.drawing.take() {
             self.trapped.insert(function.clone());
@@ -332,6 +405,9 @@ impl Supervisor {
 
     /// The worker could not be started, or stopped before it listened: said, and not tried again for these files.
     pub fn not_started(&mut self, why: &str) -> Vec<Action> {
+        if self.waiting == Waiting::Zip {
+            self.fail_download("the worker of the session could not start");
+        }
         self.traps = Traps::NoWorker;
         self.failure = Some(format!("the worker of the session could not start: {why}"));
         self.fail_all("the worker of the session could not start");
@@ -341,6 +417,9 @@ impl Supervisor {
 
     /// Every command waiting fails, with `why`.
     fn fail_all(&mut self, why: &str) {
+        if self.pending.iter().any(|request| matches!(request, Request::Download(_))) {
+            self.fail_download(why);
+        }
         self.pending.clear();
         for (_, reply) in self.replies.drain() {
             let _ = reply.send(Err(CommandError::new("command.not_enabled", why)));
@@ -376,16 +455,20 @@ impl Supervisor {
             Request::Command { request, id, params } => (ToWorker::Command { request, id, params: params.to_string() }, Some(request)),
             Request::Zoom(function, zoom) => (ToWorker::Zoom(function, zoom), None),
             Request::UserSettings(keys) => (ToWorker::UserSettings(keys), None),
+            Request::Download(stamp) => (ToWorker::Download(stamp), None),
             Request::Trap => (ToWorker::Trap, None),
         };
+        let download = matches!(message, ToWorker::Download(_));
         match encode(&message) {
             Ok(bytes) => {
-                self.waiting = Waiting::Answer(command);
+                self.waiting = if download { Waiting::Zip } else { Waiting::Answer(command) };
                 vec![Action::Send(bytes)]
             }
             Err(error) => {
                 if let Some(reply) = command.and_then(|request| self.replies.remove(&request)) {
                     let _ = reply.send(Err(CommandError::internal(error)));
+                } else if download {
+                    self.fail_download(&error);
                 } else {
                     self.failure = Some(error);
                 }
@@ -408,6 +491,16 @@ impl Supervisor {
     /// not this.
     pub fn edited(&self) -> bool {
         self.edited
+    }
+
+    /// The page saved the last zip of a download: the files are those it holds, until they change again.
+    pub fn mark_saved(&mut self) {
+        self.saved = Some(self.zipped);
+    }
+
+    /// Whether the files are those of the last zip that the page saved: leaving the page loses nothing (ide.md 12).
+    pub fn saved(&self) -> bool {
+        self.saved == Some(self.changes)
     }
 
     /// A worker starts, or a message is in flight.

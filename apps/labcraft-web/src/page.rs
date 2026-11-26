@@ -5,34 +5,37 @@
 //! replaces it, after asking when it changed. No trace in the browser: a run needs threads (D-22).
 //!
 //! The address names the bundled folder and the function shown ([`link`](crate::link)), and the page writes it back as
-//! the developer moves; without one, the start page. `?smoke`: the page opens the examples, traps its worker once it
-//! drew, and says to the server that served it whether the worker came back and drew again (`cargo xtask web-smoke`).
+//! the developer moves; without one, the start page. `?smoke`: the smoke test of the page ([`smoke`]).
+//!
+//! `Download` saves the zip that the worker writes (ide.md 12) as `NAME.zip`, through a link to a `Blob` that the page
+//! clicks.
 
-use std::cell::RefCell;
-use std::collections::VecDeque;
-use std::rc::Rc;
-use std::sync::Arc;
+mod smoke;
 
 use craft_ui::fonts::{Family, I18nScripts, UiFonts};
 use egui::{FontData, FontFamily};
 use js_sys::Uint8Array;
-use labcraft_diagram::Drawing;
 use labcraft_engine::settings;
 use labcraft_ide::{Host, Ide, Outward, Prefs, StartList};
 use serde_json::{Value, json};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::{Closure, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
     DragEvent, ErrorEvent, FileList, FileSystemDirectoryEntry, FileSystemDirectoryReader, FileSystemEntry, FileSystemFileEntry, HtmlCanvasElement,
-    HtmlInputElement, MessageEvent, RequestInit, Worker,
+    HtmlInputElement, MessageEvent, Worker,
 };
 
 use crate::BUNDLED;
+use crate::archive;
 use crate::folder::{self, Budget};
 use crate::link::{self, Link};
 use crate::protocol::{File, Folder};
 use crate::supervisor::{Action, Shared, Supervisor};
+use smoke::Smoke;
 
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
 static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
@@ -51,9 +54,6 @@ const NEW_MAIN: (&str, &str) = ("main.lcf", "labcraft 1\n\nfn main() -> () {}\n"
 
 /// Where the page leads when it cannot start.
 const REPOSITORY: &str = "https://github.com/corail-labs/labcraft";
-
-/// How long the smoke test waits for each step, in seconds.
-const SMOKE_PATIENCE: f64 = 90.0;
 
 /// Starts the page in its canvas `#labcraft`; what fails to start is said in `#loading`.
 pub fn start() {
@@ -142,20 +142,6 @@ impl Drop for Running {
     }
 }
 
-enum Smoke {
-    /// Waits for the first drawing, from the start of the page (the time of egui counts from it).
-    Drawing {
-        since: f64,
-    },
-    /// Trapped the worker after the first drawing, `before`; waits for a new worker to draw anew.
-    Trapped {
-        since: f64,
-        first: String,
-        before: Option<Arc<Drawing>>,
-    },
-    Done,
-}
-
 struct Page {
     ide: Ide,
     shared: Shared,
@@ -220,7 +206,7 @@ impl Page {
         };
         // The folder and the function of the address; without one, the start page.
         let link = address();
-        page.smoke = link.smoke.then_some(Smoke::Drawing { since: 0.0 });
+        page.smoke = link.smoke.then(|| Smoke::start(link.reloaded));
         let names: Vec<&'static str> = BUNDLED.iter().map(|bundled| bundled.name).collect();
         if link.names_a_project()
             && let Some(opening) = link.resolve(&names)
@@ -235,9 +221,11 @@ impl Page {
         self.shared.supervisor.borrow().folder().is_some()
     }
 
-    /// Whether the project open changed: its files, or its history (a trap of the worker loses the history, not the files).
+    /// Whether the project open changed: its files, or its history (a trap of the worker loses the history, not the
+    /// files); not when the page saved them as a zip since (`Download`).
     fn changed(&self) -> bool {
-        self.has_project() && (self.shared.supervisor.borrow().edited() || !self.ide.history_is_empty())
+        let supervisor = self.shared.supervisor.borrow();
+        self.has_project() && !supervisor.saved() && (supervisor.edited() || !self.ide.history_is_empty())
     }
 
     /// Whether another project may replace the one open: always, unless it changed and the user says no (ide.md 12).
@@ -355,6 +343,25 @@ impl Page {
             }
             // The page shows nothing of AI (ide.md 8), and never offers it.
             Outward::ConnectAgent => {}
+            // The worker writes the zip: [`Page::downloaded`] saves it.
+            Outward::Download => {
+                self.shared.with(|supervisor| supervisor.download(now()));
+                self.perform();
+            }
+        }
+    }
+
+    /// The zip of a download, or why there is none: saved as `NAME.zip`, else said.
+    fn downloaded(&mut self, zip: Result<Vec<u8>, String>) {
+        let name = archive::file_name(self.shared.supervisor.borrow().folder_name().unwrap_or_default());
+        let Some(zip) = self.smoke_takes(zip, &name) else { return };
+        let saved = zip.and_then(|bytes| save(&name, &bytes).map_err(|why| format!("Download: `{name}` could not be saved: {why}")));
+        if saved.is_ok() {
+            // Leaving the page loses nothing now, until the files change.
+            self.shared.supervisor.borrow_mut().mark_saved();
+        }
+        if let Err(why) = saved {
+            self.say(why);
         }
     }
 
@@ -387,41 +394,17 @@ impl Page {
             document.set_title(&title);
         }
     }
-
-    /// `?smoke`: one step each frame, until it reports.
-    fn smoke(&mut self, now: f64, ctx: &egui::Context) {
-        let Some(step) = self.smoke.take() else { return };
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
-        let snapshot = self.shared.snapshot();
-        let drawing = snapshot.view.main.drawing.clone();
-        let drawn = !self.shared.supervisor.borrow().busy() && drawing.is_some() && snapshot.notices.is_empty();
-        let function = snapshot.view.main.function.clone().unwrap_or_default();
-        self.smoke = Some(match step {
-            Smoke::Drawing { .. } if drawn && self.started == 1 => {
-                let groups = drawing.as_ref().map_or(0, |drawing| drawing.groups.len());
-                self.shared.with(Supervisor::trap);
-                self.perform();
-                Smoke::Trapped { since: now, first: format!("drew `{function}` ({groups} groups)"), before: drawing }
-            }
-            // The new worker drew anew: not the drawing that the page kept.
-            Smoke::Trapped { first, before, .. }
-                if drawn && self.started == 2 && !before.as_ref().zip(drawing.as_ref()).is_some_and(|(before, now)| Arc::ptr_eq(before, now)) =>
-            {
-                report(&format!("ok: {}; {first}; the worker trapped and restarted; drew `{function}` again", self.backend));
-                Smoke::Done
-            }
-            Smoke::Drawing { since } | Smoke::Trapped { since, .. } if now - since > SMOKE_PATIENCE => {
-                report(&format!("fail: {} workers started, function {function:?}, notices {:?}", self.started, snapshot.notices));
-                Smoke::Done
-            }
-            other => other,
-        });
-    }
 }
 
 impl eframe::App for Page {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.take_incoming();
+        loop {
+            let downloaded = self.shared.supervisor.borrow_mut().take_download();
+            let Some(zip) = downloaded else { break };
+            self.downloaded(zip);
+        }
+        self.smoke_keys(ui.ctx());
         let host = self.has_project().then_some(&self.shared as &dyn Host);
         let outward = self.ide.show(ui, host, &self.start);
         self.perform();
@@ -527,13 +510,43 @@ fn prefers(query: &str) -> bool {
     web_sys::window().and_then(|window| window.match_media(query).ok().flatten()).is_some_and(|list| list.matches())
 }
 
-/// Tells the server that served the page how the smoke test went.
-fn report(text: &str) {
-    let Some(window) = web_sys::window() else { return };
-    let init = RequestInit::new();
-    init.set_method("POST");
-    init.set_body(&JsValue::from_str(text));
-    let _ = window.fetch_with_str_and_init("/smoke", &init);
+/// The time of the page, local, as a zip keeps it: that of a download.
+fn now() -> archive::Stamp {
+    let date = js_sys::Date::new_0();
+    let part = |value: u32| u8::try_from(value).unwrap_or(0);
+    archive::Stamp {
+        year: u16::try_from(date.get_full_year()).unwrap_or(1980),
+        // From 0 in JavaScript.
+        month: part(date.get_month()).saturating_add(1),
+        day: part(date.get_date()),
+        hour: part(date.get_hours()),
+        minute: part(date.get_minutes()),
+        second: part(date.get_seconds()),
+    }
+}
+
+/// Saves `bytes` as the file `name`, as the browser saves what a link downloads.
+fn save(name: &str, bytes: &[u8]) -> Result<(), String> {
+    let window = web_sys::window().ok_or_else(|| "the page has no window".to_owned())?;
+    let document = window.document().ok_or_else(|| "the page has no document".to_owned())?;
+    let options = web_sys::BlobPropertyBag::new();
+    options.set_type("application/zip");
+    let parts = js_sys::Array::of1(&Uint8Array::from(bytes));
+    let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options).map_err(js)?;
+    let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(js)?;
+    let link = document.create_element("a").map_err(js)?.dyn_into::<web_sys::HtmlAnchorElement>().map_err(|_| "no link".to_owned())?;
+    link.set_href(&url);
+    link.set_download(name);
+    let body = document.body().ok_or_else(|| "the page has no body".to_owned())?;
+    body.append_child(&link).map_err(js)?;
+    link.click();
+    link.remove();
+    // The download took the address when it started; it goes a minute later.
+    let revoke = Closure::once_into_js(move || {
+        let _ = web_sys::Url::revoke_object_url(&url);
+    });
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(revoke.unchecked_ref(), 60_000);
+    Ok(())
 }
 
 /// A file found by a walk of the browser: from the dialog, already a file; from a drop, an entry to open.
@@ -569,6 +582,9 @@ struct Listed {
 async fn read_folder(listed: Listed, inbox: Inbox) {
     let paths: Vec<String> = listed.files.iter().map(|(path, _)| path.clone()).collect();
     let plan = folder::plan(&paths, &listed.folders);
+    if let Some(why) = folder::only_a_zip(&paths, &plan) {
+        return inbox.push(Incoming::Failed(why));
+    }
     let mut found: Vec<Option<(String, Found)>> = listed.files.into_iter().map(Some).collect();
     let mut budget = Budget::default();
     let mut files = Vec::new();
@@ -584,7 +600,28 @@ async fn read_folder(listed: Listed, inbox: Inbox) {
             Err(why) => return inbox.unreadable(&path, why),
         }
     }
-    let notice = [listed.stopped, budget.notice()].into_iter().flatten().collect::<Vec<_>>().join("; ");
+    // The settings of the project: left out, and said, when they do not read or are too large; the folder opens.
+    let mut config = None;
+    if let Some((path, found)) = plan.config.and_then(|index| found.get_mut(index)).and_then(Option::take) {
+        config = match found.file().await {
+            Ok(file) => match folder::config_too_large(file.size() as u64) {
+                Some(why) => Some(why),
+                None => match bytes_of(&file, folder::MAX_CONFIG).await {
+                    Ok(bytes) => {
+                        files.push(File { path, bytes });
+                        None
+                    }
+                    Err(why) => Some(format!("`{path}` could not be read ({why}): its settings are left out")),
+                },
+            },
+            Err(why) => Some(format!("`{path}` could not be read ({why}): its settings are left out")),
+        };
+    }
+    let paths: Vec<String> = files.iter().map(|file| file.path.clone()).collect();
+    if let Some(why) = folder::too_many(&paths, &plan.folders) {
+        return inbox.push(Incoming::Failed(why));
+    }
+    let notice = [listed.stopped, budget.notice(), config].into_iter().flatten().collect::<Vec<_>>().join("; ");
     let folder = Folder { name: listed.name, files, folders: plan.folders };
     inbox.push(Incoming::Folder(folder, (!notice.is_empty()).then_some(notice)));
 }
@@ -691,7 +728,7 @@ async fn dropped_files(roots: Vec<FileSystemEntry>) -> Result<Listed, (String, S
 fn take(entry: FileSystemEntry, prefix: &str, pending: &mut Vec<(FileSystemDirectoryEntry, String)>, listed: &mut Listed) {
     let path = format!("{prefix}{}", entry.name());
     if entry.is_directory() {
-        if folder::enters(&path) {
+        if folder::lists(&path) {
             pending.push((entry.unchecked_into(), format!("{path}/")));
         }
         listed.folders.push(path);

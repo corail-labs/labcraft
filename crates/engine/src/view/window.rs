@@ -2,7 +2,8 @@
 //! `docs/architecture.md`, 12.5): the view of each tab, the tab in preview, the detached windows, and for each window
 //! its selection and its zoom, and the commands of the window that change them. The layout of the panels is a setting
 //! of the user that the window keeps, not a state of the session (`view.toggle_panel`, `view.reset_layout`); a project
-//! is opened by the app, which makes its session (`project.new`, `project.open`).
+//! is opened by the app, which makes its session (`project.new`, `project.open`), and saved as a zip by the web page
+//! (`project.download`).
 
 use serde_json::{Value, json};
 
@@ -15,6 +16,7 @@ use crate::session::Session;
 pub const WINDOW_ONLY: &[&str] = &[
     "project.new",
     "project.open",
+    "project.download",
     "view.get_state",
     "view.select",
     "view.set_view",
@@ -32,9 +34,10 @@ pub const WINDOW_ONLY: &[&str] = &[
 ];
 
 /// The commands of the window that the window runs itself, never the session: a project is opened by the app, which
-/// makes its session, the layout of the panels is a setting of the user, and the app holds the agents attached.
+/// makes its session; it is downloaded by the web page, which saves the zip that its worker writes from the files of
+/// the session (ide.md 12); the layout of the panels is a setting of the user; and the app holds the agents attached.
 pub const RUN_BY_THE_WINDOW: &[&str] =
-    &["project.new", "project.open", "view.toggle_panel", "view.reset_layout", "agents.disconnect", "agents.set_policy"];
+    &["project.new", "project.open", "project.download", "view.toggle_panel", "view.reset_layout", "agents.disconnect", "agents.set_policy"];
 
 /// At most this many items of a selection, in `view.select` and in what `view.get_state` returns *(proposed)*.
 pub const MAX_SELECTED: usize = 1_000;

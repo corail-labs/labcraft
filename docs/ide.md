@@ -360,15 +360,22 @@ their own is decided when a second IDE starts.
 The same window, written once for the desktop and the browser, replaces the two panels of the viewer of M0v. In M1 the
 web page edits a project held in memory (the examples, or a folder dropped on it), which `Download` saves as a zip;
 it has no agent attached, and a detached tab floats in the page (9). The settings of the user are kept in the
-`localStorage` of the page, those of the project in its `.labcraft/config.toml`, in memory and in the zip. Opening a
-folder of the computer to write it in place (the File System Access API, which only Chromium has) is not in M1
-([architecture.md](architecture.md), 12.9).
+`localStorage` of the page, those of the project in its `.labcraft/config.toml`, in memory and in the zip. `Download`
+(`File`, on the web only) saves `NAME.zip`, `NAME` being the name of the folder: every file the page holds but the
+journal (the program files, `.labcraft/config.toml` and `.labcraft/.gitignore`, `.labcraft/recovery/` when there) and
+its empty folders. A folder dropped on the page or chosen is read for its program files and its
+`.labcraft/config.toml`, 1 MiB at most: a larger or unreadable one is left out, and the page says so; its other files
+are not in the zip. A folder of more entries than a zip holds (65,534 files and empty folders) is refused when it
+opens, and the page points to the desktop app. A zip dropped with no program file beside it is refused, and the
+page says to unzip it first: the page opens a folder, not a zip. Opening a folder of the computer to write it in place (the File System
+Access API, which only Chromium has) is not in M1 ([architecture.md](architecture.md), 12.9).
 
 Its start page holds the project in memory (decision of the owner, 2026-11-16): an example opens as it is, with no
 copy and nothing written on a disk; `New project` makes `main` in memory; `Open folder` chooses a folder, or one is
 dropped on the page; no project is recent. The page holds one project: another replaces it, and when the project
-changed (a file written, or a step in its history) the page asks first, as it does before it is left or reloaded. The
-address names the folder and the function shown.
+changed (a file written, or a step in its history) the page asks first, as it does before it is left or reloaded; a
+project saved by `Download` counts as unchanged until it changes again. The address names the folder and the function
+shown.
 
 ## 13. Left for later
 

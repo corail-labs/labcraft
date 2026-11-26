@@ -40,6 +40,9 @@ pub enum ToWorker {
     Command { request: u64, id: String, params: String },
     /// The zoom of the canvas of the window that shows the function, which `view.get_state` returns: no command.
     Zoom(String, f32),
+    /// The files of the session as a zip (`Download`, ide.md 12), each changed at the time the page gives, its local
+    /// time: [`Answer::zip`].
+    Download(crate::archive::Stamp),
     /// Traps the worker, as a bug would: what the smoke test of the page restarts from.
     Trap,
 }
@@ -72,6 +75,8 @@ pub struct Answer {
     pub drawings: Vec<(String, Arc<Drawing>)>,
     /// The files that the message changed, when it changed any.
     pub files: Option<Changed>,
+    /// The zip that [`ToWorker::Download`] asked for, when it could be written; `result` says why not.
+    pub zip: Option<Vec<u8>>,
 }
 
 impl Answer {
@@ -84,6 +89,7 @@ impl Answer {
             listing: None,
             drawings: Vec::new(),
             files: None,
+            zip: None,
         }
     }
 }

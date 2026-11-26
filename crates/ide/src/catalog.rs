@@ -92,16 +92,22 @@ pub fn planned(id: &str) -> Option<Planned> {
     }
 }
 
+/// Why `project.download` does not run in a window whose project is on the disk: only a project held in memory, as on
+/// the web, is downloaded (ide.md 12).
+pub const DOWNLOAD_ON_DISK: &str = "web page only: here the files are on the disk";
+
 /// The commands of the command palette: every command of the registry, then the actions of the window, with their
 /// keys. Without a project, only what opens one can run. Without `agents`, where the window shows nothing of AI (ide.md
-/// 8), the commands about the agents are not there.
-pub fn palette_entries(keymap: &Keymap, project: bool, agents: bool) -> Vec<Entry> {
+/// 8), the commands about the agents are not there. Without `in_memory`, `project.download` does not run
+/// ([`DOWNLOAD_ON_DISK`]).
+pub fn palette_entries(keymap: &Keymap, project: bool, agents: bool, in_memory: bool) -> Vec<Entry> {
     let key = |id: &str| keys::key_of(keymap, &CommandRef::new(id));
     let opens = |id: &str| matches!(id, "project.new" | "project.open");
     let mut entries = Vec::new();
     for command in
         registry::commands().iter().filter(|command| agents || ![crate::agents::DISCONNECT, crate::agents::SET_POLICY].contains(&command.id))
     {
+        let on_disk = command.id == keys::DOWNLOAD && !in_memory;
         let state = match command.planned {
             Some(planned) => State::Planned(Planned {
                 label: command.label.to_owned(),
@@ -109,6 +115,7 @@ pub fn palette_entries(keymap: &Keymap, project: bool, agents: bool) -> Vec<Entr
                 milestone: planned.to_owned(),
                 link: Some(ROADMAP.to_owned()),
             }),
+            None if on_disk => State::Disabled(DOWNLOAD_ON_DISK.to_owned()),
             None if !project && !opens(command.id) => State::Disabled("Open a project first".to_owned()),
             None => State::Enabled,
         };
@@ -156,7 +163,7 @@ mod tests {
     #[test]
     fn every_command_of_the_registry_is_in_the_palette_once() {
         let keymap = keys::keymap(craft_keymap::Platform::Windows);
-        let entries = palette_entries(&keymap, true, true);
+        let entries = palette_entries(&keymap, true, true, false);
         for command in registry::commands() {
             assert_eq!(entries.iter().filter(|entry| entry.id == command.id).count(), 1, "{}", command.id);
         }
@@ -167,13 +174,25 @@ mod tests {
     #[test]
     fn without_a_project_only_what_opens_one_runs() {
         let keymap = keys::keymap(craft_keymap::Platform::Windows);
-        let entries = palette_entries(&keymap, false, true);
+        let entries = palette_entries(&keymap, false, true, false);
         let state = |id: &str| entries.iter().find(|entry| entry.id == id).map(|entry| entry.state.clone()).unwrap();
         assert_eq!(state("project.open"), State::Enabled);
         assert!(matches!(state("file.read"), State::Disabled(_)));
         assert_eq!(state(keys::CONNECT_AGENT), State::Enabled);
-        let without_ai = palette_entries(&keymap, true, false);
+        let without_ai = palette_entries(&keymap, true, false, false);
         assert!(without_ai.iter().all(|entry| !entry.id.starts_with("agents.") && entry.id != keys::CONNECT_AGENT));
+    }
+
+    /// `Download` runs where the project is in memory, as on the web; on the disk, it says why not (ide.md 12).
+    #[test]
+    fn download_runs_on_a_project_in_memory_only() {
+        let keymap = keys::keymap(craft_keymap::Platform::Windows);
+        let download = |project: bool, in_memory: bool| {
+            palette_entries(&keymap, project, true, in_memory).into_iter().find(|entry| entry.id == keys::DOWNLOAD).map(|entry| entry.state)
+        };
+        assert_eq!(download(true, true), Some(State::Enabled));
+        assert_eq!(download(false, true), Some(State::Disabled("Open a project first".to_owned())));
+        assert_eq!(download(true, false), Some(State::Disabled(DOWNLOAD_ON_DISK.to_owned())));
     }
 
     #[test]

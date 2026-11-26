@@ -513,6 +513,8 @@ impl App {
                 self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace(function))
             }
             Outward::ConnectAgent => self.connect_agents(ctx),
+            // The window never asks it here, whose files are on the disk (`catalog::DOWNLOAD_ON_DISK`).
+            Outward::Download => {}
         }
     }
 

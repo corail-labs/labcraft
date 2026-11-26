@@ -8,6 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+crc32fast = { workspace = true }
+flate2 = { workspace = true }
 labcraft-diagram = { workspace = true, features = ["serde"] }
 labcraft-engine = { workspace = true }
 labcraft-ide = { workspace = true }
@@ -30,6 +32,7 @@ wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true, features = [
     "BeforeUnloadEvent",
     "Blob",
+    "BlobPropertyBag",
     "console",
     "DataTransfer",
     "DataTransferItem",
@@ -47,6 +50,7 @@ web-sys = { workspace = true, features = [
     "FileSystemDirectoryReader",
     "FileSystemEntry",
     "FileSystemFileEntry",
+    "HtmlAnchorElement",
     "HtmlCanvasElement",
     "HtmlElement",
     "History",
@@ -54,12 +58,18 @@ web-sys = { workspace = true, features = [
     "Location",
     "MediaQueryList",
     "MessageEvent",
+    "Node",
     "RequestInit",
     "Response",
     "Storage",
+    "Url",
     "Window",
     "Worker",
 ] }
+
+# Reads back the zips of `archive`, natively.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+zip = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }

@@ -343,7 +343,7 @@ character boundary, and these crates hold little numerical code.
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8); `run.start` of programs built to cost the most up to a default limit of the run, 2 s and 512 MB, 4 s when the trace reaches its bound, `--max-memory` and 30 % when the run fills its memory (10.11). In release, each case in a process of its own; the memory on Linux only |
 | `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10); from M0v, `diagram`, `editor` and `labcraft-web`, whose library passes its tests there (section 11.5) |
 | `web` | Clippy of `labcraft-web` for WASM, then `trunk build --release` into `target/web` (section 11.5). Not part of `ci`, which needs no Trunk: the job `web` runs it |
-| `web-smoke` | `target/web` in headless Chrome: the page draws a function, traps its worker, and a new one draws again (section 11.5). Not part of `ci`, which needs no browser: the job `web` runs it |
+| `web-smoke` | `target/web` in headless Chrome: the page draws a function, traps its worker, and a new one draws again; then scenario 8 of M1: it edits, undoes and redoes, sets a setting of the user and one of the project, posts the zip of `Download`, which is unpacked and checked, and loads again with the setting of the user (section 11.5). Not part of `ci`, which needs no browser: the job `web` runs it |
 | `web-serve` | Not a check: serves `target/web` on the loopback, to try the viewer in a browser |
 | `frames` | Not a check: writes the function of 1,000 nodes and 2,000 wires of `bounds` into `target/frames/`, builds `labcraft` in release, and opens it there with `LABCRAFT_FRAMES` (cli.md 8), to see 60 frames/s by hand before a tag (section 11.6) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
@@ -1649,8 +1649,16 @@ has it as a zip, to serve with any static server (decisions of the owner, 2026-1
 - **The smoke test**, `cargo xtask web-smoke`, serves `target/web` on the loopback and opens `?smoke` in headless
   Chrome, as a browser opens it, then `?smoke&webgl`: a runner has no GPU, so both draw with WebGL2 on SwiftShader,
   the first by falling back to it. The page opens the examples, traps its worker once it drew, and posts to the server
-  whether a new worker drew anew, not the drawing the page kept; CI fails otherwise. WebGPU itself is seen only in a
-  browser that has it. The server serves only the names of `target/web`, on the loopback, one request at a time.
+  whether a new worker drew anew, not the drawing the page kept; CI fails otherwise. Then scenario 8 of M1, through the
+  host the window talks to: it adds `core.not` to `check_voltage` and wires `in_range` to it, undoes until its copy of
+  the file is the bytes it opened, and redoes; sets `editor.mark_fixed` in the store of the user and `editor.drag_pans`
+  in that of the project; and posts the zip of `Download`. The server unpacks it in memory with the `zip` crate,
+  refusing an entry whose path would leave its folder, and fails unless `check`, run in the process with the
+  libraries shipped, gives no error, the file edited differs from that of `examples/` and holds the node, every other
+  program file of `examples/` is there byte for byte, and `.labcraft/config.toml` holds the key of the project. The page
+  then loads itself again (`?smoke&reloaded`) and reports whether its session holds the setting of the user. WebGPU
+  itself is seen only in a browser that has it. The server serves only the names of `target/web`, on the loopback, one
+  request at a time.
 - **The order of a trap.** A trap is put down to a drawing when the message that names it reaches the page before the
   error of the worker. Messages of a worker come in order, but the HTML standard does not order them with its error;
   Chrome kept that order 400 times out of 400 with a real trap. Were it reversed, a drawing that traps would count as a
@@ -1678,7 +1686,7 @@ of the files, from the same code, which a test compares on `examples/`.
 | Maximum nesting through `diagram`: 256 levels on the stack of a worker, as for `format` (section 4) | `tests/harness` | 4 |
 | Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 384 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |
 | File change to new drawing within 200 ms, through the session and the watcher, without a window; such a test of the clock goes in `timing.rs`, which runs alone (`.config/nextest.toml`) | `apps/labcraft/tests/timing.rs` | 6.3 |
-| The web viewer: the messages of the page and the worker, the session of the worker on every bundled function, a drawing that traps (the first function's included) and a folder that traps twice, the walk of a folder at its limits, natively and in WASM; the page in headless Chrome, which draws, traps its worker and draws again | `apps/labcraft-web`, `cargo xtask web-smoke` | 6.5 |
+| The web viewer: the messages of the page and the worker, the session of the worker on every bundled function, a drawing that traps (the first function's included) and a folder that traps twice, the walk of a folder at its limits, the zip of `Download` read back by another reader, natively and in WASM; the page in headless Chrome, which draws, traps its worker and draws again, then plays scenario 8 of M1 | `apps/labcraft-web`, `cargo xtask web-smoke` | 6.5 |
 | Every example opened, no file changed | `apps/labcraft/tests` | 6.6 |
 | Fuzzing placement and routing (target `diagram`, which also checks the rules of 2.2), and the reader of a trace | `fuzz/` | 4 |
 | 60 frames/s with 1,000 nodes and 2,000 wires, on a reference machine | by hand, before the tag: `cargo xtask frames`, its motion of 12 s, then the window moved by hand | 6.4 |
@@ -2167,9 +2175,13 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   app as the web viewer builds them in, and copied into a folder the user chooses. The settings of the user hold the
   projects opened last (12 *(proposed)*), looked at off the thread of the window.
 - **`labcraft-web`**: the same window, its session in a worker (10.8). The project is in memory (`engine::Memory`): an
-  example, or a folder dropped on the page; `Download` gives it as a zip, written in the worker. The page keeps a copy of
-  the texts of the project, which the worker sends with each write, so that a worker that traps (10.8) starts again from
-  them: the history goes with the worker, the files stay. The settings of the user are in the `localStorage` of the
+  example, or a folder dropped on the page; `Download` gives it as a zip, written in the worker from the files of its
+  session: every file under the root but the journal (the program files, `.labcraft/config.toml` and its `.gitignore`,
+  `.labcraft/recovery/` when there) and each empty folder; deflated, or stored when deflate does not make a file
+  smaller; names in UTF-8 with `/`; no zip64, so that a project past 65,534 entries or 4 GiB is refused,
+  `file.too_large` (`archive`). The page saves it as `NAME.zip`, `NAME` the name of the folder, a name that Windows
+  keeps for a device (`con`, `lpt1`) given a `_` before it. The page keeps a copy of the texts of the project, which the worker sends with each write, so
+  that a worker that traps (10.8) starts again from them: the history goes with the worker, the files stay. The settings of the user are in the `localStorage` of the
   page, which a worker cannot reach: the page sends them to the worker when it starts it, and the worker sends back each
   `settings.set` of the user's store, which the page writes. Those of the project are its `.labcraft/config.toml`, in
   memory and in the zip. Opening a folder of the computer to write it in place (the File
@@ -2181,12 +2193,16 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   journal left out (`engine::Memory::files` compares their times of change); the page makes a `Published` of them, whose
   generation changes only with what the session published, so that a read (`history.list`) changes nothing. With no
   watcher in the browser, the worker tells the session of the files a command changed, as the watch does on the desktop.
+  `Download` is one more message of the worker (`ToWorker::Download`), in flight alone as a command is, its zip in the
+  answer; a trap while the worker writes it fails that download, and the files stay.
   The session of the worker has a window (`with_window`). There is no trace and no value on the web: a run needs threads
   (D-22). Without an address the page opens on its start page (ide.md 10): its examples open in memory, as they are, and
-  it lists no recent project; a project that changed (a file written, or a step in its history) asks before another
-  replaces it, or the page is left. A worker that traps starts again on the files as they are, on the function shown:
+  it lists no recent project; a project that changed (a file written, or a step in its history) since it opened or its
+  last `Download` asks before another replaces it, or the page is left. A worker that traps starts again on the files as they are, on the function shown:
   the history, the other tabs, their views and the selection go with it; a trap after the files changed counts again
-  as a first. A folder read keeps only its program files: `.labcraft/config.toml` comes with the settings (step 6).
+  as a first. A folder read keeps its program files and its `.labcraft/config.toml`, 1 MiB at most (a larger or
+  unreadable one is left out, and said); one of more entries than a zip holds, `archive::MAX_ENTRIES`, is refused
+  when it opens (`folder::too_many`).
   The address names the folder always, `?folder=examples&fn=check_voltage`. The settings of the window are kept as JSON in `localStorage`, those of
   the viewer of M0v read into them once.
 - **`labcraft-cli`** gains the editing commands through `engine`, one per process, with no history (commands.md 9.5).

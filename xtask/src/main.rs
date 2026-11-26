@@ -45,7 +45,7 @@ commands:
   hooks     the Python tests of the hook of the agents (.claude/hooks); not part of ci
   web       clippy for WASM of labcraft-web, then trunk build --release into target/web; not part of ci
   web-serve serves target/web on http://127.0.0.1:8770/, to try the viewer in a browser; not part of ci
-  web-smoke target/web in headless Chrome, as a browser opens it and with WebGL2 asked for: the page draws, traps its worker and draws again; not part of ci
+  web-smoke target/web in headless Chrome, as a browser opens it and with WebGL2 asked for: the page draws, traps its worker and draws again, edits, undoes and redoes, sets settings, downloads a zip that it checks, and loads again; not part of ci
   frames    builds labcraft in release and opens it on the function of 1,000 nodes and 2,000 wires of bounds, timing
             each frame (LABCRAFT_FRAMES), to see 60 frames/s by hand before a tag; not part of ci
   figures [--against FILE]  the size and the figure of stability of each example, in Markdown, for the summary of CI;

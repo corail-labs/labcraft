@@ -531,3 +531,98 @@ fn a_trap_restarts_the_worker_with_the_detached_windows() {
     let notices = supervisor.notices();
     assert!(notices.iter().any(|notice| notice.starts_with("LC0099: drawing `beta`")), "{notices:?}");
 }
+
+/// `Download` gives the zip of the worker once; a trap while it zips fails that download, not the files, which the new
+/// worker opens as they were written, and a download after it works.
+#[test]
+fn a_download_gives_its_zip_and_a_trap_while_zipping_keeps_the_files() {
+    poison(&[]);
+    let mut nothing = Supervisor::default();
+    assert!(nothing.download(Stamp::default()).is_empty());
+    assert!(nothing.take_download().is_some_and(|zip| zip.is_err()), "no folder");
+    let (mut supervisor, mut worker) = opened(folder(), None);
+    let text = String::from_utf8(function("alpha").bytes).unwrap().replace("core.add(x, x)", "core.add(x, 1.0)");
+    command(&mut supervisor, &mut worker, "file.write", json!({ "path": "alpha.lcf", "text": text })).unwrap();
+    let actions = supervisor.download(Stamp::default());
+    drive(&mut supervisor, &mut worker, actions);
+    let zip = supervisor.take_download().unwrap().unwrap();
+    assert!(zip.starts_with(b"PK\x03\x04"));
+    assert_eq!(supervisor.take_download(), None, "taken once");
+    // The worker traps while it writes the zip.
+    let actions = supervisor.download(Stamp::default());
+    assert!(matches!(actions.as_slice(), [Action::Send(_)]));
+    let actions = supervisor.trapped();
+    let why = supervisor.take_download().unwrap().unwrap_err();
+    assert!(why.contains("LC0099"), "{why}");
+    drive(&mut supervisor, &mut worker, actions);
+    assert_eq!(worker.started, 2);
+    let alpha = supervisor.folder().and_then(|folder| folder.files.iter().find(|file| file.path == "alpha.lcf")).unwrap();
+    assert_eq!(alpha.bytes, text.as_bytes(), "the files stay");
+    assert!(supervisor.notices().is_empty(), "{:?}", supervisor.notices());
+    let actions = supervisor.download(Stamp::default());
+    drive(&mut supervisor, &mut worker, actions);
+    assert!(supervisor.take_download().is_some_and(|zip| zip.is_ok()));
+}
+
+/// A zip saved counts the files as saved, until they change again; a download that fails changes nothing.
+#[test]
+fn a_zip_saved_counts_the_project_as_saved_until_it_changes() {
+    poison(&[]);
+    let (mut supervisor, mut worker) = opened(folder(), None);
+    assert!(!supervisor.saved(), "nothing saved yet");
+    let text = String::from_utf8(function("alpha").bytes).unwrap().replace("core.add(x, x)", "core.add(x, 1.0)");
+    command(&mut supervisor, &mut worker, "file.write", json!({ "path": "alpha.lcf", "text": text })).unwrap();
+    let actions = supervisor.download(Stamp::default());
+    drive(&mut supervisor, &mut worker, actions);
+    assert!(supervisor.take_download().is_some_and(|zip| zip.is_ok()));
+    assert!(!supervisor.saved(), "a zip not saved yet");
+    supervisor.mark_saved();
+    assert!(supervisor.saved() && supervisor.edited());
+    let again = text.replace("1.0", "2.0");
+    command(&mut supervisor, &mut worker, "file.write", json!({ "path": "alpha.lcf", "text": again })).unwrap();
+    assert!(!supervisor.saved(), "a new change");
+    // A download that fails: still not saved.
+    let actions = supervisor.download(Stamp::default());
+    let actions = match actions.as_slice() {
+        [Action::Send(_)] => supervisor.trapped(),
+        _ => panic!("{actions:?}"),
+    };
+    assert!(supervisor.take_download().is_some_and(|zip| zip.is_err()));
+    supervisor.mark_saved();
+    assert!(!supervisor.saved(), "the zip saved before is not the files now");
+    drive(&mut supervisor, &mut worker, actions);
+}
+
+/// A download asked while another is written is refused and said; the first one still comes.
+#[test]
+fn a_second_download_meanwhile_is_said() {
+    poison(&[]);
+    let (mut supervisor, mut worker) = opened(folder(), None);
+    let first = supervisor.download(Stamp::default());
+    assert!(matches!(first.as_slice(), [Action::Send(_)]));
+    assert!(supervisor.download(Stamp::default()).is_empty(), "nothing more is sent");
+    let why = supervisor.take_download().unwrap().unwrap_err();
+    assert!(why.starts_with("Download: ") && why.contains("being written"), "{why}");
+    drive(&mut supervisor, &mut worker, first);
+    assert!(supervisor.take_download().is_some_and(|zip| zip.is_ok()));
+    assert_eq!(supervisor.take_download(), None);
+}
+
+/// Another folder opened, or an answer that does not read, while the zip is written: the download fails, and the
+/// page still has it to say after the new folder.
+#[test]
+fn a_download_lost_to_another_folder_or_to_an_unread_answer_is_said() {
+    poison(&[]);
+    let (mut supervisor, _worker) = opened(folder(), None);
+    assert!(matches!(supervisor.download(Stamp::default()).as_slice(), [Action::Send(_)]));
+    let actions = supervisor.open(folder(), None);
+    assert_eq!(actions, [Action::Start]);
+    let why = supervisor.take_download().unwrap().unwrap_err();
+    assert!(why.starts_with("Download: ") && why.contains("another folder"), "{why}");
+    let (mut supervisor, _worker) = opened(folder(), None);
+    assert!(matches!(supervisor.download(Stamp::default()).as_slice(), [Action::Send(_)]));
+    supervisor.received(b"\xff not postcard");
+    let why = supervisor.take_download().unwrap().unwrap_err();
+    assert!(why.starts_with("Download: "), "{why}");
+    assert!(!supervisor.busy());
+}

@@ -3,9 +3,9 @@
 //!
 //! The library is what both ends need, and what is tested without a browser: what they say to each other
 //! ([`protocol`]), what the worker does ([`host`]), what the page knows of its worker and does when it traps
-//! ([`supervisor`]), the walk of a folder dropped on the page ([`folder`]), its address ([`link`]), the folders it
-//! bundles. The page and the
-//! worker themselves, in the browser only, carry bytes and draw.
+//! ([`supervisor`]), the walk of a folder dropped on the page ([`folder`]), its address ([`link`]), the zip of
+//! `Download` ([`archive`]), the folders it bundles. The page and the worker themselves, in the browser only, carry
+//! bytes and draw.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,6 +18,7 @@
 )]
 #![forbid(unsafe_code)]
 
+pub mod archive;
 pub mod folder;
 pub mod host;
 pub mod link;

@@ -1404,9 +1404,12 @@ fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
     assert!(headless.message.contains("no window") || headless.message.contains("have none"), "{}", headless.message);
     session.with_window();
     // A project is opened by the app, and the layout of the panels is the window's.
-    for (id, params) in
-        [("project.open", json!({ "folder": "/q" })), ("view.toggle_panel", json!({ "panel": "run" })), ("view.reset_layout", json!({}))]
-    {
+    for (id, params) in [
+        ("project.open", json!({ "folder": "/q" })),
+        ("project.download", json!({})),
+        ("view.toggle_panel", json!({ "panel": "run" })),
+        ("view.reset_layout", json!({})),
+    ] {
         assert_eq!(error(&mut session, id, params).code, "command.not_enabled", "{id}");
     }
     assert_eq!(error(&mut session, "view.detach", json!({ "function": "b" })).code, "params.invalid", "no folder is open");

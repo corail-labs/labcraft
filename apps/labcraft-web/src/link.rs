@@ -32,6 +32,8 @@ pub struct Link {
     pub webgl: bool,
     /// `?smoke`: the smoke test of the page (`cargo xtask web-smoke`).
     pub smoke: bool,
+    /// `?smoke&reloaded`: its last step, once the page loaded itself again.
+    pub reloaded: bool,
 }
 
 /// What the page opens for an address: a bundled folder, the function to show in it, and what the page says of the
@@ -56,6 +58,7 @@ impl Link {
                 "fn" if link.function.is_none() => link.function = value.filter(|value| is_function_name(value)),
                 "webgl" => link.webgl = true,
                 "smoke" => link.smoke = true,
+                "reloaded" => link.reloaded = true,
                 _ => {}
             }
         }
@@ -98,7 +101,7 @@ impl Link {
 }
 
 /// Percent-encodes all but the letters, digits, `-`, `_`, `.`, `~` and `/`.
-fn encode(text: &str) -> String {
+pub(crate) fn encode(text: &str) -> String {
     let mut encoded = String::new();
     for byte in text.bytes() {
         if byte.is_ascii_alphanumeric() || b"-_.~/".contains(&byte) {
@@ -141,10 +144,13 @@ mod tests {
         assert_eq!(Link::parse(""), Link::default());
         assert_eq!(Link::parse("?"), Link::default());
         let link = Link::parse("?folder=docs%2Frfc&fn=checked_sweep&webgl");
-        assert_eq!(link, Link { folder: Some("docs/rfc".to_owned()), function: Some("checked_sweep".to_owned()), webgl: true, smoke: false });
+        assert_eq!(
+            link,
+            Link { folder: Some("docs/rfc".to_owned()), function: Some("checked_sweep".to_owned()), webgl: true, smoke: false, reloaded: false }
+        );
         // Given twice, the first counts; empty, it is not given; an unknown part is left alone.
-        let link = Link::parse("?fn=a&fn=b&folder=&smoke&other=1");
-        assert_eq!(link, Link { folder: None, function: Some("a".to_owned()), webgl: false, smoke: true });
+        let link = Link::parse("?fn=a&fn=b&folder=&smoke&other=1&reloaded");
+        assert_eq!(link, Link { folder: None, function: Some("a".to_owned()), webgl: false, smoke: true, reloaded: true });
         assert!(Link::parse("?webgl=1").webgl);
         // A `%` cut short, or bytes that are not UTF-8, ask for nothing.
         assert_eq!(Link::parse("?fn=a%2").function, None);
@@ -175,7 +181,10 @@ mod tests {
         assert_eq!(Link::search(None, None, true), "?webgl");
         for (folder, function) in [("docs/rfc", "dmm_driver.read_dc_volts"), ("examples", "été.x"), ("odd?folder&x=y", "f")] {
             let link = Link::parse(&Link::search(Some(folder), Some(function), false));
-            assert_eq!(link, Link { folder: Some(folder.to_owned()), function: Some(function.to_owned()), webgl: false, smoke: false });
+            assert_eq!(
+                link,
+                Link { folder: Some(folder.to_owned()), function: Some(function.to_owned()), webgl: false, smoke: false, reloaded: false }
+            );
         }
     }
 
