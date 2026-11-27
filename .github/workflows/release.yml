@@ -77,6 +77,8 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       TARGET: ${{ matrix.target }}
       EXE: ${{ matrix.exe }}
+      # `labcraft.exe` of a release always has its icon (apps/labcraft/build.rs).
+      LABCRAFT_REQUIRE_ICON: 1
       NAME: labcraft-${{ needs.version.outputs.version }}-${{ matrix.name }}
       # Windows is signed through SignPath on a tag pushed, once the secret of its API token exists; without it (a fork, a
       # pull request, a run by hand, today) the steps of signing are skipped and the files are built unsigned (#255).

@@ -168,6 +168,11 @@ fn main() -> ExitCode {
     }
     let frame = frame(craft_window::Choice::probe(craft_window::Prefix::new("LABCRAFT")));
     let viewport = egui::ViewportBuilder::default().with_title("LabCraft").with_inner_size([1400.0, 860.0]).with_min_inner_size([640.0, 400.0]);
+    // The icon of the window and of the taskbar: the filled icon of the logo. A PNG that does not read leaves the default.
+    let viewport = match eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/brand/labcraft-256.png")) {
+        Ok(icon) => viewport.with_icon(icon),
+        Err(_) => viewport,
+    };
     // On macOS the system keeps its buttons and frame, and the content reaches under a see-through title bar, so the
     // top bar is the title bar there too (as craft-anything does).
     let viewport = if cfg!(target_os = "macos") && frame.decorations() {

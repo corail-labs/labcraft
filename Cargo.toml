@@ -67,6 +67,8 @@ ropey = { version = "1.6", default-features = false, features = ["simd"] }
 lsp-types = { version = "0.97", default-features = false }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+# The icon and the version of `labcraft.exe` (apps/labcraft/build.rs); used only for a Windows target.
+winresource = { version = "0.1", default-features = false }
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 toml_parser = { version = "1", default-features = false }
 toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }

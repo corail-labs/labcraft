@@ -186,6 +186,10 @@ fn a_project_opens_with_its_panels_and_the_function_shown_in_its_tab() {
     // The broken function says its error in `Project`, and `Problems` names its code.
     assert!(harness.query_by_label_contains("broken  (1 error)").is_some());
     assert!(harness.query_by_label_contains("LC2001").is_some());
+    // The top bar starts with the logo: its mark, then the name (ide.md 2).
+    let mark = harness.get_by_label("labcraft logo").rect();
+    let name = harness.get_by_label("labcraft").rect();
+    assert!(mark.width() >= 15.0 && mark.right() <= name.left() && mark.top() < 40.0, "mark {mark:?}, name {name:?}");
     shot(&mut harness, "project");
 }
 

@@ -1,11 +1,9 @@
-<p align="center">
+<h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
-    <img src="docs/images/logo-light.svg" width="96" height="96" alt="LabCraft">
+    <img src="docs/images/logo-light.svg" width="321" height="72" alt="LabCraft">
   </picture>
-</p>
-
-<h1 align="center">LabCraft</h1>
+</h1>
 
 <p align="center">
   <strong>A graphical dataflow programming language and IDE, built in pure Rust.</strong><br />

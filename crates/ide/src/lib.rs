@@ -813,7 +813,9 @@ impl Ide {
                 top_bar::show(
                     ui,
                     &Bar {
-                        name: "/labcraft",
+                        // The logo: the filled icon and the name (ATTRIBUTION.md).
+                        mark: Some(egui::include_image!("../../../assets/brand/favicon.svg")),
+                        name: "labcraft",
                         menus: &menus,
                         undo: (self.history.undo.is_some(), self.history.undo.clone()),
                         redo: (self.history.redo.is_some(), self.history.redo.clone()),
