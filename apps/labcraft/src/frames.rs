@@ -311,16 +311,19 @@ pub const DRAG_SECONDS: f64 = 3.0;
 /// The budget of the preview of a drag in a frame (architecture 12.4, *proposed*), and of the new drawing after the drop.
 pub const PREVIEW_BUDGET_MS: f64 = 4.0;
 pub const REDRAW_BUDGET_MS: f64 = 300.0;
+/// How far to the right the scripted drag ends, in units: 10 steps of the grid.
+const DRAG_END: f64 = 80.0;
 
 /// Where the scripted drag holds its nodes at `t` seconds from its start, in units on the grid of 8: round a loop of 160
-/// by 96 and back, as a hand drags; nothing once it is over.
+/// by 96, as a hand drags, drifting to the right so that it ends 80 units from where it started: a drop where the drag
+/// began is a move by nothing, which writes nothing and brings no new drawing to time. Nothing once it is over.
 pub fn drag_at(t: f64) -> Option<(i64, i64)> {
     if !(0.0..=DRAG_SECONDS).contains(&t) {
         return None;
     }
     let turn = std::f64::consts::TAU * t / DRAG_SECONDS;
     let snap = |value: f64| ((value / 8.0).round() * 8.0) as i64;
-    Some((snap(80.0 * turn.sin()), snap(48.0 * (1.0 - turn.cos()))))
+    Some((snap(80.0 * turn.sin() + DRAG_END * t / DRAG_SECONDS), snap(48.0 * (1.0 - turn.cos()))))
 }
 
 /// The nodes that the scripted drag holds: the first [`DRAGGED`] of the frame of the function that a command names.
@@ -527,6 +530,25 @@ mod tests {
         assert_eq!(move_at(12.0), Some((7, "pan back at the fit")));
         assert_eq!(move_at(12.01), None);
         assert_eq!(move_at(-0.01), None);
+    }
+
+    /// Worked out by hand, T the 3 s of the drag: x = 80 sin(2πt/T) + 80 t/T, y = 48 (1 - cos(2πt/T)), each to the
+    /// nearest multiple of 8.
+    #[test]
+    fn the_scripted_drag_ends_away_from_where_it_started() {
+        assert_eq!(drag_at(0.0), Some((0, 0)));
+        // A quarter: x 80 + 20 = 100, 12.5 steps, rounded away from zero to 13, 104; y 48.
+        assert_eq!(drag_at(DRAG_SECONDS / 4.0), Some((104, 48)));
+        // Half: x 0 + 40 = 40; y 96, the bottom of the loop.
+        assert_eq!(drag_at(DRAG_SECONDS / 2.0), Some((40, 96)));
+        // The end, where the drop is: 80 to the right, a move that writes the file.
+        assert_eq!(drag_at(DRAG_SECONDS), Some((80, 0)));
+        assert_eq!(drag_at(DRAG_SECONDS + 0.01), None);
+        assert_eq!(drag_at(-0.01), None);
+        // The drop moves by the last frame of the drag, whenever it falls: past its first half second, never by nothing.
+        for ms in 500..=3000 {
+            assert_ne!(drag_at(f64::from(ms) / 1000.0), Some((0, 0)), "{ms} ms");
+        }
     }
 
     #[test]
