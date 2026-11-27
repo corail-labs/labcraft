@@ -49,12 +49,20 @@ pub(crate) enum End {
     Next { loc: Loc, carry: Name },
     /// The `next` of the carry `carry`, which a node of the loop body at `loc` binds as one of its outputs.
     NextBound { loc: Loc, carry: Name },
+    /// The `yield` of the arm `arm` of the `match` or the `handle` at `loc`, which gives nothing yet: the wire adds an
+    /// output, which that arm yields and the other arms a hole for (commands.md 6.7, "Into a structure that gives nothing").
+    NewYield { loc: Loc, arm: usize },
 }
 
 impl End {
     fn loc(&self) -> Option<&Loc> {
         match self {
-            End::Slot(loc, _) | End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } | End::Next { loc, .. } => Some(loc),
+            End::Slot(loc, _)
+            | End::NewArg { loc, .. }
+            | End::After(loc)
+            | End::Field { loc, .. }
+            | End::Next { loc, .. }
+            | End::NewYield { loc, .. } => Some(loc),
             End::NextBound { .. } | End::Output(_) => None,
         }
     }
@@ -231,6 +239,11 @@ pub(crate) fn connect(
             let Start::Value(value) = &start else { return Err(EditError::internal("a label to a carry")) };
             let id = edit.id();
             add_next(edit, loc, *carry, Operand::Path(Path { id, first: value.name, rest: Box::new([]) }))?;
+        }
+        End::NewYield { loc, arm } => {
+            let Start::Value(value) = &start else { return Err(EditError::internal("a label to a `yield`")) };
+            let output = give(edit, loc, *arm, value.name)?;
+            edited.names.insert("output", edit.text(output).to_owned());
         }
         End::NextBound { loc, carry } => {
             let Start::Value(value) = &start else { return Err(EditError::internal("a label to a carry")) };
@@ -1031,6 +1044,7 @@ fn reader_body(function: &Function, end: &End) -> BodyPath {
             .unwrap_or_else(|| loc.body.clone()),
         End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } | End::NextBound { loc, .. } => loc.body.clone(),
         End::Next { loc, .. } => loc.sub(0),
+        End::NewYield { loc, arm } => loc.sub(*arm),
         End::Output(_) => Vec::new(),
     }
 }
@@ -1045,7 +1059,7 @@ pub(crate) fn resolve_end(
     arm: Option<&str>,
 ) -> Result<End, EditError> {
     if let (Some(arm), InputName::Node(node_name, part)) = (arm, name) {
-        return yield_end(edit, function, node_name, part, arm);
+        return yield_end(edit, function, node_name, part, arm, from.is_some());
     }
     if arm.is_some() {
         return Err(EditError::invalid("arm", "`arm` names the arm of a `yield`: `to` names then the output of its structure"));
@@ -1180,7 +1194,8 @@ fn structures_giving(edit: &Edit, function: &Function, name: &str) -> Vec<(Loc, 
 }
 
 /// The `yield` of `arm` that gives the output named of a `match` or a `handle`: `verdict` with `arm` `true` (9.2).
-fn yield_end(edit: &Edit, function: &Function, node_name: &NodeName, part: &Part, arm: &str) -> Result<End, EditError> {
+/// For a wire (`wiring`), the `yield` of a structure that gives nothing is the output that the wire adds.
+fn yield_end(edit: &Edit, function: &Function, node_name: &NodeName, part: &Part, arm: &str, wiring: bool) -> Result<End, EditError> {
     if *part != Part::Alone {
         return Err(EditError::invalid("to", "a `yield` is named by the output of its structure (`verdict`), with `arm`"));
     }
@@ -1212,10 +1227,16 @@ fn yield_end(edit: &Edit, function: &Function, node_name: &NodeName, part: &Part
             .expecting(crate::frame::arm_names(edit, branching)));
     };
     let gives = branching.arms.get(rank).is_some_and(|found| found.yields.values.len() > index);
+    if wiring && branching.gives_nothing() {
+        return Ok(End::NewYield { loc, arm: rank });
+    }
     if !gives {
         return Err(EditError::invalid(
             "to",
-            format!("`{}` gives nothing: a wire from inside one of its arms to outside adds an output", node_name.shown()),
+            format!(
+                "`{}` gives nothing: a constant has no output to go to; a wire from inside one of its arms, to this `yield` or to outside, adds one",
+                node_name.shown()
+            ),
         ));
     }
     Ok(End::Slot(loc, Slot::Yield { arm: rank, index }))

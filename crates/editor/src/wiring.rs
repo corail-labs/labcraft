@@ -110,7 +110,13 @@ impl Wiring {
                 return None;
             }
             let source = source_of(drawing, port)?;
-            let verdicts = wiring(drawing, source);
+            // A wire moved keeps its value: it adds no output to a structure that gives nothing (notation 2.6).
+            let mut verdicts = wiring(drawing, source);
+            for port in labcraft_diagram::unnamed_yields(drawing).into_keys() {
+                if let Some(verdict) = verdicts.get_mut(port).filter(|verdict| verdict.is_some()) {
+                    *verdict = Some(no_output_by_ctrl());
+                }
+            }
             return Some(Wiring {
                 from: source,
                 taken: Taken::Input(from),
@@ -214,7 +220,8 @@ impl Wiring {
     /// None but for a branch to an input of its own body; the others take their junction automatically.
     fn branch_route(&self, input: &Port) -> Option<(Path, Path)> {
         let branch = self.branch?;
-        if input.body != branch.body || !input.input || input.name.starts_with("output ") {
+        // The `yield` of a structure that gives nothing has no name before the wire adds it: its junction is automatic.
+        if input.body != branch.body || !input.input || input.name.is_empty() || input.name.starts_with("output ") {
             return None;
         }
         // A value of a variadic parameter has no name that `wire.route` takes yet (spec 11): its junction is automatic.
@@ -247,16 +254,22 @@ impl Wiring {
         self.ends(drawing).into_iter().map(|(from, to)| route(from, to)).collect()
     }
 
-    /// The terminal under the pointer that is an end of this wire, within `reach` units, shown.
+    /// The terminal under the pointer that is an end of this wire, within `reach` units, shown. The output `_` of a
+    /// structure that gives nothing stands for the `_` of the arm that holds the start (notation 2.6).
     pub fn find_over(&mut self, drawing: &Drawing, reach: f32, visible: &dyn Fn(Option<usize>) -> bool) {
         let at = self.at;
+        let from = self.from;
         self.over = drawing
             .ports
             .iter()
             .enumerate()
-            .filter(|(index, port)| self.verdicts.get(*index).is_some_and(Option::is_some) && visible(port.within))
+            .filter(|(_, port)| visible(port.within))
             .map(|(index, port)| (index, centre(port).distance(at)))
             .filter(|(_, distance)| *distance <= reach)
+            .filter_map(|(index, distance)| {
+                let end = labcraft_diagram::yield_of_output(drawing, from, index).unwrap_or(index);
+                self.verdicts.get(end).is_some_and(Option::is_some).then_some((end, distance))
+            })
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(index, _)| index);
     }
@@ -333,8 +346,14 @@ impl Wiring {
             Taken::Nothing => {
                 // A branch names its wire by its value and the input it reaches, as `wire.route` names it.
                 let route = self.branch_route(target).map(|(_, points)| (format!("{} -> {}", source.value, target.name), points));
-                let arm = (!target.arm.is_empty()).then(|| target.arm.clone());
-                crate::Intent::Wire { from: start_name(drawing, source), to: target.name.clone(), arm, replace, accept_mismatch, route, through }
+                // The `yield` of a structure that gives nothing is named by the structure and its arm (commands.md 9.2).
+                let unnamed =
+                    labcraft_diagram::unnamed_yields(drawing).contains_key(&port).then(|| crate::frames::in_frame_of(drawing, target.body)).flatten();
+                let (to, arm) = match unnamed {
+                    Some(crate::frames::InFrame { inside: Some(structure), arm }) => (structure, arm),
+                    _ => (target.name.clone(), (!target.arm.is_empty()).then(|| target.arm.clone())),
+                };
+                crate::Intent::Wire { from: start_name(drawing, source), to, arm, replace, accept_mismatch, route, through }
             }
             Taken::Input(input) => {
                 let old = drawing.ports.get(*input)?;
@@ -362,6 +381,12 @@ impl Wiring {
 }
 
 /// Ctrl and a drag out of a loop: refused, a new wire takes the value out (notation 2.6).
+/// Ctrl and a drag on a wired input, to the `_` of an arm of a structure that gives nothing: refused, and why.
+fn no_output_by_ctrl() -> Verdict {
+    let message = "Ctrl and a drag does not add an output to a structure: draw a new wire from the value".to_owned();
+    Verdict::Refused { refusal: Refusal { code: "params.invalid", message }, wrong_type: false }
+}
+
 fn out_by_ctrl() -> Verdict {
     let message = "Ctrl and a drag does not take a value out of a loop: draw a new wire from it".to_owned();
     Verdict::Refused { refusal: Refusal { code: "wire.out_of_scope", message }, wrong_type: false }

@@ -570,7 +570,7 @@ in progress writes nothing (2.4).
 | Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4), by whole steps of the grid of 8, the node held landing on the grid of its frame and the others going as far: the preview shows them where the drop puts them. From a node of the selection, the nodes of the selection in its frame move, the others stay (decision of the owner, 2026-11-17); from another node, that node, which the drag selects. Released with the pointer over another frame, `node.reframe`: the nodes go into it (2.4, "Moving nodes into another frame"), and Alt held at the drop takes the other passage out of a loop; Shift held at the drop keeps them in their frame. Escape during the drag puts them back |
 | Drag | an output | Draws a wire to an input (2.5): `wire.connect`. Released on the empty canvas, it opens quick insertion, filtered (below) |
 | Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
-| Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
+| Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4), but it adds no output to a structure that gives nothing (refused, with why: a new wire does it); on an output, every wire of that value, so that its readers read another output |
 | Drag | a segment of a wire | `wire.route` (2.4) |
 | Alt+drag | a wire | Starts a branch at a junction (2.5). The setting "drag on a wire" on `branch` swaps this row and the one above. The modifier is a setting, Shift+Alt, for a desktop that keeps Alt+drag to move windows |
 | Drag | the header or the left edge of a structure | `node.move`, as for a node |
@@ -678,6 +678,11 @@ structure selected:
 - **A `collect` or a `last`.** A wire from inside a loop dropped on its inner right edge: `structure.add_collect`, or
   `structure.add_last` with Alt held. A wire to an input outside the loop takes the value out too ("Out of a loop", in
   "Drawing a wire" above).
+- **An output of a `match` or a `handle`.** In one that gives nothing (`_ = match …` without a `yield`), a wire dropped on
+  the `_` of the inner right edge of an arm, from a value that the arm sees, or a wire from inside an arm dropped on the
+  output `_` of the structure, which stands for the `_` of that arm: `wire.connect` to the structure with `arm`, which adds
+  the output, that arm yielding the value and the other arms a hole (commands.md 6.7, "Into a structure that gives
+  nothing"). A wire from that output then takes it further.
 - **Removing a part.** "Remove carry `x`", "Remove clause `x`", "Remove collect `y`", "Remove last `y`", in the context menu of its
   terminal: `structure.remove_part`. Delete on the terminal still removes only what it holds (its wires, its constant).
 - **Changing how a loop takes a value out.** The context menu of the terminal of a carry, a `collect` or a `last` (`↻`,

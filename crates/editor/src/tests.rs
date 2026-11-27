@@ -2797,3 +2797,146 @@ fn a_call_to_a_function_of_a_library_of_the_folder_opens_it_by_its_qualified_nam
     let call = drawn.placed.iter().find(|node| node.name == "r").expect("the call");
     assert_eq!(call.opens, "dev.g");
 }
+
+/// #379: in a structure that gives nothing, a wire from inside an arm dropped on the `_` of that arm, or on the output `_`
+/// of the structure, asks `wire.connect` to the `yield` of that arm, named by the structure and the arm (commands.md 6.7,
+/// "Into a structure that gives nothing"; 9.2; notation 2.6), in tabs and unfolded, for a `match` and a `handle`. The
+/// intents are written by hand from those rules: the structure is named by its line, `@4`.
+#[test]
+fn a_wire_dropped_on_the_yield_of_a_structure_that_gives_nothing_adds_its_output() {
+    let verdict = "labcraft 1\n\ntype Verdict = enum { Pass, Fail, Error }\n";
+    let matching = "labcraft 1\n\nfn main(c: bool) -> (verdict: Verdict) {\n    _ = match c {\n        true => {\n            constant = Verdict.Pass\n        }\n        false => {\n            constant3 = Verdict.Fail\n        }\n    }\n}\n";
+    let handling = "labcraft 1\n\nfn main(e: error) -> (verdict: Verdict) {\n    _ = handle e {\n        ok => {\n            constant = Verdict.Pass\n        }\n        _ => {\n        }\n    }\n}\n";
+    for (text, arm) in [(matching, "true"), (handling, "ok")] {
+        for tabs in [true, false] {
+            let ctx = context();
+            install_fonts(&ctx);
+            let mut canvas = Canvas::new();
+            let drawn = drawing_of(&[("main.lcf", text), ("Verdict.lct", verdict)], &ViewState { tabs, ..ViewState::default() });
+            canvas.set_drawing(drawn.clone(), false);
+            canvas.set_viewport(1.0, Vec2::ZERO);
+            let none = Shown::default();
+            frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+            let centre = wiring::centre;
+            let of_arm = drawn
+                .ports
+                .iter()
+                .find(|port| port.frame && port.input && port.name.is_empty() && drawn.bodies[port.body].arm == arm)
+                .expect("the `_` of the arm");
+            let output = drawn.ports.iter().find(|port| !port.frame && !port.input && port.name.is_empty()).expect("the output `_`");
+            let expected = Intent::Wire {
+                from: "constant".to_owned(),
+                to: "@4".to_owned(),
+                arm: Some(arm.to_owned()),
+                replace: false,
+                accept_mismatch: false,
+                route: None,
+                through: Vec::new(),
+            };
+            for (at, to) in [(1.0, centre(of_arm)), (2.0, centre(output))] {
+                let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "constant", false), to), at, &none);
+                assert_eq!(intents, vec![expected.clone()], "tabs {tabs}, arm {arm}, to {to:?}");
+                canvas.cancel_wire();
+            }
+        }
+    }
+}
+
+/// #379: Ctrl and a drag that moves the end of a wire inside an arm keeps its value, so it adds no output: the `_` of the
+/// arm refuses it and says why, and the wire stays as it was (notation 2.6, the row "Ctrl+drag"). A new wire from the
+/// same value adds it.
+#[test]
+fn a_wire_moved_by_ctrl_does_not_add_an_output_to_a_structure_that_gives_nothing() {
+    let text = "labcraft 1\n\nuse core\n\nfn main(c: bool, v: f64) -> (y: f64) {\n    _ = match c {\n        true => {\n            a = core.abs(v)\n            b = core.abs(a)\n        }\n        false => {\n        }\n    }\n    y = v\n}\n";
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(text, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let of_arm = drawn
+        .ports
+        .iter()
+        .find(|port| port.frame && port.input && port.name.is_empty() && drawn.bodies[port.body].arm == "true")
+        .expect("the `_` of the arm");
+    let wired = drawn.ports.iter().find(|port| port.input && !port.frame && port.value == "a").expect("the input of `b`");
+    let intents = drag_holding(&ctx, &mut canvas, (wiring::centre(wired), wiring::centre(of_arm)), 0.2, egui::Modifiers::COMMAND, &none);
+    assert_eq!(intents, vec![Intent::Say("Ctrl and a drag does not add an output to a structure: draw a new wire from the value".to_owned())]);
+    // A new wire from `a`: the structure, by its line, gives it from the arm `true`.
+    let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "a", false), wiring::centre(of_arm)), 1.0, &none);
+    let expected = Intent::Wire {
+        from: "a".to_owned(),
+        to: "@6".to_owned(),
+        arm: Some("true".to_owned()),
+        replace: false,
+        accept_mismatch: false,
+        route: None,
+        through: Vec::new(),
+    };
+    assert_eq!(intents, vec![expected]);
+}
+
+/// #379: a structure whose arms yield to `_` gives something, which `_` discards (spec 6.1): its terminals `_` take no
+/// wire, on the arm or on the structure (commands.md 6.7: `wire.connect` to its `yield` is `wire.occupied`, and replaces
+/// that value with `replace`, which adds no output). A labelled structure that gives nothing is named by its label.
+#[test]
+fn only_a_structure_without_a_yield_takes_a_wire_on_its_underscore() {
+    let yielding = "labcraft 1
+
+fn main(c: bool, v: f64) -> (y: f64) {
+    _ = match c {
+        true => yield 1.0
+        false => yield ?
+    }
+    y = v
+}
+";
+    let drawn = drawing(yielding, &ViewState::default());
+    let from = drawn.ports.iter().position(|port| port.frame && !port.input && port.name == "v").expect("the input `v`");
+    let verdicts = labcraft_diagram::wiring(&drawn, from);
+    for (at, port) in drawn.ports.iter().enumerate() {
+        if port.name.is_empty() && port.placed.is_some() {
+            assert_eq!(verdicts.get(at), Some(&None), "{port:?}");
+        }
+    }
+    let labelled = "labcraft 1
+
+fn main(c: bool, v: f64) -> (y: f64) {
+    k = 2.0
+    #m: _ = match c {
+        true => {
+        }
+        false => {
+        }
+    }
+    y = v
+}
+";
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(labelled, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let of_arm = drawn
+        .ports
+        .iter()
+        .find(|port| port.frame && port.input && port.name.is_empty() && drawn.bodies[port.body].arm == "false")
+        .expect("the `_` of the arm");
+    // An outer value, which the arm sees.
+    let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "k", false), wiring::centre(of_arm)), 0.2, &none);
+    let expected = Intent::Wire {
+        from: "k".to_owned(),
+        to: "#m".to_owned(),
+        arm: Some("false".to_owned()),
+        replace: false,
+        accept_mismatch: false,
+        route: None,
+        through: Vec::new(),
+    };
+    assert_eq!(intents, vec![expected]);
+}
