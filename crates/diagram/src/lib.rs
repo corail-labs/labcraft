@@ -49,7 +49,7 @@ pub use labcraft_graph::{BlockSide, MAX_PLACES, Rgb};
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use own::{BlockFields, OutlineChoice, OwnBlock, written_rgb};
-pub use ports::{Refusal, Verdict, occupied, passage_refusal, wiring};
+pub use ports::{Refusal, Verdict, occupied, passage_refusal, unnamed_yields, wiring, yield_of_output};
 pub use preview::{Preview, preview, square};
 pub use reframing::{Leaving, Reframing, reframing};
 pub use route::{on_segment, prefix_to, simplify};

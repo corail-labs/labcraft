@@ -487,6 +487,7 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
     let graph = Dependencies::of(drawing);
     let values = Values::of(drawing);
     let made_by = |source: &Port| values.made_by(source);
+    let unnamed = unnamed_yields(drawing);
     let ahead = if start.input { None } else { made_by(start).map(|placed| graph.reaching(placed)) };
     let behind = if start.input { start.placed.map(|placed| graph.reached(drawing, placed)) } else { None };
     // What each structure reads, deep, once each.
@@ -496,7 +497,10 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
         .iter()
         .enumerate()
         .map(|(index, port)| {
-            if index == from || port.input == start.input || port.name.is_empty() || start.name.is_empty() {
+            if index == from || port.input == start.input || start.name.is_empty() {
+                return None;
+            }
+            if port.name.is_empty() && !unnamed.contains_key(&index) {
                 return None;
             }
             let (source, target) = if start.input { (port, start) } else { (start, port) };
@@ -533,6 +537,61 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
             Some(judge(drawing, &values, source, target, cycle))
         })
         .collect()
+}
+
+/// The terminals `_` of the arms of the `match`es and `handle`s that give nothing (`_ = match …` without a `yield`, spec
+/// 6.1), by their index in [`Drawing::ports`], each with its structure: a wire to one adds an output, which that arm yields
+/// (commands.md 6.7, "Into a structure that gives nothing"). `wire.connect` names it by the structure and the patterns of
+/// the arm, the body of the port; a structure that no command names (9.2) takes no wire. One pass over the ports.
+pub fn unnamed_yields(drawing: &Drawing) -> HashMap<usize, usize> {
+    // For each structure: how many outputs it has and whether they are all `_`; the `_` of its arms, and whether they
+    // all hold nothing and have no type: a `yield` of a value or of a constant gives something, which `_` discards.
+    let mut outputs: HashMap<usize, (usize, bool)> = HashMap::new();
+    let mut yields: HashMap<usize, (Vec<usize>, bool)> = HashMap::new();
+    for (index, port) in drawing.ports.iter().enumerate() {
+        let Some(structure) = port.placed else { continue };
+        if !port.input && !port.frame {
+            let found = outputs.entry(structure).or_insert((0, true));
+            found.0 += 1;
+            found.1 &= port.name.is_empty();
+        } else if is_unnamed_yield_of(drawing, port, structure) {
+            let found = yields.entry(structure).or_insert((Vec::new(), true));
+            found.0.push(index);
+            found.1 &= port.holds == Holds::Missing && port.ty.is_none();
+        }
+    }
+    let gives_nothing = |structure: usize, empty: bool| {
+        empty && outputs.get(&structure) == Some(&(1, true)) && drawing.placed.get(structure).is_some_and(|placed| !placed.name.is_empty())
+    };
+    yields
+        .into_iter()
+        .filter(|&(structure, (_, empty))| gives_nothing(structure, empty))
+        .flat_map(|(structure, (ports, _))| ports.into_iter().map(move |port| (port, structure)))
+        .collect()
+}
+
+/// Whether `port` is the terminal `_` of an arm of `structure`, whatever the structure gives.
+fn is_unnamed_yield_of(drawing: &Drawing, port: &Port, structure: usize) -> bool {
+    port.input
+        && port.frame
+        && port.name.is_empty()
+        && port.placed == Some(structure)
+        && drawing.bodies.get(port.body).is_some_and(|body| body.owner == Some(structure) && !body.arm.is_empty())
+}
+
+/// The terminal `_` of the arm that holds `from`, for a wire from `from` dropped on the output `_` of a structure that
+/// gives nothing: the drop is one on the `yield` of that arm (visual notation 2.6). None for another port.
+pub fn yield_of_output(drawing: &Drawing, from: usize, port: usize) -> Option<usize> {
+    let (start, target) = (drawing.ports.get(from)?, drawing.ports.get(port)?);
+    if start.input || target.input || target.frame || !target.name.is_empty() {
+        return None;
+    }
+    let structure = target.placed?;
+    let bodies = chain(drawing, start.body);
+    unnamed_yields(drawing)
+        .into_iter()
+        .find(|&(found, of)| of == structure && drawing.ports.get(found).is_some_and(|found| bodies.contains(&found.body)))
+        .map(|(found, _)| found)
 }
 
 /// The values of a drawing that a name gives in each body: the ports where a wire starts, notches left out, by body and
@@ -690,7 +749,7 @@ pub(crate) fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port
                 code: "wire.cycle",
                 message: format!(
                     "a wire from `{value}` to `{}` would close a cycle: a value comes back only through a carry (spec 6.2)",
-                    target.name
+                    if target.name.is_empty() { "_" } else { target.name.as_str() }
                 ),
             });
         }

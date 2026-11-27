@@ -60,6 +60,8 @@ pub(crate) fn set(
             ));
         }
         End::After(_) => return Err(EditError::invalid("to", "`after` waits for a node: it takes an order wire, not a constant")),
+        // Only a wire names the `yield` of a structure that gives nothing.
+        End::NewYield { .. } => return Err(EditError::internal("a `yield` that gives nothing, for a constant")),
         End::Slot(loc, slot) => {
             let statement = scope::statement(&function, loc).ok_or_else(|| EditError::internal("a node that went"))?;
             if let Some(held) = operand(statement, *slot)

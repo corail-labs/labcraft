@@ -491,3 +491,38 @@ fn the_outputs_are_listed_in_the_order_of_the_structure() {
     let edited = run_with(&errors(), before, surround(StructureKind::Loop, &["a", "#close"])).unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(edited.lists.get("outputs"), Some(&vec!["e2".to_owned(), "a".to_owned()]));
 }
+
+/// Commands.md 6.7, "Into a structure that gives nothing" (#379): a wire from inside an arm to the `yield` of that arm of a
+/// structure that gives nothing adds an output, named after the value (N-14) as a wire out of an arm names it: that arm
+/// yields the value, the other arm a hole. Written by hand from commands.md 6.7 and spec 5.2 (an arm that holds only its
+/// `yield` is written on one line).
+#[test]
+fn a_wire_to_the_yield_of_a_structure_that_gives_nothing_adds_an_output() {
+    let before = "use core\n\nfn f(x: f64, ok: bool) -> (y: f64) {\n    #m: _ = match ok {\n        true => {\n            d = core.abs(x)\n        }\n        false => {\n        }\n    }\n    y = x\n}\n";
+    let edited = gives_with(
+        &typed(&[]),
+        before,
+        connect_arm("d", "#m", Some("true")),
+        "use core\n\nfn f(x: f64, ok: bool) -> (y: f64) {\n    #m: d2 = match ok {\n        true => {\n            d = core.abs(x)\n            yield d\n        }\n        false => yield ?\n    }\n    y = x\n}\n",
+    );
+    assert_eq!(edited.names.get("output").map(String::as_str), Some("d2"));
+    // By its line, the same; an outer value too, which the arm sees.
+    gives_with(
+        &typed(&[]),
+        before,
+        connect_arm("x", "@6", Some("false")),
+        "use core\n\nfn f(x: f64, ok: bool) -> (y: f64) {\n    #m: x2 = match ok {\n        true => {\n            d = core.abs(x)\n            yield ?\n        }\n        false => yield x\n    }\n    y = x\n}\n",
+    );
+    // A value of the other arm: the structure would read its own output.
+    refused_with(&typed(&[]), before, connect_arm("d", "#m", Some("false")), "wire.cycle", "to");
+    // A constant names no output to add.
+    let constant = Op::InputSetConstant {
+        file: FILE.to_owned(),
+        to: "#m".to_owned(),
+        arm: Some("true".to_owned()),
+        value: "1.0".to_owned(),
+        replace: false,
+        accept_mismatch: false,
+    };
+    refused_with(&typed(&[]), before, constant, "params.invalid", "to");
+}
