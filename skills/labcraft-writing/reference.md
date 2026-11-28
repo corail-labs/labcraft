@@ -298,8 +298,8 @@ reading = handle e3 {
 - When the top-level function ends with an error on `err`, the run's status is `error` and the report gives
   the error, its category, its message and where it came from.
 
-Categories that the shipped libraries give: `visa.resource_not_found`, `visa.invalid_session`, `io.timeout`
-(VISA codes), `scpi.instrument_error` (from `scpi.check_errors`), `scpi.unexpected_response` (from
+Categories that the shipped libraries give: `visa.resource_not_found`, `visa.invalid_session`, `io.timeout`,
+`io.closed` (a session used after its `close`) (VISA codes), `scpi.instrument_error` (from `scpi.check_errors`), `scpi.unexpected_response` (from
 `scpi.wait_complete`), `string.parse`,
 `array.index_out_of_range`, `array.negative_size`, `array.unequal_rows`, `core.invalid_function`.
 

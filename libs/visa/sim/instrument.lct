@@ -1,0 +1,5 @@
+labcraft 1
+
+/// A simulated instrument of the simulation file, opened by its resource name: a handle, not the instrument. Its
+/// default value is an instrument never opened.
+type instrument = opaque

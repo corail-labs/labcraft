@@ -1,0 +1,10 @@
+labcraft 1
+
+/// Takes exactly `count` bytes of the answer waiting, which ends with `\n`; without them within the timeout,
+/// `io.timeout`, and takes nothing.
+extern rust(crate: "labcraft-visa", function: "sim_read")
+fn read(
+    instrument: instrument,
+    count: i32,
+    err: error = none,
+) -> (data: bytes, instrument: instrument, err: error)

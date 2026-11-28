@@ -1,0 +1,18 @@
+# The sub-library visa.sim shipped with LabCraft: the instruments of a simulation file behind a handle (0.5.0,
+# libs/visa/README.md, "Simulation: `visa.sim`"); declarations here, native bodies in the crate labcraft-visa. It reads
+# the section `visa` of the file, which belongs to the library visa. Its name is that of its folder (docs/cli.md 3).
+name = "sim"
+version = "0.1.0"
+description = "The simulated instruments of a simulation file, by their resource name, one command per write"
+dependencies = ["serial"]
+always = ["close"]
+resources = ["instrument"]
+categories = [
+    "io.closed",
+    "io.invalid_argument",
+    "io.timeout",
+    "io.too_long",
+    "io.unsupported",
+    "visa.invalid_session",
+    "visa.resource_not_found",
+]

@@ -2,9 +2,10 @@
 
 *Status: the simulator of `SIM::` resources is implemented for milestone M0b (tag `v0.2.0-m0b`) by the crate
 `labcraft-visa`, in `src/`, in deterministic mode and in real time. From release 0.5.0 (M4,
-[docs/io.md](../../docs/io.md)), specified, not built yet: `visa` is written in LabCraft over `net`, `serial` and its
-sub-library `visa.sim`, its session is the enum `visa.Session`, and it reaches real instruments over TCP and serial
-(decisions of the owner, 2026-11-24 and 2026-11-26). Values marked (proposed) are starting points.*
+[docs/io.md](../../docs/io.md)), `visa` is written in LabCraft over `net`, `serial` and its sub-library `visa.sim`, its
+session is the enum `visa.Session`, and it reaches real instruments over TCP and serial (decisions of the owner,
+2026-11-24 and 2026-11-26): `visa.sim` is implemented, and the native functions of M0b share its instruments; the rest is
+specified, not built yet. Values marked (proposed) are starting points.*
 
 `visa` is the library shipped with LabCraft that opens sessions on instruments, writes commands and reads answers.
 Instrument drivers and `scpi` are libraries over it. Not every instrument goes through VISA: another transport is
@@ -27,7 +28,7 @@ are read by one piece of code (`runtime::io::endpoint`, [architecture.md](../../
 | `query(session, command)` | `write`, then `read` |
 | `write_bytes(session, data)` | Sends bytes as they are, with no termination |
 | `read_bytes(session, count)` | Reads exactly `count` bytes; `io.timeout` if they do not all come within the timeout, and nothing is taken |
-| `set_serial(session, baud = 9600, …)` | Gives a serial session other settings, by `serial.configure`; accepted with no effect by a simulated instrument with an `ASRL` name; `io.unsupported` on any other session |
+| `set_serial(session, baud = 9600, …)` | Gives a serial session other settings, by `serial.configure`; accepted with no effect by a simulated instrument with an `ASRL` name, its settings judged as `serial.open` judges them; `io.unsupported` on any other session |
 | `close(session)` | Closes the transport of the session; on a session already closed, or `Closed`, succeeds and does nothing |
 | `resolve(resource)` | (native) Where a name goes in this run: a `visa.Route` |
 

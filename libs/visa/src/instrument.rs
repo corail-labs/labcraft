@@ -106,20 +106,41 @@ fn set(quantities: &mut [QuantityState], id: usize, target: f64, t: i64, settle:
 #[derive(Debug)]
 pub(crate) struct Instrument {
     queue: VecDeque<(i64, String)>,
+    /// The event status register of IEEE 488.2, as `*ESR?` reads it (simulation.md 4, step 3): the bit of the class of each
+    /// error that entered the queue since it was last read or cleared.
+    event_status: u8,
     pub(crate) log: ResourceLog,
 }
 
+/// The bit of the event status register that an error of `code` sets (simulation.md 4): 32 for a command error (−100 to
+/// −199), 16 for an execution error (−200 to −299), 8 for a device error (−300 to −399), 4 for a query error (−400 to −499);
+/// none for another code.
+fn class_bit(code: i64) -> u8 {
+    match code {
+        -199..=-100 => 32,
+        -299..=-200 => 16,
+        -399..=-300 => 8,
+        -499..=-400 => 4,
+        _ => 0,
+    }
+}
+
 impl Instrument {
+    /// The errors of `error_queue` set their bits when the run starts.
     pub(crate) fn new(spec: &InstrumentSpec) -> Self {
-        Instrument { queue: spec.error_queue.iter().cloned().collect(), log: ResourceLog::default() }
+        let event_status = spec.error_queue.iter().fold(0, |bits, (code, _)| bits | class_bit(*code));
+        Instrument { queue: spec.error_queue.iter().cloned().collect(), event_status, log: ResourceLog::default() }
     }
 
-    /// One more error; past the size of the queue, the last becomes `-350,"Queue overflow"` (simulation.md 4).
+    /// One more error; past the size of the queue, the last becomes `-350,"Queue overflow"` (simulation.md 4). The error that
+    /// enters the queue sets the bit of its class.
     pub(crate) fn push_error(&mut self, code: i64, message: &str) {
         if self.queue.len() < QUEUE_SIZE {
             self.queue.push_back((code, message.to_owned()));
+            self.event_status |= class_bit(code);
         } else if let Some(last) = self.queue.back_mut() {
             *last = (-350, "Queue overflow".to_owned());
+            self.event_status |= class_bit(-350);
         }
     }
 }
@@ -128,6 +149,11 @@ impl Instrument {
 pub(crate) fn command_text(command: &str) -> &str {
     let command = command.strip_suffix("\r\n").or_else(|| command.strip_suffix('\n')).unwrap_or(command);
     command.trim_matches(' ')
+}
+
+/// Bytes without one `\n` or `\r\n` that ends them, as [`command_text`] for a command that is not UTF-8.
+fn command_bytes(command: &[u8]) -> &[u8] {
+    command.strip_suffix(b"\r\n").or_else(|| command.strip_suffix(b"\n")).unwrap_or(command)
 }
 
 /// A decimal number as SCPI writes it, in ASCII: a sign, digits with a fraction, an exponent (`5`, `-0.5`, `.5`, `1.2E3`).
@@ -147,18 +173,37 @@ fn is_scpi_number(text: &str) -> bool {
     mantissa_ok && exponent_ok
 }
 
+/// Whether the instrument is hung at `t` (`faults.hang_ms`, simulation.md 4): a command it handles then takes its latency and
+/// does nothing else: no answer, no error in its queue, no change to a quantity.
+pub(crate) fn hung(spec: &InstrumentSpec, t: i64) -> bool {
+    spec.hang.is_some_and(|hang| t >= hang)
+}
+
+/// What a hung instrument does with a command: it keeps it in the report, with no answer.
+pub(crate) fn ignore(state: &mut Instrument, budget: &LogBudget, command: &[u8], t: i64) {
+    match std::str::from_utf8(command) {
+        Ok(text) => state.log.entry(budget, t, Some(Logged::Text(command_text(text))), None),
+        Err(_) => state.log.entry(budget, t, Some(Logged::Bytes(command_bytes(command))), None),
+    }
+}
+
 /// Handles a command at `t`, once its latency has passed (simulation.md 4), and gives its answer: `None` for a write, and
-/// for a query never answered.
+/// for a query never answered. A command of bytes that are not UTF-8 matches nothing (step 7).
 pub(crate) fn execute(
     spec: &InstrumentSpec,
     state: &mut Instrument,
     quantities: &mut [QuantityState],
     bench: &Bench,
     budget: &LogBudget,
-    command: &str,
+    command: &[u8],
     t: i64,
 ) -> Option<String> {
-    let c = command_text(command);
+    let Ok(text) = std::str::from_utf8(command) else {
+        state.push_error(-113, "Undefined header");
+        state.log.entry(budget, t, Some(Logged::Bytes(command_bytes(command))), None);
+        return None;
+    };
+    let c = command_text(text);
     if spec.timeouts.contains(c) {
         state.log.entry(budget, t, Some(Logged::Text(c)), None);
         return None;
@@ -174,9 +219,17 @@ pub(crate) fn execute(
         "*IDN?" => Some(spec.idn.clone()),
         "*CLS" => {
             state.queue.clear();
+            state.event_status = 0;
             None
         }
         "*RST" => None,
+        // IEEE 488.2, from 0.5.0, unless `commands` or `measure` gives them (step 4): every command before has ended, one at
+        // a time.
+        "*OPC?" | "*ESR?" | "*STB?" if !spec.commands.contains_key(c) && !spec.measure.contains_key(c) => Some(match c {
+            "*OPC?" => "1".to_owned(),
+            "*ESR?" => std::mem::take(&mut state.event_status).to_string(),
+            _ => if state.queue.is_empty() { "0" } else { "4" }.to_owned(),
+        }),
         _ => {
             if let Some(answer) = spec.commands.get(c) {
                 Some(answer.clone())

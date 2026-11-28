@@ -425,7 +425,9 @@ impl<'p, 'o> Machine<'p, 'o> {
                 native.native.start_run(Start { library: number, simulation: native.simulation, budget: budget.clone(), mode, context: &context })
             })) {
                 Ok(run) => {
-                    native_of.insert(native.library, slots.len());
+                    for library in native.libraries {
+                        native_of.insert(*library, slots.len());
+                    }
                     slots.push(NativeSlot { name: native.native.name().to_owned(), run });
                 }
                 Err(_) => {

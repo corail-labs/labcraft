@@ -6,6 +6,7 @@ use std::ops::Range;
 
 use labcraft_runtime::native::{Described, LibraryDiagnostic, Section};
 use labcraft_runtime::simulation::{Places, float_of, integer_of, nearest};
+use labcraft_runtime::stream::shown;
 use labcraft_types::Severity;
 use toml::Spanned;
 use toml::de::{DeTable, DeValue};
@@ -35,6 +36,8 @@ pub struct Commands {
     /// The commands of `faults.timeout` and of `faults.error_on`.
     pub timeout: Vec<String>,
     pub error_on: Vec<String>,
+    /// `faults.hang_ms`, in nanoseconds on the clock of the run: from then on, no command is answered.
+    pub hang: Option<i64>,
 }
 
 impl Bench {
@@ -60,6 +63,7 @@ impl Bench {
                 accept: sorted(spec.accept.iter().collect()),
                 timeout: sorted(spec.timeouts.iter().collect()),
                 error_on: sorted(spec.error_on.keys().collect()),
+                hang: spec.hang,
             })
             .collect()
     }
@@ -102,6 +106,15 @@ impl Bench {
                     })
                     .collect();
                 let error_queue = spec.error_queue.iter().map(|(code, message)| map(error(*code, message))).collect();
+                let mut faults = vec![
+                    ("timeout", texts(spec.timeouts.iter().collect())),
+                    ("error_on", Described::List(error_on)),
+                    ("error_queue", Described::List(error_queue)),
+                ];
+                // Only when the file gives it (0.5.0), so that the description of a file of M0 reads as before.
+                if let Some(hang) = spec.hang {
+                    faults.push(("hang_ms", Described::Number(hang as f64 / 1e6)));
+                }
                 map(vec![
                     ("resource", text(&spec.resource)),
                     ("idn", text(&spec.idn)),
@@ -109,14 +122,7 @@ impl Bench {
                     ("queries", Described::List(queries.into_iter().map(|(_, query)| query).collect())),
                     ("set", Described::List(set)),
                     ("accept", texts(spec.accept.iter().collect())),
-                    (
-                        "faults",
-                        map(vec![
-                            ("timeout", texts(spec.timeouts.iter().collect())),
-                            ("error_on", Described::List(error_on)),
-                            ("error_queue", Described::List(error_queue)),
-                        ]),
-                    ),
+                    ("faults", map(faults)),
                 ])
             })
             .collect();
@@ -142,6 +148,8 @@ impl Bench {
 #[derive(Debug)]
 pub(crate) struct InstrumentSpec {
     pub(crate) resource: String,
+    /// What a name that opens it reduces to ([`key_of`]): its `SIM::` name, or the endpoint of its real name.
+    pub(crate) key: String,
     pub(crate) idn: String,
     /// Nanoseconds on the clock of the run.
     pub(crate) latency: i64,
@@ -153,6 +161,8 @@ pub(crate) struct InstrumentSpec {
     pub(crate) timeouts: HashSet<String>,
     pub(crate) error_on: HashMap<String, (i64, String)>,
     pub(crate) error_queue: Vec<(i64, String)>,
+    /// `faults.hang_ms`, in nanoseconds: from then on, the instrument handles no command (simulation.md 4).
+    pub(crate) hang: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -180,11 +190,19 @@ const DAY_MS: f64 = 86_400_000.0;
 const MAX_VALUE: f64 = 1e100;
 const INSTRUMENT_KEYS: &[&str] = &["resource", "idn", "latency_ms", "commands", "measure", "set", "accept", "quantity", "faults"];
 const QUANTITY_KEYS: &[&str] = &["value", "initial", "start_ms", "settle_ms", "noise", "seed", "source"];
-const FAULT_KEYS: &[&str] = &["timeout", "error_on", "error_queue"];
+const FAULT_KEYS: &[&str] = &["timeout", "error_on", "error_queue", "hang_ms"];
 /// What the simulator answers itself.
 pub(crate) const RESERVED: &[&str] = &["*IDN?", "SYST:ERR?", "*CLS", "*RST"];
 
 type Value<'a> = Spanned<DeValue<'a>>;
+
+/// What a resource name reduces to, so that two names of one instrument are one (simulation.md 2; README, "Where a name
+/// goes"): a `SIM::` name as it is, compared exactly as in M0; a real name, `TCPIP…::SOCKET` or `ASRL…::INSTR`, to its
+/// endpoint (io.md 2), read without case apart from a path. `None` for any other name: `ASRL0::INSTR`, `hello`, and the
+/// VISA forms that `visa` does not open (VXI-11, HiSLIP, USB, GPIB).
+pub(crate) fn key_of(resource: &str) -> Option<String> {
+    if resource.starts_with("SIM::") { Some(resource.to_owned()) } else { labcraft_runtime::io::endpoint::of_visa(resource) }
+}
 
 /// A time of the file in milliseconds, as nanoseconds (simulation.md 3): times 10^6 as an `f64`, then to the nearest integer,
 /// ties to even. A time is at most one day, so it fits.
@@ -333,12 +351,6 @@ fn get<'v, 'a>(table: &'v DeTable<'a>, key: &str) -> Option<&'v Value<'a>> {
     table.iter().find(|(name, _)| name.get_ref().as_ref() == key).map(|(_, value)| value)
 }
 
-/// What a message shows of a text of the file: its start, its control characters escaped.
-fn shown(text: &str) -> String {
-    let start: String = text.chars().take(64).flat_map(char::escape_debug).collect();
-    if text.chars().count() > 64 { format!("{start}…") } else { start }
-}
-
 fn plain(x: f64) -> String {
     if x.abs() >= 1e6 { format!("{x:e}") } else { format!("{x}") }
 }
@@ -368,7 +380,7 @@ pub(crate) fn read(section: &Section<'_>) -> Result<Bench, Vec<LibraryDiagnostic
                     reader.say("visa:S010", format!("{} instruments, more than {MAX_INSTRUMENTS} (simulation.md 7)", items.len()), instruments.span())
                 }
                 DeValue::Array(items) => {
-                    let mut seen: HashMap<String, ()> = HashMap::new();
+                    let mut seen: HashMap<String, String> = HashMap::new();
                     for item in items.iter() {
                         instrument(&mut reader, item, &mut bench, &mut written, &mut seen);
                     }
@@ -383,21 +395,34 @@ pub(crate) fn read(section: &Section<'_>) -> Result<Bench, Vec<LibraryDiagnostic
     if reader.problems.is_empty() { Ok(bench) } else { Err(reader.problems) }
 }
 
-fn instrument(reader: &mut Reader<'_>, item: &Value<'_>, bench: &mut Bench, written: &mut Vec<Written>, seen: &mut HashMap<String, ()>) {
+fn instrument(reader: &mut Reader<'_>, item: &Value<'_>, bench: &mut Bench, written: &mut Vec<Written>, seen: &mut HashMap<String, String>) {
     let Some(table) = reader.table(item, "an instrument") else { return };
     let Some(resource_value) = get(table, "resource") else {
         reader.say("visa:S003", "an instrument without `resource`".to_owned(), item.span());
         return;
     };
     let Some(resource) = reader.text(resource_value, "`resource`").map(str::to_owned) else { return };
-    if !resource.starts_with("SIM::") {
-        reader.say("visa:S003", format!("the resource `{}` does not start with `SIM::`", shown(&resource)), resource_value.span());
+    let Some(key) = key_of(&resource) else {
+        reader.say(
+            "visa:S003",
+            format!(
+                "the resource `{}` is neither a `SIM::` name nor a name that `visa` opens (`TCPIP0::HOST::PORT::SOCKET`, `ASRL3::INSTR`, `ASRL/dev/ttyUSB0::INSTR`)",
+                shown(&resource)
+            ),
+            resource_value.span(),
+        );
+        return;
+    };
+    if let Some(first) = seen.get(&key) {
+        let message = if *first == resource {
+            format!("the resource `{}` is defined twice", shown(&resource))
+        } else {
+            format!("the resource `{}` is `{}` again: both reach the endpoint `{key}`", shown(&resource), shown(first))
+        };
+        reader.say("visa:S004", message, resource_value.span());
         return;
     }
-    if seen.insert(resource.clone(), ()).is_some() {
-        reader.say("visa:S004", format!("the resource `{}` is defined twice", shown(&resource)), resource_value.span());
-        return;
-    }
+    seen.insert(key.clone(), resource.clone());
     let what = format!("`{}`", shown(&resource));
     reader.keys(table, INSTRUMENT_KEYS, &what);
     let idn = match get(table, "idn") {
@@ -447,6 +472,7 @@ fn instrument(reader: &mut Reader<'_>, item: &Value<'_>, bench: &mut Bench, writ
 
     let mut spec = InstrumentSpec {
         resource,
+        key,
         idn,
         latency,
         commands: HashMap::new(),
@@ -456,6 +482,7 @@ fn instrument(reader: &mut Reader<'_>, item: &Value<'_>, bench: &mut Bench, writ
         timeouts: HashSet::new(),
         error_on: HashMap::new(),
         error_queue: Vec::new(),
+        hang: None,
     };
     if let Some(value) = get(table, "commands")
         && let Some(commands) = reader.table(value, &format!("{what}: `commands`"))
@@ -610,6 +637,9 @@ fn self_faults(reader: &mut Reader<'_>, faults: &DeTable<'_>, what: &str, spec: 
             }
         }
     }
+    if get(faults, "hang_ms").is_some() {
+        spec.hang = Some(nanoseconds(reader.number(faults, "hang_ms", 0.0, 0.0, DAY_MS, &format!("{what}: `faults`"))));
+    }
     if let Some(value) = get(faults, "error_queue") {
         let label = format!("{what}: `faults.error_queue`");
         match value.get_ref() {
@@ -628,20 +658,24 @@ fn self_faults(reader: &mut Reader<'_>, faults: &DeTable<'_>, what: &str, spec: 
     }
 }
 
-/// Each `source` names a quantity of the file, `SIM::PSU0.voltage`; each chain of sources ends, followed once, with no
-/// recursion, and each quantity of the chain takes its end as its root.
+/// Each `source` names a quantity of the file, `SIM::PSU0.voltage` or `TCPIP0::10.0.0.5::5025::SOCKET.voltage`: the quantity
+/// is what follows the last `.`, and the instrument any name of it (simulation.md 2). Each chain of sources ends, followed
+/// once, with no recursion, and each quantity of the chain takes its end as its root.
 fn resolve_sources(reader: &mut Reader<'_>, bench: &mut Bench, written: &[Written]) {
     let mut by_name: HashMap<(&str, &str), usize> = HashMap::new();
     for (id, quantity) in written.iter().enumerate() {
         if let Some(instrument) = bench.instruments.get(quantity.instrument) {
-            by_name.insert((instrument.resource.as_str(), quantity.name.as_str()), id);
+            by_name.insert((instrument.key.as_str(), quantity.name.as_str()), id);
         }
     }
     // The quantity each one names, by its number.
     let mut next: Vec<Option<usize>> = vec![None; written.len()];
     for (id, quantity) in written.iter().enumerate() {
         let Some((source, at)) = &quantity.source else { continue };
-        let named = source.rsplit_once('.').and_then(|(resource, name)| by_name.get(&(resource, name)).copied());
+        let named = source
+            .rsplit_once('.')
+            .and_then(|(resource, name)| Some((key_of(resource)?, name)))
+            .and_then(|(key, name)| by_name.get(&(key.as_str(), name)).copied());
         match named {
             Some(target) => {
                 if let Some(slot) = next.get_mut(id) {

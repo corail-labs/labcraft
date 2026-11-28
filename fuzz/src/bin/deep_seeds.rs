@@ -6,7 +6,8 @@
 //!   `libs/`, `docs/rfc/`, `tests/acceptance/` and `tests/harness/routing-cases/` (the drawings built to break the rules of
 //!   routing), as many as fit in 64 KiB and at most 32, separated by two NUL bytes, so that calls and types cross files;
 //! - for the target `simulation`, simulation files of arrays and of inline tables nested at the limit of the reader of `toml`
-//!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2);
+//!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2), and a bench of instruments with real names
+//!   (0.5.0, `libs/visa/simulation.md` 2), which no file of `libs/visa/sim/` has;
 //! - for the target `mcp`, a session of the scripted loop of scenario 1 on the project of the target, a run followed and
 //!   aborted, the drawing of a function with the trace of its run, and lines that are not requests, so that the fuzzer starts from requests the server reads; and requests at
 //!   the bound of nesting of the server and above it, and one after a byte order mark;
@@ -22,6 +23,29 @@ use labcraft_types::Limits;
 
 #[path = "../../../crates/format/tests/deep/mod.rs"]
 mod deep;
+
+/// Instruments named as a bench names them (simulation.md 2): a TCP socket, a serial port by number and by path, a source
+/// that names its instrument by another spelling of its endpoint, the answers of IEEE 488.2 and a hung instrument.
+const REAL_NAMES: &str = r#"[[visa.instrument]]
+resource = "TCPIP0::10.0.0.5::5025::SOCKET"
+idn = "SIM,PSU,0,1.0"
+set = { "VOLT" = "voltage" }
+accept = ["OUTP"]
+quantity.voltage = { value = 5.0, settle_ms = 10 }
+faults = { error_on = { "OUTP 2" = [-224, "Illegal parameter value"] } }
+
+[[visa.instrument]]
+resource = "ASRL3::INSTR"
+measure = { "MEAS:VOLT:DC?" = "v" }
+commands = { "*OPC?" = "1" }
+quantity.v = { source = "tcpip::10.0.0.5::05025::socket.voltage", noise = 0.01, seed = 3 }
+faults = { error_queue = [[-221, "Settings conflict"]] }
+
+[[visa.instrument]]
+resource = "ASRL/dev/ttyUSB0::INSTR"
+latency_ms = 1
+faults = { hang_ms = 5, timeout = ["*ESR?"] }
+"#;
 
 /// As the target `check` splits its input.
 const SEPARATOR: &[u8] = b"\0\0";
@@ -47,6 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(folder.join(format!("simulation-arrays-{depth}.toml")), arrays)?;
         fs::write(folder.join(format!("simulation-tables-{depth}.toml")), tables)?;
     }
+    fs::write(folder.join("simulation-real-names.toml"), REAL_NAMES)?;
     fs::write(folder.join("mcp-session.jsonl"), MCP_SESSION)?;
     // The trace of a run of the function of the target `trace`, which no folder of the repository holds.
     fs::write(folder.join("trace-walk.jsonl"), include_bytes!("../../trace/walk.trace.jsonl"))?;

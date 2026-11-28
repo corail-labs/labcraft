@@ -280,7 +280,7 @@ mod tests {
         let visa = library("visa");
         assert_eq!(texts(&visa.always), ["close".to_owned()].into_iter().collect());
         assert_eq!(texts(&visa.resources), ["session".to_owned()].into_iter().collect());
-        assert_eq!(visa.categories, ["io.timeout", "visa.invalid_session", "visa.resource_not_found"]);
+        assert_eq!(visa.categories, ["io.closed", "io.timeout", "visa.invalid_session", "visa.resource_not_found"]);
         let scpi = library("scpi");
         assert!(scpi.always.is_empty() && scpi.resources.is_empty());
         assert_eq!(scpi.categories, ["scpi.instrument_error", "scpi.unexpected_response"]);

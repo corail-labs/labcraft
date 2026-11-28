@@ -78,7 +78,7 @@ fn run_controlled(bench: &Bench, sim: &str, settings: Settings, control: &mut dy
     let file = simulation::read(sim, 64).unwrap();
     let simulations = file.judge(&[&Visa as &dyn NativeLibrary]).unwrap();
     let visa = bench.checked.libraries.iter().find(|library| library.name == "visa").unwrap();
-    let natives = [Native { library: visa.id, native: &Visa, simulation: simulations.first().and_then(Option::as_ref) }];
+    let natives = [Native { libraries: &[visa.id], native: &Visa, simulation: simulations.first().and_then(Option::as_ref) }];
     let given = Run {
         program: &bench.program,
         names: &bench.names,

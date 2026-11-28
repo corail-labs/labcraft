@@ -49,6 +49,11 @@ impl Failure {
     pub fn closed(label: &str) -> Failure {
         Failure::new(CLOSED, format!("{label}: the device closed the connection"))
     }
+
+    /// `io.too_long`, code 0: a read that took `count` bytes without its terminator.
+    pub fn too_long(label: &str, count: usize) -> Failure {
+        Failure::new(TOO_LONG, format!("{label}: no terminator in {count} bytes, which are taken: the next read starts after them"))
+    }
 }
 
 /// `io.closed` for a handle never opened, the default value of its type (`net.connection`), which a message calls `noun`.
@@ -161,7 +166,7 @@ impl Need {
     }
 
     /// What a read that timed out waited for, for its message.
-    fn wanted(&self) -> String {
+    pub fn wanted(&self) -> String {
         match self {
             Need::Exactly(count) => format!("{count} bytes did not come"),
             Need::Until(_, _) => "the terminator did not come".to_owned(),
@@ -273,10 +278,7 @@ pub fn read_done(log: &mut EndpointLogs, names: Names<'_>, handle: Handle, strip
     let label = names.label;
     let handle = Value::Handle(handle);
     match (taken, stripped) {
-        (Taken::TooLong(bytes) | Taken::DatagramTooLong(bytes), _) => {
-            Failure::new(TOO_LONG, format!("{label}: no terminator in {} bytes, which are taken: the next read starts after them", bytes.len()))
-                .outcome()
-        }
+        (Taken::TooLong(bytes) | Taken::DatagramTooLong(bytes), _) => Failure::too_long(label, bytes.len()).outcome(),
         (Taken::Bytes(bytes), Some(terminator)) => match String::from_utf8(line(bytes, terminator)) {
             Ok(text) => NativeOutcome::Outputs(vec![Value::string(text), handle, Value::NONE]),
             Err(_) => Failure::new(INVALID_TEXT, format!("{label}: the line read is not UTF-8; its bytes are taken")).outcome(),

@@ -634,3 +634,46 @@ response_hex = \"0001 0000 0005 01 03 04 00e6\"
         assert_eq!(output(&report, "registers"), json!([]), "{sim}: {report}");
     }
 }
+
+/// Issue #371, points 1, 2 and 10: a program reaches `visa.sim` by `use visa.sim` (a sub-library shipped with `visa`, cli.md 3),
+/// opens an instrument by another spelling of its real name, and the report keeps its commands under the `resource` of the
+/// file and counts its handle as a `visa.sim.instrument`. By hand: the first read of `dmm-230V.toml` is `230.071217`
+/// (simulation.md 3), followed by `\n` (README, "Simulation: `visa.sim`").
+#[test]
+fn a_program_of_visa_sim_runs_against_an_instrument_with_a_real_name() {
+    let scratch = Scratch::new("visa-sim");
+    let folder = scratch.0.join("p");
+    fs::create_dir_all(&folder).unwrap();
+    let body = |close: &str| {
+        format!(
+            "labcraft 1\n\nuse bytes\nuse visa.sim\n\n/// Measures once.\nfn measure() -> (text: string, err: error) {{\n    \
+             i0, e0 = visa.sim.open(\"tcpip0::10.0.0.5::05025::socket\")\n    \
+             command = bytes.from_string(\"MEAS:VOLT:DC?\")\n    \
+             i1, e1 = visa.sim.write(i0, command, err: e0)\n    \
+             newline = bytes.from_string(\"\\n\")\n    \
+             data, i2, e2 = visa.sim.read_until(i1, newline, err: e1)\n    \
+             text, e3 = bytes.to_string(data, err: e2)\n    \
+             {close}\n}}\n"
+        )
+    };
+    fs::write(folder.join("measure.lcf"), body("err = visa.sim.close(i2, err: e3)")).unwrap();
+    let dmm = fs::read_to_string(repository().join("libs/visa/sim/dmm-230V.toml")).unwrap();
+    fs::write(scratch.0.join("bench.toml"), dmm.replace("SIM::DMM0", "TCPIP0::10.0.0.5::5025::SOCKET")).unwrap();
+    let run = || report_of(&cli_in(&scratch.0, &["run", "--json", "--no-trace", "--sim", "bench.toml", "p", "measure"]));
+    let report = run();
+    assert_eq!(output(&report, "text"), json!("230.071217\n"), "{report}");
+    assert_eq!(output(&report, "err"), Value::Null, "{report}");
+    assert_eq!(
+        report["instruments"],
+        json!([{ "resource": "TCPIP0::10.0.0.5::5025::SOCKET", "commands": [
+            { "t_ms": 0.0, "sent": "MEAS:VOLT:DC?", "answer": "230.071217" }
+        ] }]),
+        "{report}"
+    );
+    assert_eq!(report["resources"]["opened"], json!(1), "{report}");
+    // Left open, the handle shows by its type.
+    fs::write(folder.join("measure.lcf"), body("err = e3")).unwrap();
+    let report = run();
+    assert_eq!(report["resources"]["open"][0]["type"], json!("visa.sim.instrument"), "{report}");
+    assert_eq!(report["resources"]["open"][0]["resource"], json!("TCPIP0::10.0.0.5::5025::SOCKET"), "{report}");
+}

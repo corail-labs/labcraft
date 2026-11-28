@@ -3,8 +3,9 @@
 *Last updated: 2026-11-26. Status: implemented for milestone M0b (tag `v0.2.0-m0b`). The crate
 `labcraft-visa` (`src/`) implements it (the proof of concept did too, until its retirement after M0), the refusals of section 7 included. Values marked *proposed* are starting points.*
 
-*From release 0.5.0 (M4, [docs/io.md](../../docs/io.md), specified, not built yet): an instrument may have a real
-name; `*OPC?`, `*ESR?` and `*STB?`; `faults.hang_ms`; `read_bytes` and `write_bytes`. Each is marked "(0.5.0)" where
+*From release 0.5.0 (M4, [docs/io.md](../../docs/io.md)), implemented by `visa.sim`: an instrument may have a real
+name; `*OPC?`, `*ESR?` and `*STB?`; `faults.hang_ms`; an answer read as bytes and a command written as bytes, which
+`visa.read_bytes` and `visa.write_bytes` will reach once `visa` is written in LabCraft. Each is marked "(0.5.0)" where
 it is written. The simulator is then the sub-library `visa.sim`, which `visa`, written in LabCraft, calls for every
 name under `--sim` ([README](README.md), "Where a name goes" and "Simulation: `visa.sim`"); the format of the file, how
 an instrument answers and the times do not change, each write staying one command. A call on a session that was
@@ -65,7 +66,8 @@ character (Unicode category Cc, as for `LC0004` in a program). A query ends with
 `commands` and `measure` and the entries of `faults.timeout` are queries. These keys and entries, and those
 of `set` and `faults.error_on`, have no space (U+0020) at either end, are not empty, and none is a command the simulator answers itself
 (`*IDN?`, `SYST:ERR?`, `*CLS`, `*RST`); `*OPC?`, `*ESR?` and `*STB?`, which the simulator answers itself from 0.5.0,
-may be keys of `commands`, whose answer then wins, so that a file that gives `"*OPC?" = "1"` reads as before. A
+may be keys of `commands` or of `measure`, whose answer then wins, so that a file that gives `"*OPC?" = "1"` reads as before
+(decision of the owner, 2026-11-28). A
 query is in `commands` or in `measure`, not both. A quantity name is an ASCII name (a letter or `_`, then letters, digits or `_`), so that
 `SIM::PSU0.voltage` reads one way, and so does `TCPIP0::10.0.0.5::5025::SOCKET.voltage`: the quantity is what follows
 the last `.`.
@@ -137,7 +139,7 @@ the run, then, in this order:
 2. A command in `faults.error_on` adds its error to the error queue of the instrument, then goes on.
 3. `SYST:ERR?` answers the oldest error of the queue and removes it, as `-113,"Undefined header"`, or
    `0,"No error"` when the queue is empty; a `"` in a message is doubled, as in a SCPI string. `*IDN?` answers `idn`. `*CLS` empties the queue. `*RST` does
-   nothing in M0. From 0.5.0, as IEEE 488.2 defines them, unless `commands` gives them (step 4): `*OPC?` answers `1`, since the instrument has ended every
+   nothing in M0. From 0.5.0, as IEEE 488.2 defines them, unless `commands` or `measure` gives them (step 4): `*OPC?` answers `1`, since the instrument has ended every
    command before it (one at a time, below); `*ESR?` answers the event status register in decimal and clears it, a
    register in which each error that enters the queue sets the bit of its class (32 for a code from −100 to −199, a
    command error; 16 from −200 to −299, an execution error; 8 from −300 to −399, a device error; 4 from −400 to −499,
@@ -175,8 +177,9 @@ by `\n`: it takes the bytes it asks for from what is left of that answer, and le
 `read_bytes` of more than is left waits for the timeout of the session, then fails, and takes nothing. `visa.write_bytes`
 sends a command as bytes: they are read as UTF-8 text and handled as a command, a final `\n` or `\r\n` removed, and bytes
 that are not UTF-8 match nothing (step 7). An answer of `commands` is text, so a SCPI binary block of ASCII bytes
-(`"#15hello"`) is simulated as it is. `visa.set_serial` on an instrument with an `ASRL` name takes its settings and
-changes nothing; on any other it fails with `io.unsupported`, as on a real session that is not serial.
+(`"#15hello"`) is simulated as it is. `visa.set_serial` on an instrument with an `ASRL` name judges its settings as
+`serial.open` does (`io.invalid_argument` for a `baud` of 0 or `data_bits` out of 5 to 8; decision of the owner,
+2026-11-28), then changes nothing; on any other it fails with `io.unsupported`, as on a real session that is not serial.
 
 **The error queue** holds at most 32 errors *(proposed)*, as SCPI allows: one more replaces the last by
 `-350,"Queue overflow"`. So a program that never reads its errors cannot fill the memory.

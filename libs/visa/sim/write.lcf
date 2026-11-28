@@ -1,0 +1,10 @@
+labcraft 1
+
+/// Sends one command: the bytes as UTF-8 text, a final `\n` or `\r\n` removed. It ends when the instrument has
+/// handled it.
+extern rust(crate: "labcraft-visa", function: "sim_write")
+fn write(
+    instrument: instrument,
+    data: bytes,
+    err: error = none,
+) -> (instrument: instrument, err: error)

@@ -360,12 +360,8 @@ fn run_in(
     let start = checked.files.iter().position(|file| file.shown == files[0].0).unwrap();
     let program = lower_for_run(&checked, start, &mut names).unwrap();
     let bench = Bench(Arc::clone(seen));
-    let natives: Vec<Native<'_>> = checked
-        .libraries
-        .iter()
-        .filter(|library| library.name == "bench")
-        .map(|library| Native { library: library.id, native: &bench, simulation: None })
-        .collect();
+    let ids: Vec<_> = checked.libraries.iter().filter(|library| library.name == "bench").map(|library| library.id).collect();
+    let natives: Vec<Native<'_>> = if ids.is_empty() { Vec::new() } else { vec![Native { libraries: &ids, native: &bench, simulation: None }] };
     let mut heard = Heard { events: Vec::new(), names: &names };
     let end = run(Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings, context }, control, &mut heard);
     let events = heard.events;

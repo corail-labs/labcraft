@@ -10,36 +10,50 @@ fn main() {
     println!("cargo::rerun-if-changed={}", libs.display());
     let mut out = String::from("pub static LIBRARIES: &[Library] = &[\n");
     for folder in sorted_entries(&libs) {
-        let manifest = folder.join("labcraft.toml");
-        if !manifest.is_file() {
-            continue;
+        if folder.join("labcraft.toml").is_file() {
+            let name = folder.file_name().unwrap().to_str().unwrap().to_owned();
+            library(&mut out, &folder, &name);
         }
-        println!("cargo::rerun-if-changed={}", folder.display());
-        let name = folder.file_name().unwrap().to_str().unwrap();
-        write!(out, "Library {{ name: {name:?}, manifest: include_str!({manifest:?}), files: &[").unwrap();
-        for file in sorted_entries(&folder) {
-            // `docs/cli.md`, section 3, has sub-libraries; no shipped library has one yet, and this does not embed them.
-            assert!(!is_sub_library(&file), "{}: a sub-library of a shipped library is not embedded yet", file.display());
-            if file.extension().is_some_and(|extension| extension == "lcf" || extension == "lct") {
-                let name = file.file_name().unwrap().to_str().unwrap();
-                write!(out, "File {{ name: {name:?}, bytes: include_bytes!({file:?}) }},").unwrap();
-            }
-        }
-        // The simulation files it ships, read by `simulation.describe` and `run` as `<labcraft>/visa/sim/bench.toml`.
-        write!(out, "], simulations: &[").unwrap();
-        let sim = folder.join("sim");
-        if sim.is_dir() {
-            for file in sorted_entries(&sim) {
-                if file.extension().is_some_and(|extension| extension == "toml") {
-                    let name = format!("sim/{}", file.file_name().unwrap().to_str().unwrap());
-                    write!(out, "File {{ name: {name:?}, bytes: include_bytes!({file:?}) }},").unwrap();
-                }
-            }
-        }
-        writeln!(out, "] }},").unwrap();
     }
     writeln!(out, "];").unwrap();
     fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("libraries.rs"), out).unwrap();
+}
+
+/// One library, then its sub-libraries (`docs/cli.md`, section 3), each named after its path with `.` (`visa.sim`, from the
+/// folder `visa/sim`). A sub-library of a shipped library has its manifest; its folder can also hold the simulation files of
+/// the library around it (`visa/sim/`), which are no files of the sub-library.
+fn library(out: &mut String, folder: &Path, name: &str) {
+    let manifest = folder.join("labcraft.toml");
+    println!("cargo::rerun-if-changed={}", folder.display());
+    write!(out, "Library {{ name: {name:?}, manifest: include_str!({manifest:?}), files: &[").unwrap();
+    let mut subs = Vec::new();
+    for file in sorted_entries(folder) {
+        if is_sub_library(&file) {
+            assert!(file.join("labcraft.toml").is_file(), "{}: a sub-library of a shipped library has its manifest", file.display());
+            subs.push(file);
+        } else if file.extension().is_some_and(|extension| extension == "lcf" || extension == "lct") {
+            let name = file.file_name().unwrap().to_str().unwrap();
+            write!(out, "File {{ name: {name:?}, bytes: include_bytes!({file:?}) }},").unwrap();
+        }
+    }
+    // The simulation files it ships, read by `simulation.describe` and `run` as `<labcraft>/visa/sim/bench.toml`; the
+    // manifest of a sub-library there is none.
+    write!(out, "], simulations: &[").unwrap();
+    let sim = folder.join("sim");
+    if sim.is_dir() {
+        for file in sorted_entries(&sim) {
+            let name = file.file_name().unwrap().to_str().unwrap();
+            if file.extension().is_some_and(|extension| extension == "toml") && name != "labcraft.toml" {
+                let name = format!("sim/{name}");
+                write!(out, "File {{ name: {name:?}, bytes: include_bytes!({file:?}) }},").unwrap();
+            }
+        }
+    }
+    writeln!(out, "] }},").unwrap();
+    for sub in subs {
+        let sub_name = format!("{name}.{}", sub.file_name().unwrap().to_str().unwrap());
+        library(out, &sub, &sub_name);
+    }
 }
 
 /// A folder that the walk of `labcraft-cli` would read programs from. Other folders are no concern of this crate.

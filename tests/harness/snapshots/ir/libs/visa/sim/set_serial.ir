@@ -1,0 +1,2 @@
+fn visa.sim.set_serial(instrument: instrument, baud: u32 = 9600, data_bits: u8 = 8, parity: serial.Parity = serial.Parity.None, stop_bits: serial.StopBits = serial.StopBits.One, flow: serial.Flow = serial.Flow.None, err: error = none) -> (instrument: instrument, err: error)
+  native sim_set_serial  skip(err: 6)

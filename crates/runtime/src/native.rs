@@ -172,7 +172,7 @@ pub struct CallContext {
 /// What a handle designates, for the report (commands.md 7, `resources`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandleInfo {
-    /// Its opaque type, as the library names it: `session`.
+    /// Its opaque type, as the library names it: `session`; that of one of its sub-libraries with its path, `sim.instrument`.
     pub kind: &'static str,
     /// `SIM::DMM0`
     pub designates: String,

@@ -1,6 +1,7 @@
-//! L6: the native bodies of the library `visa` (`libs/visa/README.md`), beside its declarations. A session on a `SIM::`
-//! resource talks to an instrument of the simulation file (`libs/visa/simulation.md`), in deterministic mode: every wait is
-//! on the clock of the run, and every call is a state machine that the scheduler steps. Real instruments come with M4.
+//! L6: the native bodies of the library `visa` (`libs/visa/README.md`) and of its sub-library `visa.sim` (README, "Simulation:
+//! `visa.sim`"), beside their declarations. A session, or an instrument of `visa.sim`, talks to an instrument of the
+//! simulation file (`libs/visa/simulation.md`), by its `SIM::` name or its real one: every wait is on the clock of the run,
+//! and every call is a state machine that the scheduler steps. Real instruments are reached by `net` and `serial`.
 //!
 //! No crate of `crates/` depends on this one (`cargo xtask libs`): the apps and the harness link it and give it to the run.
 #![deny(
@@ -34,8 +35,11 @@ pub use run::VisaRun;
 pub const CODES: &[LibraryCode] = &[
     code("visa:S001", "A key that the format does not have; fix: the nearest key"),
     code("visa:S002", "A value of the wrong TOML type"),
-    code("visa:S003", "An instrument without `resource`, a resource that does not start with `SIM::`, or a quantity with a noise and no `seed`"),
-    code("visa:S004", "A resource defined twice"),
+    code(
+        "visa:S003",
+        "An instrument without `resource`, a resource that is neither a `SIM::` name nor a real name that `visa` opens, or a quantity with a noise and no `seed`",
+    ),
+    code("visa:S004", "A resource defined twice, or two real names that reach one endpoint"),
     code("visa:S005", "A number out of its range"),
     code("visa:S006", "`measure` or `set` names a quantity the instrument does not have, or `set` names a quantity that has a `source`"),
     code("visa:S007", "A `source` that names no quantity of the file, a chain of sources that loops, or a `source` with a value or a move"),
@@ -84,9 +88,8 @@ impl NativeLibrary for Visa {
             .unwrap_or_default()
     }
 
-    // `endpoints` is the default, none: its file accepts only `SIM::` names, which are no endpoints of io.md 2. Once it
-    // accepts real names (`ASRL3::INSTR`, issue #237), it gives their endpoints (`serial:COM3`), which `serial.list` lists
-    // under `--sim`.
+    // `endpoints` is the default, none, until `LC8112` and the answers of `net` and `serial` to an endpoint of `visa` (issue
+    // #371, its second pull request): then it gives the endpoints of its instruments with a real name (`serial:COM3`).
 
     fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun> {
         let bench = start.simulation.and_then(|simulation| simulation.downcast_ref::<Arc<Bench>>()).cloned();

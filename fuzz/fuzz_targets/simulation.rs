@@ -105,7 +105,10 @@ fn exercised(text: &str) -> Vec<String> {
     let mut driver = Driver { run: &mut run, now: 0, calls: 0, said: Vec::new() };
     for (index, instrument) in bench.commands().into_iter().enumerate() {
         let Some(session) = driver.open(&instrument.resource) else { break };
-        let hangs = |command: &str| instrument.timeout.iter().any(|timeout| timeout == command);
+        // An instrument with `hang_ms` answers nothing from then on (simulation.md 4): an answer is compared only when the call
+        // ended before it, so it was handled before it too.
+        let hang = instrument.hang;
+        let hangs = |command: &str, now: i64| hang.is_some_and(|hang| now >= hang) || instrument.timeout.iter().any(|timeout| timeout == command);
         for header in &instrument.set {
             for argument in ["2.5", "-1E300", "x"] {
                 driver.send(session, &format!("{header} {argument}"));
@@ -113,13 +116,13 @@ fn exercised(text: &str) -> Vec<String> {
         }
         for (query, answer) in &instrument.commands {
             let got = driver.send(session, query);
-            if got.is_some() && !hangs(query) {
+            if got.is_some() && !hangs(query, driver.now) {
                 assert_eq!(answer_of(&got), Some(answer.as_str()), "{}: {query}", instrument.resource);
             }
         }
         for query in &instrument.measure {
             let got = driver.send(session, query);
-            if got.is_some() && !hangs(query) {
+            if got.is_some() && !hangs(query, driver.now) {
                 let number = answer_of(&got).map(str::parse::<f64>);
                 assert!(matches!(number, Some(Ok(x)) if x.is_finite()), "{}: {query} gives {got:?}", instrument.resource);
             }
@@ -138,7 +141,7 @@ fn exercised(text: &str) -> Vec<String> {
             driver.send(session, command);
         }
         let idn = driver.send(session, "*IDN?");
-        if idn.is_some() && !hangs("*IDN?") {
+        if idn.is_some() && !hangs("*IDN?", driver.now) {
             assert_eq!(answer_of(&idn), Some(instrument.idn.as_str()), "{}", instrument.resource);
         }
         if index == 0 {
@@ -162,7 +165,7 @@ fn exercised(text: &str) -> Vec<String> {
         let info = driver.run.describe(session);
         assert!(info.as_ref().is_some_and(|info| !info.open), "{info:?}");
         let closed = driver.send(session, "*IDN?");
-        assert!(closed.is_none() || matches!(closed, Some(NativeOutcome::Fail { category: "visa.invalid_session", .. })), "{closed:?}");
+        assert!(closed.is_none() || matches!(closed, Some(NativeOutcome::Fail { category: "io.closed", .. })), "{closed:?}");
     }
     let instruments = driver.run.instruments();
     assert!(instruments.windows(2).all(|pair| pair[0].resource < pair[1].resource), "in code point order of their resources");
