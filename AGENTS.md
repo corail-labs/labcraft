@@ -8,8 +8,9 @@ This file is for any coding agent that works on this repository (Codex, Claude C
 another), for a contributor or for a maintainer. The guide for people is [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **Where the project is:** M0 is done (tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`): `labcraft-cli` reads,
-checks, writes and runs programs and serves them over MCP, and a viewer draws them. M1, the diagram editor, is under
-way (`docs/architecture.md`, section 12; `docs/roadmap.md`).
+checks, writes and runs programs and serves them over MCP. Release 0.4.0, the editor (tag `v0.4.0`), draws and edits
+them in the IDE and the web page, with an agent attached (`docs/architecture.md`, section 12). Next is 0.5.0, the first
+real bench (theme M4, `docs/io.md`; `docs/roadmap.md`).
 
 ## Documents
 

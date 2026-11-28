@@ -7,8 +7,7 @@
 
 <p align="center">
   <strong>A graphical dataflow programming language and IDE, built in pure Rust.</strong><br />
-  Designed from the start to be written, run and fixed by people and AI agents alike. Ambition:
-  to do at least what LabVIEW does, open and cross-platform.
+  Designed from the start to be written, run and fixed by people and AI agents alike. Open and cross-platform.
 </p>
 
 <p align="center">
@@ -19,15 +18,15 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-14): M0, the first milestone, is done in Rust (tag `v0.3.0-m0`, with binaries
-on the [releases page](https://github.com/corail-labs/labcraft/releases)): `labcraft-cli` reads, checks, writes and
-runs programs against simulated instruments (`fmt`, `check`, `run`), an AI agent drives it over MCP
-(`labcraft-cli mcp`), and a read-only viewer draws each function as its file changes, with the values of a
-run on the wires (`labcraft`, `labcraft-web`, `labcraft-cli diagram`).**
-The language and its text format are described (spec v0), with example programs. Editing the diagram comes
-next (M1). The throwaway Python proof of concept that ran the examples before Rust was retired after M0
-(2026-11-15). The themes and the releases are described in [docs/roadmap.md](docs/roadmap.md): the next release,
-0.4.0, is the editor, with installers.
+**Status (2026-11-28): release 0.4.0, the editor, is out (tag `v0.4.0`, with an installer for Windows and
+archives on the [releases page](https://github.com/corail-labs/labcraft/releases)): you draw a program in the IDE
+(`labcraft`) or in the browser (`labcraft-web`), an AI agent attached to the window edits the same program in one
+history, `labcraft-cli` reads, checks, writes and runs programs against simulated instruments (`fmt`, `check`, `run`,
+`exec`), and an agent drives it over MCP (`labcraft-cli mcp`).**
+The language and its text format are described (spec v0), with example programs. M0, the first milestone in Rust,
+was tagged `v0.3.0-m0`; its throwaway Python proof of concept was retired after it (2026-11-15). The themes and the
+releases are described in [docs/roadmap.md](docs/roadmap.md): the next release, 0.5.0, is the first real bench, with
+TCP and serial instruments.
 
 ## One program, two views
 
@@ -63,7 +62,7 @@ fn read_voltage(resource: string, err: error = none) -> (voltage: f64[V], err: e
 ```
 
 The diagram is drawn from this file by `labcraft-cli diagram --svg`, following the
-[visual notation](docs/visual-notation.md); the desktop viewer draws it the same way.
+[visual notation](docs/visual-notation.md); the editor draws it the same way, and you edit either one.
 
 ## An AI agent at work
 
@@ -75,13 +74,15 @@ the run appear on the wires. Then a change of the function, redrawn and run agai
 https://github.com/user-attachments/assets/38106f7d-c1aa-41ad-a4d6-761a483cec2e
 
 In five sessions of five, an agent wrote, checked, ran and fixed a test program on its own
-([acceptance-m0.md](docs/acceptance-m0.md), scenario 1).
+([acceptance-m0.md](docs/acceptance-m0.md), scenario 1). Since 0.4.0, an agent attached to the open window edits
+the same program as you, in one history, under the policy you choose: Ctrl+Z undoes its steps as well as yours.
 
 ## Try it
 
 **From a release.** Each [release](https://github.com/corail-labs/labcraft/releases) has an archive for Windows,
-Linux and macOS with `labcraft-cli`, the viewer `labcraft`, the examples and the simulated instruments of `visa`
-in `sim/`. In a terminal, in the folder of the archive (on Windows, in PowerShell):
+Linux and macOS with `labcraft-cli`, the IDE `labcraft`, the examples and the simulated instruments of `visa` in
+`sim/`. On Windows, the MSI installs them, and a double click on a `.lcf` file opens it in LabCraft. In a terminal,
+in the folder of the archive (on Windows, in PowerShell; after the MSI, in any folder, without `./`):
 
 ```sh
 ./labcraft-cli check examples
@@ -89,10 +90,10 @@ in `sim/`. In a terminal, in the folder of the archive (on Windows, in PowerShel
 ./labcraft examples
 ```
 
-The run writes its trace in `examples/.labcraft/runs/`, and the viewer shows its values on the wires of
-`check_voltage`. The binaries are not signed yet: the note of each release says how to open them on Windows and
-macOS. The release also has the web page, the same window in the browser, `labcraft-web-<version>.zip`, a folder to serve with any static
-server.
+The run writes its trace in `examples/.labcraft/runs/`, and the window shows its values on the wires of
+`check_voltage`: open it, change it in the diagram and run it again. The binaries are not signed yet: the note of
+each release says how to open them on Windows and macOS. The release also has the web page, the same window in the
+browser, `labcraft-web-<version>.zip`, a folder to serve with any static server.
 
 **From the sources.** The Rust command line checks the examples, that they are in canonical form, and runs one
 against a simulated multimeter (Rust 1.95 or later):
@@ -106,7 +107,7 @@ cargo run --release -p labcraft -- examples
 
 `check` reports errors with their line and node; `run` executes a function against a simulated
 instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). The reports and diagnostic codes are
-described in [docs/cli.md](docs/cli.md), the viewer in its section 8.
+described in [docs/cli.md](docs/cli.md), the IDE in its section 8.
 
 To let an AI agent write, check and run programs on its own, give it the MCP server of the command line on a
 folder of its own, here in Claude Code, with the `labcraft-cli` of a release or one built from the sources
@@ -116,7 +117,9 @@ folder of its own, here in Claude Code, with the `labcraft-cli` of a release or 
 claude mcp add labcraft -- <path>/labcraft-cli mcp --project <folder>
 ```
 
-Open the viewer on the same folder to watch the agent's functions drawn as they are written.
+Open the same folder in `labcraft` first: the server attaches to the window, and the agent edits the program you see,
+in one history with yours. *Help > Connect an AI agent* (or `labcraft-cli mcp setup`) writes this configuration for
+the MCP clients it finds.
 
 The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent can install with it in
 [skills/README.md](skills/README.md).
@@ -129,9 +132,9 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 |---|---|
 | [docs/language-spec-v0.md](docs/language-spec-v0.md) | Language and file format, v0 (first draft): types and units, dataflow, errors, structures, grammar, open questions |
 | [docs/visual-notation.md](docs/visual-notation.md) | How a diagram is drawn: nodes, terminals, wire families, structures (first draft) |
-| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a), `run` and `mcp` (implemented for M0b), `diagram` and the viewer (M0v) |
+| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a), `run` and `mcp` (implemented for M0b), `diagram` and the viewer (M0v), the IDE, `exec` and `mcp setup` (0.4.0) |
 | [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (implemented for M0b) |
-| [docs/ide.md](docs/ide.md) | The window of the IDE of M1: panels, tabs and views, command palette, planned workspaces, the agent attached, detached windows (specification, before the Rust) |
+| [docs/ide.md](docs/ide.md) | The window of the IDE of M1: panels, tabs and views, command palette, planned workspaces, the agent attached, detached windows (implemented for 0.4.0) |
 | [docs/mcp.md](docs/mcp.md) | The MCP server: tools, results and errors, what the agent is told, bounds (implemented for M0b) |
 | [docs/io.md](docs/io.md) | Real I/O of M4 (release 0.5.0): endpoints, what a run reaches with and without `--sim`, the consent of the human, files, simulated raw devices (specification, before the Rust) |
 | [skills/](skills/README.md) | Skills for agents: writing, debugging and testing a program, which the MCP server serves through `guide_read` |
@@ -176,3 +179,7 @@ a prompt to paste into any coding agent, which takes you from an open issue to a
 
 Your choice of [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE). LabCraft is an independent
 project, not affiliated with NI; see [NOTICE](NOTICE).
+
+LabCraft is a clean-room design: it is built from public documentation, general knowledge and the feedback of its
+users, never from another product's files, code or tools, and the CI refuses a file of such a product
+(`cargo xtask clean-room`).
