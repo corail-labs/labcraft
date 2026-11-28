@@ -124,6 +124,9 @@ exchanges, in the format of [io.md 6](../../docs/io.md). `net` judges its sectio
 | `net:S009` | error | More than 256 devices, or 10,000 exchanges in one device *(proposed)* |
 
 An endpoint of the file is written as a program reaches it (io.md 2), so `tcp:Board.local:0023` is `tcp:board.local:23`.
+An endpoint that a `visa` instrument of the file describes by a real name is reached by `visa.open` only (0.5.0, io.md 6):
+`connect` to it gives `net.host_not_found` after its timeout, as an endpoint the file does not describe (io.md 3),
+whose message says to open it with `visa.open`.
 The faults of a device are times on the clock of the run, as in simulation.md 3 (decision of the owner, 2026-11-19):
 
 - **`close_ms`**: from that time the connections to the device are closed. What was ready before is still read; a read

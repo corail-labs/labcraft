@@ -120,18 +120,22 @@ struct is not a struct written in place with the same fields. A number that must
 numbers is a `struct` with one field.
 
 **Opaque types**: a library can declare a type whose content is hidden, handled only by its
-functions: `type session = opaque`. This is the case for the session `visa.session` (the equivalent
-of LabVIEW's *VISA resource name*): it designates an open connection, not an instrument. Having
+functions: `type connection = opaque`. This is the case for the connection `net.connection` and the port
+`serial.port` (0.5.0, [io.md](io.md)): each designates an open connection, not the device. Having
 neither fields nor variants, its name never appears among operands, so a value can bear it (R-1):
-`fn close(session: session, …)` in `libs/visa`.
+`fn close(connection: connection, …)` in `libs/net`. A type that shows what it holds is not opaque: from 0.5.0 the
+session `visa.Session` (the equivalent of LabVIEW's *VISA resource name*) is an enumeration of the connections of its
+transports (A.3), so that `visa`, written in LabCraft, chooses the transport of a session with a `match`; its values
+bear another name than its type (`session: Session`).
 
-**Alias of an opaque type.** A driver library can declare its opaque type as an alias of another
-library's opaque type: `type bank = visa.session` in the `relays` library. `relays.bank` and
-`visa.session` are then two names of the same type, and a resource (8.1) if the type is one: a
-`relays.bank` is accepted wherever a
-`visa.session` is expected, and the reverse. This is how the functions of a generic library apply
+**Alias of another library's type.** A driver library can declare its type as an alias of another
+library's type: `type Bank = visa.Session` in the `relays` library. `relays.Bank` and
+`visa.Session` are then two names of the same type, and a resource (8.1) if the type is one: a
+`relays.Bank` is accepted wherever a
+`visa.Session` is expected, and the reverse. This is how the functions of a generic library apply
 to a driver's session (`scpi.query_f64(bench.relays, …)`, section 13), while the driver's own
-signatures still say what the session designates.
+signatures still say what the session designates. An alias of an opaque type is opaque, so a value can bear its name
+(R-1: `type link = net.connection`, and `link: link`); an alias of an enumeration is not.
 
 ### 3.3 Physical units (D-05)
 
@@ -311,7 +315,7 @@ fn check_voltage(
 - A parameter can be **variadic** (`parts: string...`): see 5.4.
 - **Scope.** Functions and types of the same library are named without qualification (`settle`,
   `Verdict`), so they cannot share a name. Anything from another library, types included, needs
-  `use lib` in the file and the qualified name: after `use visa`, `visa.open` and `visa.session`,
+  `use lib` in the file and the qualified name: after `use visa`, `visa.open` and `visa.Session`,
   and for a variant `lib.Type.Variant`. The libraries of section 9 are no exception: after `use core`,
   `core.add`, `core.ge`, `core.select`. So a library can define its own `add`, and a new function in
   `core` breaks no program. The base types (3.1) and the bound `Number` (3.5) belong to the language and need no `use`. `use a.b`
@@ -325,7 +329,7 @@ fn check_voltage(
   are shipped: a folder `visa` in a project does not change what `scpi` runs.
 - **Function references** (Q-14): a named function, of a library or of the primitives, can be passed as
   an argument, with a signature type checked at edit time, for example
-  `measure: fn(visa.session, err: error) -> (f64[V], visa.session, error)`. The callee runs it
+  `measure: fn(visa.Session, err: error) -> (f64[V], visa.Session, error)`. The callee runs it
   with `core.call(measure, …)`. The name of an argument says how `core.call` wires it and is not part of the
   type: `fn(x: f64[V])` and `fn(f64[V])` are the same type, and so is a function with its own names
   for its parameters. No anonymous functions or closures in v0. This is the typed equivalent
@@ -387,7 +391,7 @@ fn spectrum(samples: [f64[V]], rate: f64[Hz]) -> (magnitude: [f64[V]], err: erro
 | `c` | `library`, `symbol` | C ABI, dynamic loading; in-process, or isolated in a separate process |
 | `dotnet` | `assembly`, `type`, `method` | Hosted CLR (D-14) |
 | `python` | `module`, `function` | The user's Python interpreter, in a separate process: LabCraft does not embed Python |
-| `rust` | `crate`, `function` | A Rust crate linked into the application, from M0: the native functions of the libraries shipped with LabCraft and of the examples (`results_log`, A.4). How a project adds its own crate is for M8. For example `extern rust(crate: "labcraft-visa", function: "close")` before `fn close(…)` in `libs/visa` |
+| `rust` | `crate`, `function` | A Rust crate linked into the application, from M0: the native functions of the libraries shipped with LabCraft and of the examples (`results_log`, A.4). How a project adds its own crate is for M8. For example `extern rust(crate: "labcraft-net", function: "close")` before `fn close(…)` in `libs/net` |
 
 - **The declaration is the contract.** Types are converted and checked at the boundary, at run
   time. Units cannot be: the declaration asserts them, like `core.with_unit`.
@@ -530,7 +534,7 @@ has one text:
   - none between the name of a function, a type, a variant, a category, a library, a panel kind, the
     wildcard `_` or the `fn` of a function type and the `(`, `[` or `<` that follows it
     (`core.add(a, b)`, `f64[V]`, `mean<T: Number>(values: [T])`, `io.timeout(err)`, `_(err)`,
-    `numeric(format: "0.000")`, `fn(visa.session)`); one after any other keyword, a number, or a
+    `numeric(format: "0.000")`, `fn(visa.Session)`); one after any other keyword, a number, or a
     word of the `layout`, `terminals`, `outline` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
     `at (40, 80)`, `rect (2, 4)`, `path (0, 0)`); one on each side of the `+` and `-` of an `outline` coordinate
     (`w - 8`, `x + 2`), none after the minus of a negative number (`(0, -2)`);
@@ -991,7 +995,8 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   - **Discrete-event clock.** Everything that takes simulated time (waits, and the latency and
     timeouts of simulated instruments) overlaps between parallel branches, as in real time: two
     branches that each wait 100 ms advance the clock by 100 ms, not 200 ms. Whether two calls on one
-    resource overlap is up to its library (8.1): two calls on one `visa` session do not.
+    resource overlap is up to its library (8.1): two calls on one TCP connection, serial port or session
+    of `visa.sim` do not; a simulated instrument handles one command at a time, whichever session sends it.
   - **Global order.** The runtime repeatedly runs, among the nodes ready at the current simulated
     time, the first one in this order: the position of a node is the list of the canonical
     positions (5.2) of the statements that contain it, from the top-level function down through
@@ -1018,8 +1023,12 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   state), a TCP connection or a serial port (0.5.0, [io.md](io.md)), a `ref<T>` reference, a panel element read or
   written live (10), a file.
 - **What a call guarantees on its resource is up to its library**, which says it; the runtime adds no
-  lock. `visa` makes each of its calls atomic on its session, so that `visa.query` writes then reads
-  without another call stepping in ([libs/visa/README.md](../libs/visa/README.md)). Two calls that the
+  lock. `net` and `serial` make each of their calls atomic on its connection or port, and `visa.sim` on its
+  session, a simulated instrument handling one command at a time ([io.md](io.md) 7). A function written in LabCraft is atomic only per call of what it calls:
+  `visa.query`, a write and then a read, is atomic when the program orders the calls on its session
+  ([libs/visa/README.md](../libs/visa/README.md)), until functions marked `atomic` in their library's manifest,
+  for the runtime to hold the resource it receives for its whole body (decision of the owner, 2026-11-26; holding one
+  across several calls the program draws is the access structure of Q-19, release 0.7.0). Two calls that the
   program does not order, on one resource, are the program's concern: the warning below points them out.
 - **Warning at edit time** when two nodes receive the same resource with no dependency path between
   them (data, error wire or `after:`), for example two branches that set the same instrument:
@@ -1076,8 +1085,8 @@ requested from outside; a fault, found by the runtime.
   of the runtime, is abandoned and its resource is reported as leaked. The grace period counts on the
   clock of the run, simulated in deterministic mode, so that an abort by a time limit replays exactly:
   the run ends when the last call in progress ends, or when the grace period ends if one is abandoned.
-  The runtime then releases the other resources the run opened, each through its library (`visa` closes
-  its sessions), without running a node. The run
+  The runtime then releases the other resources the run opened, each through its library (each transport
+  of `visa`, `net`, `serial` or `visa.sim`, releases what it opened), without running a node. The run
   ends with an `aborted` status, the time of the abort and where each loop was, and no output: the
   function did not finish. The report warns that the instruments are in an unknown state: closing
   a session does not switch a supply off.
@@ -1147,8 +1156,8 @@ to it.
 | `string` | `concat` (variadic), `join`, `format` (5.4), `split`, number parsing (`to_f64`, `to_i32`) | M0 |
 | `array` | size, index (`len`, `get`, `set`), subarray (`slice`), construction (`push`, `concat`, `repeat`), rows (`from_rows`, `to_rows`), `sum` | M0 |
 | `errors` | `merge`, error creation (`make`, `raise_if`) | M0 |
-| `visa` | `open`, `close`, `write`, `read`, `query` (text). Native (`extern rust`), shipped in `libs/visa`, with its simulator: the `SIM::` resources answer as the instruments described in TOML files (D-17) | M0 |
-| `visa` | Real instruments over TCP (`::SOCKET`) and serial (`ASRL`), a simulated instrument by its real name; `read_bytes`, `write_bytes`, `set_serial` ([io.md](io.md)) | 0.5.0 (M4) |
+| `visa` | `open`, `close`, `write`, `read`, `query` (text). Native (`extern rust`) until 0.5.0, shipped in `libs/visa`, with its simulator: the `SIM::` resources answer as the instruments described in TOML files (D-17) | M0 |
+| `visa` | Real instruments over TCP (`::SOCKET`) and serial (`ASRL`), a simulated instrument by its real name; `read_bytes`, `write_bytes`, `set_serial`. Written in LabCraft over `net`, `serial` and `visa.sim` (the simulator, its part in Rust), names resolved by `visa.resolve` ([io.md](io.md), [libs/visa/README.md](../libs/visa/README.md)) | 0.5.0 (M4) |
 | `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`). Written in LabCraft over `visa`, shipped in `libs/scpi` | M0 |
 | `scpi` | `query_i32`, `wait_complete` (`*OPC?`), `event_status` (`*ESR?`), `status_byte` (`*STB?`), `query_block` (a binary block `#…`) | 0.5.0 (M4) |
 | `net`, `serial`, `file` | TCP and UDP, serial ports, files and folders: native, shipped in `libs/`, with the consent of [io.md](io.md) 4 | 0.5.0 (M4) |
@@ -1779,9 +1788,9 @@ fn check_voltage(
 }
 ```
 
-`dmm` and `dmm2` are of type `visa.session`: the session passes through `query_f64`, as in a
-LabVIEW driver, and the same connection is closed. `visa.close` is marked `always` in the library:
-the session is closed even if the measurement failed. The verdict goes through `handle e2`: without
+`dmm` and `dmm2` are of type `visa.Session`: the session passes through `query_f64`, as in a
+LabVIEW driver, and the same connection is closed. `visa.close` is written in LabCraft, so its body runs, and the
+close of its transport is marked `always` (7.2): the session is closed even if the measurement failed. The verdict goes through `handle e2`: without
 it, a missing resource would give `voltage = 0 V` and a verdict computed on a measurement that did
 not take place (7.2). Simulation plugs in at the VISA level (resource `SIM::…`): the program is the
 same with a real instrument. Running against a simulated instrument, with `labcraft-cli`:
@@ -1813,9 +1822,9 @@ type Step = struct {
 // In the `results_log` library, which writes it: named `results_log.StepResult` elsewhere.
 type StepResult = struct { name: string, value: f64[V], passed: bool }
 
-// `relays.bank` and `psu.session` are opaque types that their libraries declare as aliases of
-// `visa.session` (`type bank = visa.session` in `relays`): `scpi` functions accept them.
-type Bench = struct { dmm: visa.session, relays: relays.bank, source: psu.session }
+// `relays.Bank` and `psu.Session` are types that their libraries declare as aliases of
+// `visa.Session` (`type Bank = visa.Session` in `relays`): `scpi` functions accept them.
+type Bench = struct { dmm: visa.Session, relays: relays.Bank, source: psu.Session }
 ```
 
 The state machine, `station.lcf` (`bench_selftest` and `wait_dut` are in `examples/`):
@@ -1912,7 +1921,7 @@ use visa
 
 /// Measures every `period` until within `tolerance` of `target`, or io.timeout error.
 fn settle(
-    dmm: visa.session,
+    dmm: visa.Session,
     target: f64[V],
     tolerance: f64[V],
     period: duration,
@@ -2542,47 +2551,72 @@ UTF-8, giving `""`. The binary blocks of SCPI (`#…`) are read by `scpi.query_b
 
 ```text
 fn visa.open(resource: string, timeout: duration = 2 s,
-             err: error = none) -> (session: visa.session, err: error)
-fn visa.close(session: visa.session, err: error = none) -> (err: error)   // always (7.2)
-fn visa.write(session: visa.session, command: string,
-              err: error = none) -> (session: visa.session, err: error)
-fn visa.read(session: visa.session,
-             err: error = none) -> (text: string, session: visa.session, err: error)
-fn visa.query(session: visa.session, command: string,
-              err: error = none) -> (text: string, session: visa.session, err: error)
+             err: error = none) -> (session: visa.Session, err: error)
+fn visa.close(session: visa.Session, err: error = none) -> (err: error)
+fn visa.write(session: visa.Session, command: string,
+              err: error = none) -> (session: visa.Session, err: error)
+fn visa.read(session: visa.Session,
+             err: error = none) -> (text: string, session: visa.Session, err: error)
+fn visa.query(session: visa.Session, command: string,
+              err: error = none) -> (text: string, session: visa.Session, err: error)
 
-fn scpi.query_f64(session: visa.session, command: string,
-                  err: error = none) -> (session: visa.session, value: f64, err: error)
-fn scpi.check_errors(session: visa.session,
-                     err: error = none) -> (session: visa.session, err: error)   // SYST:ERR?
+fn scpi.query_f64(session: visa.Session, command: string,
+                  err: error = none) -> (session: visa.Session, value: f64, err: error)
+fn scpi.check_errors(session: visa.Session,
+                     err: error = none) -> (session: visa.Session, err: error)   // SYST:ERR?
 ```
 
 From 0.5.0 (M4, [io.md](io.md); [libs/visa](../libs/visa/README.md) for the transports):
 
 ```text
-fn visa.write_bytes(session: visa.session, data: bytes,
-                    err: error = none) -> (session: visa.session, err: error)
-fn visa.read_bytes(session: visa.session, count: i32,
-                   err: error = none) -> (data: bytes, session: visa.session, err: error)
-fn visa.set_serial(session: visa.session, baud: u32 = 9600, data_bits: u8 = 8,
+fn visa.write_bytes(session: visa.Session, data: bytes,
+                    err: error = none) -> (session: visa.Session, err: error)
+fn visa.read_bytes(session: visa.Session, count: i32,
+                   err: error = none) -> (data: bytes, session: visa.Session, err: error)
+fn visa.set_serial(session: visa.Session, baud: u32 = 9600, data_bits: u8 = 8,
                    parity: serial.Parity = serial.Parity.None,
                    stop_bits: serial.StopBits = serial.StopBits.One,
                    flow: serial.Flow = serial.Flow.None,
-                   err: error = none) -> (session: visa.session, err: error)
+                   err: error = none) -> (session: visa.Session, err: error)
+fn visa.resolve(resource: string,
+                err: error = none) -> (route: visa.Route, err: error)   // native
 
-fn scpi.query_i32(session: visa.session, command: string,
-                  err: error = none) -> (session: visa.session, value: i32, err: error)
-fn scpi.wait_complete(session: visa.session,
-                      err: error = none) -> (session: visa.session, err: error)   // *OPC?
-fn scpi.event_status(session: visa.session,
-                     err: error = none) -> (session: visa.session, status: i32, err: error)   // *ESR?
-fn scpi.status_byte(session: visa.session,
-                    err: error = none) -> (session: visa.session, status: i32, err: error)    // *STB?
-fn scpi.query_block(session: visa.session, command: string,
-                    err: error = none) -> (session: visa.session, data: bytes, err: error)
+fn scpi.query_i32(session: visa.Session, command: string,
+                  err: error = none) -> (session: visa.Session, value: i32, err: error)
+fn scpi.wait_complete(session: visa.Session,
+                      err: error = none) -> (session: visa.Session, err: error)   // *OPC?
+fn scpi.event_status(session: visa.Session,
+                     err: error = none) -> (session: visa.Session, status: i32, err: error)   // *ESR?
+fn scpi.status_byte(session: visa.Session,
+                    err: error = none) -> (session: visa.Session, status: i32, err: error)    // *STB?
+fn scpi.query_block(session: visa.Session, command: string,
+                    err: error = none) -> (session: visa.Session, data: bytes, err: error)
 ```
 
-`visa` then uses the types of `serial` (its manifest gains `dependencies = ["serial"]`). `scpi.wait_complete` waits,
+The types of `visa`, in `libs/visa` (0.5.0, decision of the owner, 2026-11-26):
+
+```text
+type Session = enum {
+    Closed,
+    Tcp(net.connection),
+    Serial(serial.port),
+    Simulated(visa.sim.instrument),
+}
+
+type Route = enum { Simulated(string), Tcp(Address), Serial(string) }
+
+type Address = struct { host: string, port: u16 }
+```
+
+**`visa` is written in LabCraft** from 0.5.0 (decision of the owner, 2026-11-24), over `net`, `serial` and its
+sub-library `visa.sim`, the native simulator of the instruments of a simulation file
+([libs/visa](../libs/visa/README.md)); its manifest gains `dependencies = ["net", "serial"]`. Only `visa.resolve` is
+native: it says where a name goes in the run (io.md 3), by the code that `--allow-hardware` reduces a name with. A
+session is the enumeration `visa.Session`, not an opaque type, so that each function of `visa` chooses the transport of
+its session with a `match`; `Closed`, its default value, is a session never opened, on which every call but `close` fails with
+`visa.invalid_session`; `close` succeeds. `visa.close` is no `always` function, since none written in LabCraft is (7.2): its body runs
+even after an error, and the close of each transport is `always`. `visa.query` is a `visa.write` and then a
+`visa.read`, so it is atomic when the program orders the calls on its session (8.1). `scpi.wait_complete` waits,
 within the timeout of the session, for the `1` of `*OPC?`, read as `string.to_i32` reads an integer (A.2: `+1` and ` 1`
 are 1), and fails with `scpi.unexpected_response` on any other answer, text that is no integer included (decision of
 the owner, 2026-11-25); `scpi.event_status` and `scpi.status_byte` are `scpi.query_i32` of `*ESR?` and `*STB?`, whose bits the program
@@ -2593,11 +2627,11 @@ are written in LabCraft over `visa`, `string` and `bytes`, as `query_f64` is. Th
 `file` are on their pages: [libs/net](../libs/net/README.md), [libs/serial](../libs/serial/README.md),
 [libs/file](../libs/file/README.md).
 
-The `visa` functions are declared with `extern rust` in `libs/visa` (4.1), and its manifest marks
+Until 0.5.0, the `visa` functions are declared with `extern rust` in `libs/visa` (4.1), and its manifest marks
 `visa.close` as `always`. `scpi` is written in LabCraft over `visa`, in `libs/scpi`:
 `query_f64` is a `visa.query` followed by `string.to_f64`. A `scpi` call is therefore atomic only
-per `visa` call (8.1). The proof of concept, retired after M0, read these files; its native bodies stood in for the
-crate of `visa`.
+per call of a transport (8.1). The proof of concept, retired after M0, read these files; its native bodies stood in for
+the crate of `visa`.
 
 ### A.4 Libraries of the examples
 
@@ -2618,12 +2652,12 @@ fn modbus_tcp.read_holding_registers(connection: net.connection, unit: u8 = 1, f
                                      -> (registers: [u16], connection: net.connection, err: error)
 fn modbus_tcp.read_from(host: string, port: u16 = 502, unit: u8 = 1, first: u16 = 0, count: u16 = 1,
                         err: error = none) -> (registers: [u16], err: error)
-fn dmm_driver.read_dc_volts(session: visa.session,
-                            err: error = none) -> (volts: f64[V], session: visa.session, err: error)
-fn relays.apply(bank: relays.bank, route: string,
-                err: error = none) -> (bank: relays.bank, err: error)
-fn psu.set_voltage(source: psu.session, voltage: f64[V],
-                   err: error = none) -> (source: psu.session, err: error)
+fn dmm_driver.read_dc_volts(session: visa.Session,
+                            err: error = none) -> (volts: f64[V], session: visa.Session, err: error)
+fn relays.apply(bank: relays.Bank, route: string,
+                err: error = none) -> (bank: relays.Bank, err: error)
+fn psu.set_voltage(source: psu.Session, voltage: f64[V],
+                   err: error = none) -> (source: psu.Session, err: error)
 fn results_log.append_csv(results: [results_log.StepResult], err: error = none) -> (err: error)
 ```
 

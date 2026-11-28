@@ -181,7 +181,7 @@ When the registry exists, these libraries can be published as packages.
 
 | Library | Content |
 |---|---|
-| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources ([libs/visa/simulation.md](../libs/visa/simulation.md)) and its instrument definitions, in `libs/visa/sim/`; the real transports (M4) |
+| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources ([libs/visa/simulation.md](../libs/visa/simulation.md)) and its instrument definitions, in `libs/visa/sim/`. From 0.5.0 (M4) its functions are written in LabCraft over `net` and `serial`, and the simulator is its sub-library `visa.sim` ([libs/visa](../libs/visa/README.md)) |
 | `libs/scpi` | Written in LabCraft over `visa` (written, read from M0a): `query_f64`, `check_errors`… The first library shipped in the language itself, and the model for driver authors |
 | `libs/core` | No library (M1): a file per primitive of `core` drawn as a D, which gives its block, `terminals` and `outline { template primitive }` (spec A.1). `use core` names the primitives; `check` embeds these files for the drawing (`labcraft_check::core_blocks`), and says nothing of them as they are, or changed only in what `fmt` undoes |
 

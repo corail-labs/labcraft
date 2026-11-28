@@ -58,7 +58,7 @@ What everything needs, with no knowledge of files.
   A type with `Ty::Error` anywhere inside matches everything, so that one error gives one diagnostic
   (cli.md, section 3). `TypeTable::matches` takes constant time, whatever the size of the types.
   A named type is identified by a `LibraryId` that `check` makes and by its name, since two libraries
-  can bear one name, and it is written from where it is seen: `Verdict`, `visa.session`.
+  can bear one name, and it is written from where it is seen: `Verdict`, `visa.Session`.
 - `Diagnostic`, `Span`, `Code`, `Severity`, `Report`: the schema of cli.md, section 4, with `serde`.
   `Code` is an enumeration; each variant gives its text and its severity. `cargo xtask codes` checks
   that it equals the tables of cli.md, section 5. `Report` holds at most twice `--max-report`
@@ -857,9 +857,11 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   window shows; `Consent::ask` returns `false` when that run is aborted: the host that aborts the run takes its question
   away. A call that waits for a question holds a thread of the pool (10.4) while it waits.
 - **The endpoints of the whole file**: each library says the endpoints of io.md 2 that its section describes
-  (`NativeLibrary::endpoints`, none by default; `visa` none until its file takes real names, #237), and the engine gives
-  their union, sorted, to every library of the run (`Context::endpoints`), so that `serial.list` under `--sim` gives the
-  serial endpoints of the whole file (io.md 6).
+  (`NativeLibrary::endpoints`, none by default; `visa.sim` those of its instruments with a real name, from 0.5.0), and
+  the engine gives their union, sorted, to every library of the run (`Context::endpoints`). An endpoint that two
+  libraries give refuses the run
+  with `LC8112` (cli.md 6.6), at the key of the second in the order of the file, which each library places by the span
+  of the key it read (0.5.0, specified).
 - **The order of the checks at an open** is the library's, and the same in every transport (io.md 3): its name first
   (`resource_not_found` for a text that is no name), then `io.unsupported`, then `open_real`, then the open itself.
 - **What a run holds is the library's own** (`LibraryRun`): its sessions and simulated instruments live and end with
@@ -876,21 +878,37 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   the thread of the run: in real time it runs on the pool (10.4) while the call waits, holding its keys; in deterministic
   mode and without threads it runs at once. What it returns is given to the call by `resume`, then the call steps on. The scheduler calls `step` again after each wait, so a
   call can wait in its middle, as an instrument that is busy makes it (simulation.md 4).
-- **A library owns what it guarantees** (spec 8.1): `visa` keeps each of its calls atomic on its session, and each
-  instrument handling one command at a time, through keys that the runtime lends (`Exclusive`). A key is a queue of the
+- **A library owns what it guarantees** (spec 8.1): `visa` (`visa.sim` from 0.5.0) keeps each of its calls atomic on
+  its session, and each instrument handling one command at a time, through keys that the runtime lends (`Exclusive`).
+  A key is a queue of the
   scheduler that gives it to the call that waits for it first in the global order of spec 8, so that a replay is exact;
   in real time too, since one thread steps every call (decision of the owner, 2026-11-11), and work on the pool keeps the
   keys of its call. The runtime locks nothing on its own.
 - **The simulation file** is split by the tool (cli.md 6.2): each library gets its table, with the spans of its keys,
   so that a diagnostic points at its key (simulation.md 7), and judges it with its own codes. `cargo xtask codes` also
   checks that the codes of each library equal the table of its document.
-- **Resources** are what the manifest declares (`resources = ["session"]`). The runtime counts what was opened, what
+- **Resources** are what the manifest declares (`resources = ["session"]` for `visa` until 0.5.0, then
+  `resources = ["instrument"]` for `visa.sim`). The runtime counts what was opened, what
   stays open and what leaked, for the report (`resources`, commands.md 7), which shows each by what `describe` gives;
   and it calls `release` on what a run leaves open after an abort or a fault.
 
 `labcraft-visa` holds the sessions, the `SIM::` backend of [simulation.md](../libs/visa/simulation.md) (the clock in
 whole nanoseconds, the noise generator, the error queue, the faults). The fuzz target `simulation` reads and judges simulation
-files, and runs every instrument of a file it accepts (`fuzz/README.md`). Real instruments come with M4.
+files, and runs every instrument of a file it accepts (`fuzz/README.md`).
+
+**From 0.5.0** (M4, specified, not built; [libs/visa](../libs/visa/README.md), decisions of the owner of 2026-11-24 and
+2026-11-26), `visa` is written in LabCraft, in the `.lcf` and `.lct` files of `libs/visa`, and its crate keeps two
+things. The native `visa.resolve` reduces a name by `runtime::io::endpoint` and gives its route by
+`Context::simulation_file`, so that the name a human allows and the name `visa` opens are read by the same code. The
+sub-library `visa.sim`, in `libs/visa/sim/` beside the files shipped there, is the `SIM::` backend behind a handle:
+its instrument is opened by its name (a `SIM::` name or a real one), takes each write as one command, as in M0, and
+gives its answers followed by `\n`, with the keys, the clock and the log of today, so that the times of a run and the
+commands and answers of its report do not change, with one exception: a write that ends in a terminator of its own,
+such as `X\r`, is sent as `X\r\n` and the simulator takes the command `X`, where M0 took `X\r`, which matched nothing
+(decision of the owner, 2026-11-28). A real instrument is reached by `labcraft-net` and
+`labcraft-serial`, which know nothing of VISA. What the report counts does change: the resources of the transports
+(`visa.sim.instrument`, `net.connection`, `serial.port`) instead of `visa.session`, since a session is no handle but a
+value that holds one.
 `labcraft-results-log` keeps the results it is given, as the proof of concept did, and the report shows them (`logs`,
 commands.md 7, decision of the owner, 2026-11-09): one entry per call, with its time and the input it holds, whose type in the
 signature the host writes it against; the first 1,000 entries *(proposed)*, each costing the logical size of its value from

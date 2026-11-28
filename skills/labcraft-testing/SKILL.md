@@ -89,7 +89,7 @@ seed = 7
 
 | Key | What it does |
 |---|---|
-| `resource` | The name a program opens, starting with `SIM::` |
+| `resource` | The name a program opens: `SIM::PSU0`, or (from 0.5.0) the real name of the instrument, `TCPIP0::10.0.0.5::5025::SOCKET` or `ASRL3::INSTR`. The program of a real bench keeps its real names, so it runs on the simulator without changing a line; `SIM::` is for an instrument that does not exist (an example, a test) |
 | `idn`, `latency_ms` | The answer to `*IDN?`; the time each command takes on the clock of the run |
 | `commands` | A query and its fixed answer |
 | `measure` | A query and the quantity it reads, answered with 6 decimals |

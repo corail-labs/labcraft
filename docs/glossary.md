@@ -9,7 +9,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **native function** | A function implemented outside LabCraft: a standard-library primitive or an `extern` function. Only native functions are skipped on an error or marked `always`; a function written in LabCraft always runs its body (spec 7.2). |
 | **skipped node** | A node of a native function that did not run because its `err` input carried an error; its outputs take their default value, and an output named like an input passes that input through. |
 | **default value** | The value of a type when nothing else gives one: `false`, `0` in the type's unit, `""`, an empty array, `none` for an error… It is what a skipped node outputs and what `ui.get` returns without a user interface (spec 7.2). |
-| **`always` node** | A node of a native function marked `always`, which runs even when its `err` input carries an error (for example `visa.close`), but not after an abort or a fault (spec 8.2). |
+| **`always` node** | A node of a native function marked `always`, which runs even when its `err` input carries an error (for example `net.close`), but not after an abort or a fault (spec 8.2). |
 | **primitive** | A `core` operation (`add`, `gt`, `select`…) whose compact view is a D with a glyph. |
 | **named constant** | A constant with a name (`limit = 240 V`): a small node without a body that can feed several terminals, each of which gives it a type (spec 5.1). A constant used once is written on its terminal. |
 | **wire** | A connection from one output to one or more inputs. |
@@ -22,7 +22,8 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **struct** | A record type with named fields (`struct { voltage: f64[V], ok: bool }`); LabVIEW calls it a cluster (spec 3.2). |
 | **enum** | A type whose value is one of a list of named variants (`enum { Pass, Fail, Error }`), chosen between with `match` (spec 3.2). |
 | **`handle`** | The structure that branches on an error's category (`ok`, `io.timeout`, `_`…). |
-| **session**, **opaque type** | A value that designates an open connection (`visa.session`) without showing its content. |
+| **opaque type** | A type whose value designates something without showing its content: an open connection (`net.connection`, `serial.port`). |
+| **session** | A value through which a program talks to an instrument: `visa.Session`, an enum that holds the connection, port or simulated instrument it is open on (libs/visa); it was the opaque `visa.session` until 0.5.0. |
 | **resource** | What a value designates without containing it: a session, a `ref<T>`, a panel element read or written live, a file (spec 8.1). A library declares which of its opaque types are resources; a run reports those it opened, left open or leaked (`resources`), and what a call guarantees on one is up to its library. |
 | **variadic parameter** | A parameter that takes any number of arguments (`parts: string...`). |
 | **pass-through pair** | An input and an output of the same session or error type on one line, so the wire crosses the node straight. |

@@ -1,11 +1,14 @@
 # Simulated instruments of `visa`
 
-*Last updated: 2026-11-13. Status: implemented for milestone M0b (tag `v0.2.0-m0b`). The crate
+*Last updated: 2026-11-26. Status: implemented for milestone M0b (tag `v0.2.0-m0b`). The crate
 `labcraft-visa` (`src/`) implements it (the proof of concept did too, until its retirement after M0), the refusals of section 7 included. Values marked *proposed* are starting points.*
 
 *From release 0.5.0 (M4, [docs/io.md](../../docs/io.md), specified, not built yet): an instrument may have a real
 name; `*OPC?`, `*ESR?` and `*STB?`; `faults.hang_ms`; `read_bytes` and `write_bytes`. Each is marked "(0.5.0)" where
-it is written.*
+it is written. The simulator is then the sub-library `visa.sim`, which `visa`, written in LabCraft, calls for every
+name under `--sim` ([README](README.md), "Where a name goes" and "Simulation: `visa.sim`"); the format of the file, how
+an instrument answers and the times do not change, each write staying one command. A call on a session that was
+closed gives `io.closed`, as a real session does, and `close` of a closed session succeeds (section 6).*
 
 `visa` answers for the resources `SIM::…` as the instruments of a simulation file describe them, so a
 program, and the drivers it uses (`scpi`, a driver written over `visa`), runs and is tested without
@@ -18,8 +21,11 @@ acquisition card) simulates at its own level, in its own section of the same fil
 A simulation file describes a bench: all its simulated instruments, whatever library talks to them. It is
 TOML, and each key at its top level belongs to the library of that name ([cli.md](../../docs/cli.md),
 section 6.2): `labcraft-cli run` reads the file, gives each library its table, and reports a key that no
-library claims. In M0, `visa` is the only library that simulates, so a file holds at most a `visa` table; from 0.5.0,
-`net` and `serial` simulate their devices in their own tables ([io.md](../../docs/io.md) 6).
+library claims. The key `visa` stays the library `visa`'s from 0.5.0, and its sub-library `visa.sim` reads it, with the
+codes `visa:S…` of section 7. In M0, `visa` is the only library that simulates, so a file holds at most a `visa` table; from 0.5.0,
+`net` and `serial` simulate their devices in their own tables ([io.md](../../docs/io.md) 6). An endpoint is described
+once in the file: an instrument with a real name and a device of `net` or `serial` on the same endpoint refuse the run
+(`LC8112`, io.md 6).
 A file with none, such as `no-instrument.toml`, defines no instrument: every `visa.open` fails.
 
 ```toml
@@ -44,7 +50,7 @@ is refused (section 7): a misspelt `noize` must not run with no noise and say no
 
 | Key | Value | Default |
 |---|---|---|
-| `resource` | The VISA resource name, starting with `SIM::`, or (0.5.0) a real name, `TCPIP0::10.0.0.5::5025::SOCKET` or `ASRL3::INSTR` ([README](README.md), "Resources and transports"), so that the program of a bench runs on the simulator without changing a line; unique in the file | required |
+| `resource` | The VISA resource name, starting with `SIM::`, or (0.5.0) a real name, `TCPIP0::10.0.0.5::5025::SOCKET` or `ASRL3::INSTR` ([README](README.md), "Where a name goes"), so that the program of a bench runs on the simulator without changing a line; unique in the file | required |
 | `idn` | The answer to `*IDN?` | `SIM,<resource>,0,1.0` |
 | `latency_ms` | The time each command takes, on the clock of the run | 0 |
 | `commands` | A table: a query and its fixed answer (`"*OPC?" = "1"`) | none |
@@ -119,7 +125,8 @@ first, so `dmm-230V.toml` answers `230.071217`.
 
 ## 4. How an instrument answers
 
-A program sends a command with `visa.write` or `visa.query`. The command is the text it gave, without a
+A program sends a command with `visa.write` or `visa.query`, one command per write (from 0.5.0, each call of
+`visa.sim.write`, whatever name the instrument has). The command is the text it gave, without a
 termination it may have written (one `\n` or `\r\n` at the end), then without spaces (U+0020) at both ends. Any other
 control character stays in it, so it matches no key. Each command first takes `latency_ms` on the clock of
 the run, then, in this order:
@@ -175,8 +182,8 @@ changes nothing; on any other it fails with `io.unsupported`, as on a real sessi
 `-350,"Queue overflow"`. So a program that never reads its errors cannot fill the memory.
 
 **One command at a time.** An instrument handles one command at a time, whichever session sends it: a
-command waits until the one before it on that instrument has ended, on the clock of the run (spec 8.1 locks
-a session during a call; two sessions on one instrument still meet here). A command ends when its latency
+command waits until the one before it on that instrument has ended, on the clock of the run (each call is
+atomic on its session, spec 8 and 8.1; two sessions on one instrument still meet here). A command ends when its latency
 has passed: a read that waits for an answer, or for its timeout, waits in its session and does not hold the
 instrument.
 
@@ -204,7 +211,8 @@ An error code is an integer from −2^31 to 2^31−1, and its message a text as 
 |---|---|
 | `visa.open` of a resource the file does not define | `visa.resource_not_found`, code `-1073807343` (`VI_ERROR_RSRC_NFOUND`), after the timeout of the open |
 | A read with no answer, in time | `io.timeout`, code `-1073807339` (`VI_ERROR_TMO`), after the timeout of the session |
-| A session that is closed or was never opened | `visa.invalid_session`, code `-1073807346` (`VI_ERROR_INV_OBJECT`) |
+| A session that was never opened (the default value, or that of a failed `visa.open`) | `visa.invalid_session`, code `-1073807346` (`VI_ERROR_INV_OBJECT`) |
+| (0.5.0) A session that was opened and then closed | `io.closed`, code `-1073807194` (`VI_ERROR_CONN_LOST`), as on a real one; `visa.close` of it, or of one never opened, succeeds and does nothing (decision of the owner, 2026-11-26) |
 
 The codes are those of VISA, so that a program written against the simulator reads the same codes from a
 real instrument (M4). An error in the queue is not an error of the call: the program reads it with
@@ -220,7 +228,7 @@ with a code of `visa`, which keeps its meaning forever as a code of the tool doe
 |---|---|---|
 | `visa:S001` | error | A key that the format does not have; fix: the nearest key |
 | `visa:S002` | error | A value of the wrong TOML type (`latency_ms = "5"`, `accept = [5]`, `seed = 1.5`) |
-| `visa:S003` | error | An instrument without `resource`, a resource that does not start with `SIM::` (from 0.5.0: that is neither a `SIM::` name nor a real name of the [README](README.md), "Resources and transports"), or a quantity with a noise and no `seed` |
+| `visa:S003` | error | An instrument without `resource`, a resource that does not start with `SIM::` (from 0.5.0: that is neither a `SIM::` name nor a real name that `visa` opens, `TCPIP…::SOCKET` or `ASRL…::INSTR` of the [README](README.md), "Where a name goes"; a VXI-11, HiSLIP, USB or GPIB name, which gives `io.unsupported`, is refused too), or a quantity with a noise and no `seed` |
 | `visa:S004` | error | A resource defined again: once for each instrument whose `resource` is the same text as an earlier one's, case included (`SIM::dmm0` is another resource than `SIM::DMM0`), at its `resource`; the rest of that instrument is not judged. From 0.5.0, two real names are the same resource when they reach the same endpoint (`TCPIP0::10.0.0.5::5025::SOCKET` and `tcpip::10.0.0.5::5025::socket`, [io.md](../../docs/io.md) 2) |
 | `visa:S005` | error | A number out of its range (section 3): a time below 0 or above one day, a noise below 0, a value above 10^100 in size, `nan` or `inf` anywhere, a seed or an error code out of its range |
 | `visa:S006` | error | `measure` or `set` names a quantity the instrument does not have, or `set` names a quantity that has a `source` |
