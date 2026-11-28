@@ -22,6 +22,9 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/corail-labs/labcraft/issues" />
     <Property Id="ARPURLUPDATEINFO" Value="https://github.com/corail-labs/labcraft/releases" />
     <Property Id="ARPNOMODIFY" Value="1" />
+    <!-- The icon of the program in Settings ▸ Apps; the shortcut and the two types take that of labcraft.exe. -->
+    <Icon Id="labcraft.ico" SourceFile="$(sys.SOURCEFILEDIR)..\..\assets\brand\labcraft.ico" />
+    <Property Id="ARPPRODUCTICON" Value="labcraft.ico" />
     <!-- A file in use at the install (`labcraft-cli` run by an agent) never restarts the machine on its own. -->
     <Property Id="REBOOT" Value="ReallySuppress" />
 

@@ -1,6 +1,10 @@
 //! Embeds the examples that the start page copies into a folder of the user (`docs/ide.md`, 10): the
 //! program files of `examples/` and of `docs/rfc/`, at every depth, in the same order on every machine. The libraries of
 //! `libs/` come from `labcraft-libs`.
+//!
+//! For a Windows target it also gives `labcraft.exe` its icon, `assets/brand/labcraft.ico`, and its version. Without a
+//! resource compiler it is a warning, so that a build still links, unless `LABCRAFT_REQUIRE_ICON` is set, as the
+//! workflow `release` sets it.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -24,6 +28,32 @@ fn main() {
     }
     writeln!(out, "];").unwrap();
     fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("bundled.rs"), out).unwrap();
+    windows_resource(&root);
+}
+
+/// The icon and the version of `labcraft.exe`, for a Windows target only.
+fn windows_resource(root: &Path) {
+    let file = root.join("assets/brand/labcraft.ico");
+    println!("cargo::rerun-if-changed={}", file.display());
+    println!("cargo::rerun-if-env-changed=LABCRAFT_REQUIRE_ICON");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    let mut resource = winresource::WindowsResource::new();
+    resource
+        .set_icon(&file.to_string_lossy())
+        .set("ProductName", "LabCraft")
+        .set("FileDescription", "LabCraft")
+        .set("CompanyName", "LabCraft contributors")
+        .set("LegalCopyright", "Copyright (c) 2026 LabCraft contributors. MIT OR Apache-2.0.")
+        .set("OriginalFilename", "labcraft.exe")
+        .set("InternalName", "labcraft");
+    if let Err(error) = resource.compile() {
+        if std::env::var_os("LABCRAFT_REQUIRE_ICON").is_some() {
+            panic!("labcraft.exe: its icon could not be embedded: {error}");
+        }
+        println!("cargo::warning=labcraft.exe built without its icon: {error}");
+    }
 }
 
 /// The `.lcf` and `.lct` files under `folder`, each with its path from `base` with `/`; hidden folders left out, as a walk

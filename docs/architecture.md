@@ -461,7 +461,10 @@ installs per machine in `Program Files\LabCraft`, with a Start menu shortcut to 
 type"), opened by `labcraft.exe -- "%1"` with the icon of the program (cli.md 8, `FILE`), and the App Paths of
 `labcraft.exe`, so that Win+R `labcraft` starts it (#332); its upgrade code never changes, so that a later version replaces an earlier
 one, and the same version replaces itself (decisions of the owner, 2026-11-24); a file in use never restarts the
-machine. `wix build` and `wix msi validate` treat a warning as an error, but ICE61, which that replacement brings. `packaging/windows/try-msi.ps1` tries it on the runner: installed silently,
+machine. The icon of the program is the filled icon of the logo, `assets/brand/labcraft.ico`: `apps/labcraft/build.rs`
+puts it in `labcraft.exe` with its version, which the shortcut and the two types show, and the MSI gives it to the
+program in the list of installed apps (`ARPPRODUCTICON`). A build without a resource compiler only warns; the job sets
+`LABCRAFT_REQUIRE_ICON`, so that a release never ships an exe without its icon. `wix build` and `wix msi validate` treat a warning as an error, but ICE61, which that replacement brings. `packaging/windows/try-msi.ps1` tries it on the runner: installed silently,
 `labcraft-cli version`, `check` of the installed examples and `labcraft --version` from the installed folder, the
 `PATH`, the shortcut, the two types and the App Paths, then uninstalled, leaving none of them.
 

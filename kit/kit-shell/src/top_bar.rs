@@ -1,4 +1,4 @@
-//! The top bar (ide.md 2): the name of the IDE, a house that opens the start page, the menus, undo and redo, the
+//! The top bar (ide.md 2): the mark and the name of the IDE, a house that opens the start page, the menus, undo and redo, the
 //! workspaces; in the middle, the name of the project and the field that opens the command palette; on the
 //! right, segments (the agent, the settings, the help, the version), buttons of the window's interface (the theme) and,
 //! where the desktop draws no frame, the buttons
@@ -16,6 +16,9 @@ use crate::workspaces::{self, Asked, Workspace};
 
 /// What the bar shows.
 pub struct Bar<'a> {
+    /// The mark of the IDE, an image drawn 16 points square before its name; none shows only the name. An SVG or a PNG
+    /// needs the loaders of [`crate::icon::install`].
+    pub mark: Option<egui::ImageSource<'a>>,
     /// The name of the IDE, shown first.
     pub name: &'a str,
     /// The menus, laid out for the platform (`craft_menu::layout`), with their keys and states applied.
@@ -77,6 +80,9 @@ pub fn show(ui: &mut egui::Ui, bar: &Bar) -> Vec<Answer> {
         // In full screen they are hidden, and so is the room.
         if cfg!(target_os = "macos") && bar.frame.decorations() && !ui.input(|input| input.viewport().fullscreen.unwrap_or(false)) {
             ui.add_space(crate::frame::MACOS_BUTTONS);
+        }
+        if let Some(mark) = &bar.mark {
+            ui.add(egui::Image::new(mark.clone()).fit_to_exact_size(Vec2::splat(16.0)).alt_text(format!("{} logo", bar.name)));
         }
         ui.label(RichText::new(bar.name).strong());
         if icon::button(ui, Icon::Home, true, "Start page").clicked() {
