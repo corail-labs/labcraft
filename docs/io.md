@@ -226,7 +226,7 @@ response_hex = "0001 0000 0007 01 03 04 00e6 0019"
 | `reply` | An array of exchanges: a `request` and its `response` | none |
 | `unknown` | The response to a request that matches no exchange, as text, or `unknown_hex` | none: no response |
 | `faults` | `hang_ms`: from that time on, the device takes no request and gives no response. `refused = true` (`net`, TCP): every connect gives `net.connection_refused`. `close_ms` (`net`, TCP): the device closes the connection at that time | none |
-| `baud`, `data_bits`, `parity`, `stop_bits`, `flow` | (`serial`) The settings the device expects; an open with other settings gets no response from it, and the report of the run says so | any |
+| `baud`, `data_bits`, `parity`, `stop_bits`, `flow` | (`serial`) The settings the device expects; an open or a `configure` with other settings gets no response from it, and the report of the run says so | any |
 
 - **A request and a response** are text (`request`, `response`: the UTF-8 bytes of a TOML string, its escapes read,
   `\n` included) or bytes (`request_hex`, `response_hex`: pairs of hexadecimal digits, spaces between pairs allowed),

@@ -589,3 +589,146 @@ fn the_checks_of_an_open_follow_io_md_3() {
     assert_eq!(category(first_checks(&endpoint, &right, false, true)), "serial.port_busy");
     assert_eq!(first_checks(&endpoint, &right, false, false).ok(), right.ok());
 }
+
+/// A device that expects 115200 baud and nothing else: the file of the issue #372.
+const FAST: &str = "[[serial.device]]\nendpoint = \"serial:COM3\"\nbaud = 115200\n\
+                    [[serial.device.reply]]\nrequest = \"TEMP?\\n\"\nresponse = \"23.5\\r\\n\"\n";
+
+impl Driver {
+    fn configure_with(&mut self, port: Handle, settings: Opened) -> Result<(), Failed> {
+        let inputs = vec![
+            Value::Handle(port),
+            Value::U32(settings.baud),
+            Value::U8(settings.data_bits),
+            variant(settings.parity),
+            variant(settings.stop_bits),
+            variant(settings.flow),
+            Value::NONE,
+        ];
+        done(self.call("configure", inputs).0).map(|outputs| assert!(matches!(outputs.first(), Some(Value::Handle(handle)) if *handle == port)))
+    }
+
+    fn configure(&mut self, port: Handle, baud: u32) -> Result<(), Failed> {
+        self.configure_with(port, Opened { baud, ..DEFAULTS })
+    }
+
+    /// `COM3` opened at the 115200 that `FAST` expects, with a timeout of 100 ms.
+    fn open_fast(&mut self) -> Handle {
+        self.open_with("COM3", Opened { baud: 115_200, timeout: 100 * MS, ..DEFAULTS }).unwrap()
+    }
+
+    /// Writes `TEMP?` and reads the line that comes back.
+    fn ask(&mut self, port: Handle) -> Result<String, Failed> {
+        self.write_line(port, "TEMP?")?;
+        self.read_line(port)
+    }
+}
+
+#[test]
+fn configure_changes_what_a_device_judges_at_each_write() {
+    // Issue #372 and io.md 6, worked out by hand. The device expects 115200 and names no other setting (any). `open` at the
+    // default 9600 differs in `baud` only: one item of `settings`, at 0 ms, `{expected 115200, opened 9600}`. The write is
+    // taken (one entry in the report) and not answered: `read_line` waits the 100 ms of the port and fails `io.timeout`, code 0.
+    let mut driver = Driver::simulated(FAST);
+    let port = driver.open("COM3").unwrap();
+    let pair = SettingDiff { name: "baud", expected: Setting::Integer(115_200), opened: Setting::Integer(9600) };
+    assert_eq!(category(driver.ask(port)), ("io.timeout".to_owned(), 0));
+    assert_eq!(driver.now, 100 * MS);
+    let logs = driver.run.instruments();
+    assert_eq!(logs[0].commands.len(), 1, "the write only");
+    assert_eq!((logs[0].settings.len(), logs[0].settings[0].at), (1, 0));
+    assert_eq!(logs[0].settings[0].differ, std::slice::from_ref(&pair));
+    // `configure` to 115200 gives no error, takes no time, and adds nothing to `settings`; the next write is answered, with no
+    // latency in this file, so the clock stays at 100 ms.
+    driver.configure(port, 115_200).unwrap();
+    assert_eq!(driver.now, 100 * MS, "configure takes no time on the clock");
+    assert_eq!(driver.ask(port), Ok("23.5".to_owned()));
+    assert_eq!(driver.now, 100 * MS);
+    assert_eq!(driver.run.instruments()[0].settings.len(), 1, "a configure to what it expects adds nothing");
+    // `configure` back to 9600 adds a second item, at 100 ms, with the same pair; the next write is not answered, and its read
+    // waits 100 ms more.
+    driver.configure(port, 9600).unwrap();
+    let logs = driver.run.instruments();
+    assert_eq!(logs[0].settings.len(), 2);
+    assert_eq!(logs[0].settings[1].at, 100 * MS);
+    assert_eq!(logs[0].settings[1].differ, [pair]);
+    assert_eq!(category(driver.ask(port)), ("io.timeout".to_owned(), 0));
+    assert_eq!(driver.now, 200 * MS);
+}
+
+#[test]
+fn configure_leaves_the_bytes_that_wait() {
+    // Issue #372: the port at 115200 gets its answer after `write_line`; a `configure` to the same settings does not drop it,
+    // and `read_line` still gives `23.5`.
+    let mut driver = Driver::simulated(FAST);
+    let port = driver.open_fast();
+    driver.write_line(port, "TEMP?").unwrap();
+    driver.configure(port, 115_200).unwrap();
+    assert_eq!(driver.read_line(port), Ok("23.5".to_owned()));
+    assert!(driver.run.instruments()[0].settings.is_empty(), "opened and configured with what it expects");
+}
+
+#[test]
+fn configure_judges_its_ranges_before_changing_anything() {
+    // Issue #372: the ranges of `open`. `baud` 0, `data_bits` 4 and 9 fail `io.invalid_argument`, code 0, and the port keeps
+    // the settings it had: at 115200, the next write is answered. A call that is wrong in `data_bits` and would change `baud`
+    // to 9600 changes neither (the device would turn deaf if `baud` had been taken). 5, 6, 7 and 8 are accepted; the device
+    // names no `data_bits`, so it answers at each.
+    let mut driver = Driver::simulated(FAST);
+    let port = driver.open_fast();
+    let wrong = [Opened { baud: 0, ..DEFAULTS }, Opened { data_bits: 4, ..DEFAULTS }, Opened { data_bits: 9, ..DEFAULTS }];
+    for settings in wrong {
+        let (category, code, message) = driver.configure_with(port, settings).unwrap_err();
+        assert_eq!((category.as_str(), code), ("io.invalid_argument", 0), "{message}");
+        assert!(message.starts_with("serial:COM3: "), "{message}");
+        assert_eq!(driver.ask(port), Ok("23.5".to_owned()), "judged at the settings it had: 115200");
+    }
+    assert_eq!(driver.now, 0);
+    for data_bits in 5..=8 {
+        driver.configure_with(port, Opened { baud: 115_200, data_bits, ..DEFAULTS }).unwrap();
+        assert_eq!(driver.ask(port), Ok("23.5".to_owned()), "{data_bits} data bits");
+    }
+    assert!(driver.run.instruments()[0].settings.is_empty());
+}
+
+#[test]
+fn configure_on_a_port_closed_or_never_opened_is_io_closed() {
+    // Issue #372, as every other call of `serial`: after `close`, `io.closed`, code 0, "the port is closed"; on the default
+    // value of `serial.port`, `io.closed`, code 0, "never opened". `close` of either still gives no error. A range that is
+    // wrong on a port closed gives `io.closed` too: the port is judged first.
+    let mut driver = Driver::simulated(FAST);
+    let port = driver.open("COM3").unwrap();
+    driver.close(port).unwrap();
+    let (kind, code, message) = driver.configure(port, 115_200).unwrap_err();
+    assert_eq!((kind.as_str(), code, message.as_str()), ("io.closed", 0, "serial:COM3: the port is closed"));
+    assert_eq!(category(driver.configure(port, 0)).0, "io.closed");
+    let (kind, code, message) = driver.configure(Handle::INVALID, 115_200).unwrap_err();
+    assert_eq!((kind.as_str(), code), ("io.closed", 0));
+    assert!(message.contains("never opened") && message.contains("serial.port"), "{message}");
+    assert_eq!(driver.close(port), Ok(()));
+    assert_eq!(driver.close(Handle::INVALID), Ok(()));
+}
+
+#[test]
+fn configure_to_several_settings_that_differ_is_one_item_in_the_order_of_open() {
+    // Issue #372: a device that expects 8 data bits and no parity, opened with them (no item), then configured to 7 data bits
+    // and even parity (index 2 of `serial.Parity`: None, Odd, Even): one item, at the clock of the call, with `data_bits` first
+    // and `parity` second, each `{expected, opened}`; `baud`, `stop_bits` and `flow` are not named by the file, so not listed.
+    let file = "[[serial.device]]\nendpoint = \"serial:COM3\"\ndata_bits = 8\nparity = \"none\"\n";
+    let mut driver = Driver::simulated(file);
+    driver.now = 7 * MS;
+    let port = driver.open("COM3").unwrap();
+    assert!(driver.run.instruments().is_empty(), "nothing was written or said");
+    driver.now = 9 * MS;
+    driver.configure_with(port, Opened { data_bits: 7, parity: 2, ..DEFAULTS }).unwrap();
+    let logs = driver.run.instruments();
+    assert_eq!(logs[0].settings.len(), 1);
+    assert_eq!(logs[0].settings[0].at, 9 * MS);
+    assert_eq!(
+        logs[0].settings[0].differ,
+        [
+            SettingDiff { name: "data_bits", expected: Setting::Integer(8), opened: Setting::Integer(7) },
+            SettingDiff { name: "parity", expected: Setting::Text("none"), opened: Setting::Text("even") },
+        ]
+    );
+}

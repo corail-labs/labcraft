@@ -115,30 +115,37 @@ pub(crate) struct Port {
     broken: Arc<AtomicBool>,
 }
 
-fn configure(settings: Settings) -> impl FnOnce(serial2::Settings) -> std::io::Result<serial2::Settings> {
+/// Gives `port` these settings, each in the call `serial2` has for it.
+fn apply(settings: Settings, port: &mut serial2::Settings) -> std::io::Result<()> {
+    port.set_baud_rate(settings.baud)?;
+    port.set_char_size(match settings.data_bits {
+        5 => CharSize::Bits5,
+        6 => CharSize::Bits6,
+        7 => CharSize::Bits7,
+        _ => CharSize::Bits8,
+    });
+    port.set_stop_bits(match settings.stop_bits {
+        StopBits::One => serial2::StopBits::One,
+        StopBits::Two => serial2::StopBits::Two,
+    });
+    port.set_parity(match settings.parity {
+        Parity::None => serial2::Parity::None,
+        Parity::Odd => serial2::Parity::Odd,
+        Parity::Even => serial2::Parity::Even,
+    });
+    port.set_flow_control(match settings.flow {
+        Flow::None => FlowControl::None,
+        Flow::Software => FlowControl::XonXoff,
+        Flow::Hardware => FlowControl::RtsCts,
+    });
+    Ok(())
+}
+
+/// What an open does: a raw port, then its settings.
+fn for_open(settings: Settings) -> impl FnOnce(serial2::Settings) -> std::io::Result<serial2::Settings> {
     move |mut port: serial2::Settings| {
         port.set_raw();
-        port.set_baud_rate(settings.baud)?;
-        port.set_char_size(match settings.data_bits {
-            5 => CharSize::Bits5,
-            6 => CharSize::Bits6,
-            7 => CharSize::Bits7,
-            _ => CharSize::Bits8,
-        });
-        port.set_stop_bits(match settings.stop_bits {
-            StopBits::One => serial2::StopBits::One,
-            StopBits::Two => serial2::StopBits::Two,
-        });
-        port.set_parity(match settings.parity {
-            Parity::None => serial2::Parity::None,
-            Parity::Odd => serial2::Parity::Odd,
-            Parity::Even => serial2::Parity::Even,
-        });
-        port.set_flow_control(match settings.flow {
-            Flow::None => FlowControl::None,
-            Flow::Software => FlowControl::XonXoff,
-            Flow::Hardware => FlowControl::RtsCts,
-        });
+        apply(settings, &mut port)?;
         Ok(port)
     }
 }
@@ -150,7 +157,7 @@ impl Port {
         if !cfg!(windows) && com_number(name).is_some() {
             return Err(Failure::new(PORT_NOT_FOUND, format!("{endpoint}: a `COM` name names no port on this system")));
         }
-        let port = SerialPort::open(name, configure(settings)).map_err(|error| open_error(&error, endpoint))?;
+        let port = SerialPort::open(name, for_open(settings)).map_err(|error| open_error(&error, endpoint))?;
         let broken = Arc::new(AtomicBool::new(false));
         let state = Buffered::new(Wired::new(port), endpoint.to_owned(), timeout, Arc::clone(&broken));
         Ok(Port { state: Arc::new(Mutex::new(state)), broken })
@@ -170,6 +177,39 @@ pub(crate) fn discard(shared: &Shared) {
     let mut state = locked(shared);
     let _ = state.wire.port.discard_input_buffer();
     state.forget();
+}
+
+/// `configure`: gives the open port these settings, as `open` gave them, without closing it. It reads the settings the port
+/// has, changes the five, and sets them again in one call (`serial2`: `get_configuration`, `set_configuration`), so that the
+/// port stays raw and DTR does not move: no close, no new open, which is what toggles DTR and resets a board; no call to
+/// empty the input, so the bytes that wait stay, in the system and in the buffer of the port. A setting the system refuses is
+/// `io.invalid_argument`: the kinds an open says as one (`open_category`), and the `Other` of `serial2` when the system set
+/// something else than asked (it reads the settings back, outside Windows). A port whose settings cannot be read, or any
+/// other error, went away: `io.closed`, and the port is closed, as for a read.
+pub(crate) fn reconfigure(shared: &Shared, settings: Settings) -> Result<(), Failure> {
+    let mut state = locked(shared);
+    let mut port = match state.wire.port.get_configuration() {
+        Ok(port) => port,
+        Err(error) => return Err(broke(&state, &error)),
+    };
+    let result = apply(settings, &mut port).and_then(|()| state.wire.port.set_configuration(&port));
+    result.map_err(|error| {
+        if error.kind() == ErrorKind::Other || open_category(error.kind()) == INVALID_ARGUMENT {
+            Failure {
+                category: INVALID_ARGUMENT,
+                code: code(&error),
+                message: format!("{}: the system refuses these settings: {error}", state.endpoint),
+            }
+        } else {
+            broke(&state, &error)
+        }
+    })
+}
+
+/// A port that went away under a call that is not a read or a write: it is marked, so that the call closes it.
+fn broke(state: &Buffered<Wired>, error: &std::io::Error) -> Failure {
+    state.broken.store(true, Ordering::Relaxed);
+    gone(Some(error), &state.endpoint)
 }
 
 /// `io.closed` when the port went away, with the error of the system if there was one.

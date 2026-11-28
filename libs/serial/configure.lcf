@@ -1,0 +1,14 @@
+labcraft 1
+
+/// Gives the open port other settings, in the ranges of `open`, without closing it: the board behind it does not reset, and
+/// the bytes that wait in its input stay there. A closed port, or one never opened, gives `io.closed`.
+extern rust(crate: "labcraft-serial", function: "configure")
+fn configure(
+    port: port,
+    baud: u32 = 9600,
+    data_bits: u8 = 8,
+    parity: Parity = Parity.None,
+    stop_bits: StopBits = StopBits.One,
+    flow: Flow = Flow.None,
+    err: error = none,
+) -> (port: port, err: error)
