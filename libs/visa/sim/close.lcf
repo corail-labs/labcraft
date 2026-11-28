@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Closes the instrument. Marked `always`: it runs even if an error arrives on its input.
+extern rust(crate: "labcraft-visa", function: "sim_close")
+fn close(instrument: instrument, err: error = none) -> (err: error)

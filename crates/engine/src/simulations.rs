@@ -177,7 +177,7 @@ pub(crate) fn shipped(session: &Session) -> Vec<Listed> {
     let mut listed = Vec::new();
     for library in session.config.shipped.libraries() {
         for file in &library.simulations {
-            let shown = format!("{}{}/{}", crate::shipped::PREFIX, library.name, file.name);
+            let shown = format!("{}{}/{}", crate::shipped::PREFIX, library.folder(), file.name);
             if let Ok(text) = std::str::from_utf8(file.bytes) {
                 listed.push(of_text(session, shown, text));
             }

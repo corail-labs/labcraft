@@ -62,7 +62,11 @@ fn functions_list_writes_visa_and_scpi_as_appendix_a_does() {
         "fn visa.open(resource: string, timeout: duration = 2 s, err: error = none) -> (session: visa.session, err: error)"
     );
     assert_eq!(open["doc"], "Opens a session on a resource (`SIM::…`: a simulated instrument).");
-    assert_eq!(open["categories"], json!(["io.timeout", "visa.invalid_session", "visa.resource_not_found"]), "the categories of its manifest");
+    assert_eq!(
+        open["categories"],
+        json!(["io.closed", "io.timeout", "visa.invalid_session", "visa.resource_not_found"]),
+        "the categories of its manifest"
+    );
     let close = listed["entries"].as_array().unwrap().iter().find(|entry| entry["name"] == "visa.close").unwrap();
     assert_eq!(close["always"], true, "`always` in its manifest");
     let session = listed["entries"].as_array().unwrap().iter().find(|entry| entry["name"] == "visa.session").unwrap();

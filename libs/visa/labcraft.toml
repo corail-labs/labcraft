@@ -5,4 +5,4 @@ description = "Sessions on instruments; SIM:: resources answer as the instrument
 dependencies = []
 always = ["close"]
 resources = ["session"]
-categories = ["io.timeout", "visa.invalid_session", "visa.resource_not_found"]
+categories = ["io.closed", "io.timeout", "visa.invalid_session", "visa.resource_not_found"]

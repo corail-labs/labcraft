@@ -335,7 +335,7 @@ rest is left out and the entry says `truncated`. So `visa.open` is:
     { "name": "session", "type": "visa.session", "fit": { "shape": "visa.session" } },
     { "name": "err", "type": "error", "fit": { "base": "error" } }
   ],
-  "categories": ["io.timeout", "visa.invalid_session", "visa.resource_not_found"],
+  "categories": ["io.closed", "io.timeout", "visa.invalid_session", "visa.resource_not_found"],
   "doc": "Opens a session on a resource (`SIM::…`: a simulated instrument)."
 }
 ```

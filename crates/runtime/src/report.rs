@@ -616,7 +616,7 @@ fn logs(out: &mut String, end: &RunEnd, of: &ReportOf<'_>, json: Json<'_>, left:
 fn input_type(of: &ReportOf<'_>, library: &str, function: &str, input: usize) -> Option<TyId> {
     let native = of.natives.iter().find(|native| native.native.name() == library)?;
     let declared = of.program.functions.iter().find(|declared| match &declared.body {
-        Body::Native { library: id, function: name, .. } => *id == native.library && of.names.resolve(*name) == function,
+        Body::Native { library: id, function: name, .. } => native.libraries.contains(id) && of.names.resolve(*name) == function,
         Body::Region(_) => false,
     })?;
     declared.inputs.get(input).map(|port| port.ty)

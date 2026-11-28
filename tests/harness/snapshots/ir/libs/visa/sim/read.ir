@@ -1,0 +1,2 @@
+fn visa.sim.read(instrument: instrument, count: i32, err: error = none) -> (data: bytes, instrument: instrument, err: error)
+  native sim_read  skip(err: 2)

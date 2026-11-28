@@ -55,7 +55,7 @@ impl Shipped {
     /// A shipped library as `check` reads it.
     pub fn source(&self, name: &str) -> Option<LibrarySource> {
         let library = self.find(name)?;
-        let shown = format!("{PREFIX}{}", library.name);
+        let shown = format!("{PREFIX}{}", library.folder());
         let files = library
             .files
             .iter()
@@ -70,8 +70,18 @@ impl Shipped {
 
     /// A file by its name in reports, `<labcraft>/visa/sim/bench.toml`: a program or a simulation file.
     pub fn file(&self, shown: &str) -> Option<&'static [u8]> {
-        let (library, name) = shown.strip_prefix(PREFIX)?.split_once('/')?;
-        let library = self.find(library)?;
-        library.files.iter().chain(&library.simulations).find(|file| file.name == name).map(|file| file.bytes)
+        let path = shown.strip_prefix(PREFIX)?;
+        // `visa/sim/open.lcf` is a file of `visa.sim`, `visa/sim/bench.toml` a simulation file of `visa`.
+        self.libraries.iter().find_map(|library| {
+            let name = path.strip_prefix(library.folder().as_str())?.strip_prefix('/')?;
+            library.files.iter().chain(&library.simulations).find(|file| file.name == name).map(|file| file.bytes)
+        })
+    }
+}
+
+impl ShippedLibrary {
+    /// Its folder under `<labcraft>/`: its name, with `/` between the segments of a sub-library (`visa/sim` for `visa.sim`).
+    pub fn folder(&self) -> String {
+        self.name.replace('.', "/")
     }
 }

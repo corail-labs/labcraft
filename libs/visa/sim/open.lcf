@@ -1,0 +1,10 @@
+labcraft 1
+
+/// Opens the instrument of the simulation file with that name, a `SIM::` name or a real one; it keeps `timeout`
+/// for each of its reads. `visa.resource_not_found` after `timeout` if the file has none.
+extern rust(crate: "labcraft-visa", function: "sim_open")
+fn open(
+    resource: string,
+    timeout: duration = 2 s,
+    err: error = none,
+) -> (instrument: instrument, err: error)

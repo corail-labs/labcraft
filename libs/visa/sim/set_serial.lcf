@@ -1,0 +1,16 @@
+labcraft 1
+
+use serial
+
+/// Takes the settings of a serial port and changes nothing, on an instrument with an `ASRL` name;
+/// `io.unsupported` on any other.
+extern rust(crate: "labcraft-visa", function: "sim_set_serial")
+fn set_serial(
+    instrument: instrument,
+    baud: u32 = 9600,
+    data_bits: u8 = 8,
+    parity: serial.Parity = serial.Parity.None,
+    stop_bits: serial.StopBits = serial.StopBits.One,
+    flow: serial.Flow = serial.Flow.None,
+    err: error = none,
+) -> (instrument: instrument, err: error)

@@ -9,7 +9,7 @@ use labcraft_runtime::native::{
     CallContext, CallId, Context, Key, LOG_BUDGET, LibraryDiagnostic, LibraryRun, LogBudget, Mode, NativeLibrary, NativeOutcome, Start, Step,
 };
 use labcraft_runtime::simulation::read;
-use labcraft_runtime::{Handle, Value};
+use labcraft_runtime::{Handle, Value, hex};
 
 use crate::Visa;
 use crate::instrument::SplitMix64;
@@ -232,6 +232,10 @@ fn every_shipped_file_is_accepted() {
     let mut count = 0;
     for entry in std::fs::read_dir(folder).unwrap() {
         let path = entry.unwrap().path();
+        // The folder holds the sub-library `visa.sim` too: its manifest and its declarations are no simulation files.
+        if path.extension().is_none_or(|extension| extension != "toml") || path.ends_with("labcraft.toml") {
+            continue;
+        }
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(judged(&text).is_ok(), "{}: {:?}", path.display(), judged(&text).err());
         count += 1;
@@ -382,14 +386,18 @@ timeout = ["HANG?"]
 }
 
 #[test]
-fn a_session_closed_or_never_opened_is_invalid() {
+fn a_session_closed_is_closed_and_one_never_opened_is_invalid() {
+    // simulation.md 6 (0.5.0) and README, "Errors and their codes": `io.closed` with `VI_ERROR_CONN_LOST` once closed,
+    // `visa.invalid_session` with `VI_ERROR_INV_OBJECT` never opened; `close` of either succeeds.
     let mut driver = Driver::new(&shipped("dmm-230V.toml"));
     let dmm = driver.open("SIM::DMM0", 2_000 * MS);
     assert!(matches!(driver.call("close", vec![Value::Handle(dmm), Value::NONE]).0, NativeOutcome::Outputs(_)));
-    assert_eq!(driver.query(dmm, "*IDN?"), Err(("visa.invalid_session".to_owned(), -1_073_807_346)));
+    assert_eq!(driver.query(dmm, "*IDN?"), Err(("io.closed".to_owned(), -1_073_807_194)));
     assert_eq!(driver.query(Handle::INVALID, "*IDN?"), Err(("visa.invalid_session".to_owned(), -1_073_807_346)));
-    let closed_again = driver.call("close", vec![Value::Handle(dmm), Value::NONE]).0;
-    assert!(matches!(closed_again, NativeOutcome::Fail { category: "visa.invalid_session", .. }));
+    for handle in [dmm, Handle::INVALID] {
+        let closed_again = driver.call("close", vec![Value::Handle(handle), Value::NONE]).0;
+        assert!(matches!(closed_again, NativeOutcome::Outputs(_)), "{closed_again:?}");
+    }
     let info = driver.run.describe(dmm).unwrap();
     assert_eq!((info.kind, info.designates.as_str(), info.open), ("session", "SIM::DMM0", false));
     assert!(driver.run.describe(Handle::INVALID).is_none());
@@ -402,7 +410,7 @@ fn release_closes_what_a_run_leaves_open() {
     assert!(driver.run.describe(dmm).unwrap().open);
     driver.run.release(dmm);
     assert!(!driver.run.describe(dmm).unwrap().open);
-    assert_eq!(driver.query(dmm, "*IDN?"), Err(("visa.invalid_session".to_owned(), -1_073_807_346)));
+    assert_eq!(driver.query(dmm, "*IDN?"), Err(("io.closed".to_owned(), -1_073_807_194)));
 }
 
 #[test]
@@ -567,7 +575,7 @@ fn a_session_released_while_its_call_waits_sends_nothing() {
     driver.go_until(1);
     driver.run.release(dmm);
     driver.go();
-    assert!(matches!(driver.tasks[call].done.as_ref().unwrap().0, NativeOutcome::Fail { category: "visa.invalid_session", .. }));
+    assert!(matches!(driver.tasks[call].done.as_ref().unwrap().0, NativeOutcome::Fail { category: "io.closed", .. }));
     assert!(driver.run.instruments().is_empty(), "the command reached no instrument");
 }
 
@@ -658,6 +666,7 @@ fn a_bench_says_what_each_instrument_answers_to() {
             accept: words(&["ARM", "ZAP"]),
             timeout: words(&["FREEZE?", "HANG?"]),
             error_on: words(&["AWFUL", "BAD"]),
+            hang: None,
         }]
     );
 }
@@ -672,4 +681,340 @@ fn the_log_of_an_instrument_is_the_start_of_what_it_received() {
     driver.write(dmm, "*RST");
     let logs = driver.run.instruments();
     assert_eq!((logs[0].commands.len(), logs[0].more), (0, 2));
+}
+
+// `visa.sim` (0.5.0): README, "Simulation: `visa.sim`" and "Errors and their codes"; simulation.md 2, 4, 5, 6 and 7. The
+// values are those of issue #371, worked out from these documents by hand.
+
+const TMO: i64 = -1_073_807_339;
+const RSRC_NFOUND: i64 = -1_073_807_343;
+const INV_OBJECT: i64 = -1_073_807_346;
+const CONN_LOST: i64 = -1_073_807_194;
+
+fn unhex(text: &str) -> Vec<u8> {
+    text.as_bytes().chunks(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect()
+}
+
+fn bytes(data: &[u8]) -> Value {
+    Value::Bytes(data.into())
+}
+
+fn failed(outcome: &NativeOutcome) -> Option<(&'static str, i64)> {
+    match outcome {
+        NativeOutcome::Fail { category, code, .. } => Some((category, *code)),
+        NativeOutcome::Outputs(_) => None,
+    }
+}
+
+impl Driver {
+    fn sim_open(&mut self, resource: &str, timeout: i64) -> Result<Handle, (&'static str, i64)> {
+        match self.call("sim_open", vec![Value::string(resource), Value::Duration(timeout), Value::NONE]).0 {
+            NativeOutcome::Outputs(outputs) => match outputs.first() {
+                Some(Value::Handle(handle)) => Ok(*handle),
+                other => panic!("{other:?}"),
+            },
+            NativeOutcome::Fail { category, code, .. } => Err((category, code)),
+        }
+    }
+
+    fn sim_write(&mut self, instrument: Handle, data: &[u8]) -> NativeOutcome {
+        self.call("sim_write", vec![Value::Handle(instrument), bytes(data), Value::NONE]).0
+    }
+
+    /// The bytes a read took, in hexadecimal, or its error.
+    fn sim_bytes(outcome: NativeOutcome) -> Result<String, (&'static str, i64)> {
+        match outcome {
+            NativeOutcome::Outputs(outputs) => match outputs.first() {
+                Some(Value::Bytes(data)) => Ok(hex(data)),
+                other => panic!("{other:?}"),
+            },
+            NativeOutcome::Fail { category, code, .. } => Err((category, code)),
+        }
+    }
+
+    fn sim_read(&mut self, instrument: Handle, count: i32) -> Result<String, (&'static str, i64)> {
+        Driver::sim_bytes(self.call("sim_read", vec![Value::Handle(instrument), Value::I32(count), Value::NONE]).0)
+    }
+
+    fn sim_read_until(&mut self, instrument: Handle, terminator: &[u8]) -> Result<String, (&'static str, i64)> {
+        Driver::sim_bytes(self.call("sim_read_until", vec![Value::Handle(instrument), bytes(terminator), Value::I32(65536), Value::NONE]).0)
+    }
+
+    /// A write of the text, then a read up to `\n`, given back as text with its `\n`.
+    fn sim_query(&mut self, instrument: Handle, command: &str) -> Result<String, (&'static str, i64)> {
+        let wrote = self.sim_write(instrument, command.as_bytes());
+        if let Some(failure) = failed(&wrote) {
+            return Err(failure);
+        }
+        self.sim_read_until(instrument, b"\n").map(|data| String::from_utf8(unhex(&data)).unwrap())
+    }
+}
+
+/// `dmm-230V.toml` with its instrument named `name`.
+fn dmm_named(name: &str) -> String {
+    shipped("dmm-230V.toml").replace("SIM::DMM0", name)
+}
+
+#[test]
+fn an_instrument_with_a_real_name_is_found_by_any_name_of_its_endpoint() {
+    // simulation.md 2 and README, "Where a name goes": a real name reduces to its endpoint (io.md 2), so these are one.
+    let mut driver = Driver::new(&dmm_named("TCPIP0::10.0.0.5::5025::SOCKET"));
+    let dmm = driver.sim_open("tcpip0::10.0.0.5::05025::socket", 2_000 * MS).unwrap();
+    assert_eq!(driver.sim_query(dmm, "MEAS:VOLT:DC?"), Ok("230.071217\n".to_owned()), "as for SIM::DMM0");
+    assert_eq!(driver.sim_open("TCPIP0::10.0.0.6::5025::SOCKET", 2_000 * MS), Err(("visa.resource_not_found", RSRC_NFOUND)));
+    assert_eq!(driver.now, 2_000 * MS, "after the default timeout of the open");
+    // The native `visa.open` finds it too: one backend.
+    let session = driver.open("TCPIP::10.0.0.5::5025::SOCKET", MS);
+    assert_eq!(driver.query(session, "*IDN?"), Ok("SIM,DMM,0,1.0".to_owned()));
+    // One entry in the report, under the `resource` of the file, whichever spelling opened it.
+    let logs = driver.run.instruments();
+    assert_eq!(logs.iter().map(|log| log.resource.as_str()).collect::<Vec<_>>(), ["TCPIP0::10.0.0.5::5025::SOCKET"]);
+    assert_eq!(logs[0].commands.len(), 2);
+    // A `SIM::` name is compared exactly.
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    assert_eq!(driver.sim_open("SIM::dmm0", MS), Err(("visa.resource_not_found", RSRC_NFOUND)));
+    let mut driver = Driver::new(&dmm_named("ASRL3::INSTR"));
+    assert!(driver.sim_open("asrl3::instr", MS).is_ok());
+    assert!(driver.sim_open("ASRL03::INSTR", MS).is_err(), "no endpoint");
+}
+
+#[test]
+fn a_handle_of_visa_sim_shows_as_its_type() {
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", MS).unwrap();
+    let info = driver.run.describe(dmm).unwrap();
+    assert_eq!((info.kind, info.designates.as_str(), info.open), ("sim.instrument", "SIM::DMM0", true), "visa.sim.instrument");
+}
+
+#[test]
+fn each_write_is_one_command() {
+    // README, "Simulation: `visa.sim`": one final `\n` removed, the other stays in the command, which matches no key
+    // (simulation.md 4): no answer, then `-113`.
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", 100 * MS).unwrap();
+    assert!(failed(&driver.sim_write(dmm, b"MEAS:VOLT:DC?\nMEAS:VOLT:DC?\n")).is_none());
+    assert_eq!(driver.sim_read_until(dmm, b"\n"), Err(("io.timeout", TMO)));
+    assert_eq!(driver.sim_query(dmm, "SYST:ERR?"), Ok("-113,\"Undefined header\"\n".to_owned()));
+    let logs = driver.run.instruments();
+    assert_eq!(logs[0].commands[0].sent.as_ref().unwrap().length, 27, "the command without its final `\\n`");
+}
+
+#[test]
+fn the_simulator_answers_opc_esr_and_stb() {
+    // simulation.md 4, step 3: -221 is an execution error (bit 16), -113 a command error (bit 32); `*ESR?` clears, `*STB?`
+    // gives 4 while the queue holds an error.
+    let file = "[[visa.instrument]]\nresource = \"SIM::DEV0\"\naccept = [\"ROUT:CLOS\"]\n\
+                [visa.instrument.faults]\nerror_on = { \"ROUT:CLOS 1\" = [-221, \"Settings conflict\"] }\n";
+    let mut driver = Driver::new(file);
+    let dev = driver.open("SIM::DEV0", MS);
+    assert_eq!(driver.query(dev, "*OPC?"), Ok("1".to_owned()));
+    driver.write(dev, "ROUT:CLOS 1");
+    assert_eq!(driver.query(dev, "*ESR?"), Ok("16".to_owned()));
+    assert_eq!(driver.query(dev, "*ESR?"), Ok("0".to_owned()));
+    driver.write(dev, "FOO");
+    for expected in ["4", "4"] {
+        assert_eq!(driver.query(dev, "*STB?"), Ok(expected.to_owned()), "it clears nothing");
+    }
+    assert_eq!(driver.query(dev, "*ESR?"), Ok("32".to_owned()));
+    assert_eq!(driver.query(dev, "*ESR?"), Ok("0".to_owned()));
+    assert_eq!(driver.query(dev, "*STB?"), Ok("4".to_owned()));
+    assert_eq!(driver.query(dev, "SYST:ERR?"), Ok("-221,\"Settings conflict\"".to_owned()));
+    assert_eq!(driver.query(dev, "*STB?"), Ok("4".to_owned()));
+    assert_eq!(driver.query(dev, "SYST:ERR?"), Ok("-113,\"Undefined header\"".to_owned()));
+    assert_eq!(driver.query(dev, "*STB?"), Ok("0".to_owned()));
+
+    let mut driver = Driver::new(file);
+    let dev = driver.open("SIM::DEV0", MS);
+    driver.write(dev, "FOO");
+    driver.write(dev, "*CLS");
+    assert_eq!(driver.query(dev, "*ESR?"), Ok("0".to_owned()));
+    assert_eq!(driver.query(dev, "SYST:ERR?"), Ok("0,\"No error\"".to_owned()));
+
+    // `commands` wins, so that a file that gave `*OPC?` reads as before.
+    let mut driver = Driver::new(&format!("{file}[visa.instrument.commands]\n\"*OPC?\" = \"0\"\n"));
+    let dev = driver.open("SIM::DEV0", MS);
+    assert_eq!(driver.query(dev, "*OPC?"), Ok("0".to_owned()));
+
+    // The errors of `error_queue` set their bits when the run starts.
+    let queued = "[[visa.instrument]]\nresource = \"SIM::DEV0\"\n[visa.instrument.faults]\nerror_queue = [[-221, \"Settings conflict\"]]\n";
+    let mut driver = Driver::new(queued);
+    let dev = driver.open("SIM::DEV0", MS);
+    assert_eq!(driver.query(dev, "*ESR?"), Ok("16".to_owned()));
+    let mut driver = Driver::new(queued);
+    let dev = driver.open("SIM::DEV0", MS);
+    assert_eq!(driver.query(dev, "*STB?"), Ok("4".to_owned()));
+}
+
+#[test]
+fn a_hung_instrument_handles_no_command() {
+    // simulation.md 4: from `hang_ms` on, a command takes its latency and nothing else; the read waits its timeout.
+    let file = "[[visa.instrument]]\nresource = \"SIM::DMM0\"\nlatency_ms = 0\n[visa.instrument.faults]\nhang_ms = 100\n";
+    let mut driver = Driver::new(file);
+    let dmm = driver.sim_open("SIM::DMM0", 500 * MS).unwrap();
+    driver.now = 50 * MS;
+    assert_eq!(driver.sim_query(dmm, "*IDN?"), Ok("SIM,SIM::DMM0,0,1.0\n".to_owned()));
+    let mut driver = Driver::new(file);
+    let dmm = driver.sim_open("SIM::DMM0", 500 * MS).unwrap();
+    driver.now = 150 * MS;
+    assert_eq!(driver.sim_query(dmm, "*IDN?"), Err(("io.timeout", TMO)));
+    assert_eq!(driver.now, 650 * MS);
+    assert_eq!(codes("[[visa.instrument]]\nresource = \"SIM::DMM0\"\n[visa.instrument.faults]\nhang_ms = -1\n"), [("visa:S005", 4, 11)]);
+}
+
+#[test]
+fn an_answer_is_read_as_bytes_and_its_rest_waits() {
+    // simulation.md 4, "Bytes": the first read of `dmm-230V.toml` is `230.071217`, the 11 bytes `3233302e3037313231370a`.
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", 2_000 * MS).unwrap();
+    assert!(failed(&driver.sim_write(dmm, b"MEAS:VOLT:DC?")).is_none());
+    assert_eq!(driver.sim_read(dmm, 12), Err(("io.timeout", TMO)), "more than is left");
+    assert_eq!(driver.now, 2_000 * MS);
+    assert_eq!(driver.sim_read(dmm, 3), Ok("323330".to_owned()), "and the read of 12 took nothing");
+    assert_eq!(driver.sim_read_until(dmm, b"\n"), Ok("2e3037313231370a".to_owned()));
+    assert_eq!(driver.sim_read(dmm, 1), Err(("io.timeout", TMO)), "the answer is gone");
+
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", 2_000 * MS).unwrap();
+    assert!(failed(&driver.sim_write(dmm, &unhex("4d4541533a564f4c543a44433f0d0a"))).is_none(), "`MEAS:VOLT:DC?` and `\\r\\n`");
+    assert_eq!(driver.sim_read_until(dmm, b"\n"), Ok(hex(b"230.071217\n")));
+    assert!(failed(&driver.sim_write(dmm, &[0xff])).is_none());
+    assert_eq!(driver.sim_query(dmm, "SYST:ERR?"), Ok("-113,\"Undefined header\"\n".to_owned()), "bytes not UTF-8 match nothing");
+
+    // `visa.read` of the native `visa` gives what is left, without its `\n`.
+    let session = driver.open("SIM::DMM0", MS);
+    driver.write(session, "*IDN?");
+    let rest = driver.call("read", vec![Value::Handle(session), Value::NONE]).0;
+    assert_eq!(text_of(rest), Ok("SIM,DMM,0,1.0".to_owned()));
+}
+
+#[test]
+fn a_read_of_bytes_judges_its_arguments() {
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", MS).unwrap();
+    assert_eq!(driver.sim_read(dmm, -1), Err(("io.invalid_argument", 0)));
+    assert_eq!(driver.sim_read_until(dmm, b""), Err(("io.invalid_argument", 0)));
+    assert_eq!(driver.sim_read(dmm, 0), Ok(String::new()), "nothing to take is taken at once");
+    assert_eq!(driver.now, 0);
+    // No terminator within `max`: `io.too_long`, and the bytes are taken.
+    assert!(failed(&driver.sim_write(dmm, b"*IDN?")).is_none());
+    let outcome = driver.call("sim_read_until", vec![Value::Handle(dmm), bytes(b"\n"), Value::I32(4), Value::NONE]).0;
+    assert_eq!(failed(&outcome), Some(("io.too_long", 0)));
+    assert_eq!(driver.sim_read_until(dmm, b"\n"), Ok(hex(b"DMM,0,1.0\n")), "after the 4 bytes `SIM,`");
+}
+
+#[test]
+fn set_serial_is_for_an_instrument_with_an_asrl_name() {
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", MS).unwrap();
+    let outcome = driver.call("sim_set_serial", vec![Value::Handle(dmm)]).0;
+    assert_eq!(failed(&outcome), Some(("io.unsupported", 0)));
+    let mut driver = Driver::new(&dmm_named("ASRL3::INSTR"));
+    let dmm = driver.sim_open("ASRL3::INSTR", MS).unwrap();
+    assert_eq!(failed(&driver.call("sim_set_serial", vec![Value::Handle(dmm)]).0), None);
+    assert_eq!(driver.sim_query(dmm, "MEAS:VOLT:DC?"), Ok("230.071217\n".to_owned()), "it changed nothing");
+    // Its settings are judged as `serial.open` judges them (decision of the owner, 2026-11-28): `baud` above 0, `data_bits` 5
+    // to 8; 5 and 8 data bits are taken.
+    let set = |baud: u32, bits: u8| vec![Value::Handle(dmm), Value::U32(baud), Value::U8(bits), Value::NONE];
+    for (baud, bits, expected) in [
+        (0, 8, Some(("io.invalid_argument", 0))),
+        (9600, 4, Some(("io.invalid_argument", 0))),
+        (9600, 9, Some(("io.invalid_argument", 0))),
+        (115_200, 5, None),
+        (1, 8, None),
+    ] {
+        assert_eq!(failed(&driver.call("sim_set_serial", set(baud, bits)).0), expected, "{baud} {bits}");
+    }
+}
+
+#[test]
+fn a_handle_of_visa_sim_that_is_not_open() {
+    let mut driver = Driver::new(&shipped("dmm-230V.toml"));
+    let dmm = driver.sim_open("SIM::DMM0", MS).unwrap();
+    assert_eq!(failed(&driver.call("sim_close", vec![Value::Handle(dmm), Value::NONE]).0), None);
+    assert_eq!(failed(&driver.sim_write(dmm, b"*IDN?")), Some(("io.closed", CONN_LOST)));
+    assert_eq!(driver.sim_read(dmm, 1), Err(("io.closed", CONN_LOST)));
+    assert_eq!(driver.sim_read_until(dmm, b"\n"), Err(("io.closed", CONN_LOST)));
+    assert_eq!(failed(&driver.call("sim_close", vec![Value::Handle(dmm), Value::NONE]).0), None, "a second close");
+    // The default handle is also what a failed `open` gives: `SIM::NOPE` is not found.
+    assert_eq!(driver.sim_open("SIM::NOPE", MS), Err(("visa.resource_not_found", RSRC_NFOUND)));
+    let never = Handle::INVALID;
+    assert_eq!(failed(&driver.sim_write(never, b"*IDN?")), Some(("visa.invalid_session", INV_OBJECT)));
+    assert_eq!(driver.sim_read(never, 1), Err(("visa.invalid_session", INV_OBJECT)));
+    assert_eq!(driver.sim_read_until(never, b"\n"), Err(("visa.invalid_session", INV_OBJECT)));
+    assert_eq!(failed(&driver.call("sim_close", vec![Value::Handle(never), Value::NONE]).0), None);
+}
+
+#[test]
+fn the_file_takes_real_names_and_refuses_the_others() {
+    // simulation.md 7, `visa:S003` and `visa:S004` (0.5.0), at the `resource` of the second instrument or of the one named.
+    let one = |resource: &str| format!("[[visa.instrument]]\nresource = \"{resource}\"\n");
+    for resource in ["hello", "ASRL0::INSTR", "GPIB0::5::INSTR"] {
+        assert_eq!(codes(&one(resource)), [("visa:S003", 2, 12)], "{resource}");
+    }
+    for resource in ["TCPIP0::10.0.0.5::5025::SOCKET", "ASRL3::INSTR", "ASRL/dev/ttyUSB0::INSTR", "SIM::DMM0"] {
+        assert_eq!(codes(&one(resource)), [], "{resource}");
+    }
+    for (first, second) in [
+        ("TCPIP0::10.0.0.5::5025::SOCKET", "tcpip::10.0.0.5::5025::socket"),
+        ("ASRL3::INSTR", "asrl3::instr"),
+        ("TCPIP0::h::0502::SOCKET", "TCPIP0::h::502::SOCKET"),
+    ] {
+        assert_eq!(codes(&format!("{}{}", one(first), one(second))), [("visa:S004", 4, 12)], "{first} and {second}");
+    }
+    assert_eq!(codes(&format!("{}{}", one("SIM::dmm0"), one("SIM::DMM0"))), []);
+    assert_eq!(codes(&format!("{}{}", one("ASRL/dev/ttyUSB0::INSTR"), one("ASRL/dev/ttyusb0::INSTR"))), [], "a path is exact");
+    let commands = |key: &str| format!("{}[visa.instrument.commands]\n\"{key}\" = \"1\"\n", one("SIM::DMM0"));
+    assert_eq!(codes(&commands("*OPC?")), []);
+    assert_eq!(codes(&commands("*IDN?")), [("visa:S011", 4, 1)]);
+}
+
+#[test]
+fn a_source_names_its_instrument_by_any_of_its_names() {
+    // simulation.md 2: the quantity is what follows the last `.`, so `TCPIP0::10.0.0.5::5025::SOCKET.voltage` reads one way.
+    // By hand: the multimeter takes the true value of the supply, 5, and has no noise.
+    let file = |source: &str| {
+        format!(
+            "[[visa.instrument]]\nresource = \"TCPIP0::10.0.0.5::5025::SOCKET\"\n[visa.instrument.quantity.voltage]\nvalue = 5.0\n\
+             [[visa.instrument]]\nresource = \"SIM::DMM0\"\nmeasure = {{ \"MEAS?\" = \"v\" }}\n\
+             [visa.instrument.quantity.v]\nsource = \"{source}\"\n"
+        )
+    };
+    for source in ["TCPIP0::10.0.0.5::5025::SOCKET.voltage", "tcpip::10.0.0.5::05025::socket.voltage"] {
+        let mut driver = Driver::new(&file(source));
+        let dmm = driver.open("SIM::DMM0", MS);
+        assert_eq!(driver.query(dmm, "MEAS?"), Ok("5.000000".to_owned()), "{source}");
+    }
+    assert_eq!(codes(&file("TCPIP0::10.0.0.6::5025::SOCKET.voltage")), [("visa:S007", 9, 10)]);
+}
+
+#[test]
+fn a_hung_instrument_drops_the_answer_that_waits_and_says_its_hang() {
+    // simulation.md 4: a new command discards an answer that waits; once hung, the read ends with its timeout, whatever the
+    // query, and no error enters the queue (no -410). By hand: `*IDN?` at 0 ms is left unread; `MEAS?` at 200 ms times out at
+    // 300 ms.
+    let file = "[[visa.instrument]]\nresource = \"SIM::DMM0\"\n[visa.instrument.faults]\nhang_ms = 100\n";
+    let mut driver = Driver::new(file);
+    let dmm = driver.open("SIM::DMM0", 100 * MS);
+    driver.write(dmm, "*IDN?");
+    driver.now = 200 * MS;
+    assert_eq!(driver.query(dmm, "MEAS?"), Err(("io.timeout".to_owned(), TMO)));
+    assert_eq!(driver.now, 300 * MS);
+    let described = read(file, 64).unwrap().judge(&[&Visa]).unwrap();
+    let bench = described[0].as_ref().unwrap().downcast_ref::<std::sync::Arc<crate::Bench>>().unwrap();
+    assert_eq!(bench.commands()[0].hang, Some(100 * MS));
+    let text = format!("{:?}", bench.describe());
+    assert!(text.contains("hang_ms") && text.contains("100.0"), "{text}");
+}
+
+#[test]
+fn a_measure_of_a_status_query_wins_over_the_simulator() {
+    // simulation.md 2 and 4, step 3 (decision of the owner, 2026-11-28): `commands` or `measure` gives `*OPC?`, `*ESR?` and
+    // `*STB?`, so that a file of M0 reads as before. By hand: the quantity is 7, with no noise.
+    let file = "[[visa.instrument]]\nresource = \"SIM::DEV0\"\nmeasure = { \"*ESR?\" = \"v\", \"*STB?\" = \"v\", \"*OPC?\" = \"v\" }\n\
+                [visa.instrument.quantity.v]\nvalue = 7\n";
+    let mut driver = Driver::new(file);
+    let dev = driver.open("SIM::DEV0", MS);
+    for query in ["*ESR?", "*STB?", "*OPC?"] {
+        assert_eq!(driver.query(dev, query), Ok("7.000000".to_owned()), "{query}");
+    }
 }

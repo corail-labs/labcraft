@@ -297,8 +297,10 @@ impl Loader<'_> {
                 return Manifest::default();
             }
         };
-        if manifest.name != name {
-            let message = format!("this manifest names the library `{}`, whose name is `{name}`", manifest.name);
+        // The name of the folder itself (cli.md 3): `sim` for the sub-library `visa.sim`.
+        let own = name.rsplit('.').next().unwrap_or(name);
+        if manifest.name != own {
+            let message = format!("this manifest names the library `{}`, whose folder is `{own}`", manifest.name);
             sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
         }
         self.judge_the_marks(&manifest.always, &manifest.resources, &path, files, sink);

@@ -36,6 +36,14 @@ pub struct Library {
 
 include!(concat!(env!("OUT_DIR"), "/libraries.rs"));
 
+impl Library {
+    /// Its folder under `libs/` and `<labcraft>/`: its name, with `/` between the segments of a sub-library (`visa/sim` for
+    /// `visa.sim`), as `engine::ShippedLibrary::folder` says it.
+    pub fn folder(&self) -> String {
+        self.name.replace('.', "/")
+    }
+}
+
 /// The libraries shipped, as `engine` reads them: every app and harness that makes a session gives it these.
 pub fn shipped() -> labcraft_engine::Shipped {
     let files = |files: &'static [File]| files.iter().map(|file| labcraft_engine::ShippedFile { name: file.name, bytes: file.bytes }).collect();
@@ -69,10 +77,11 @@ pub fn find(name: &str) -> Option<&'static Library> {
     LIBRARIES.iter().find(|library| library.name == name)
 }
 
-/// A shipped library as `check` reads it. Its files show as `<labcraft>/visa/close.lcf` (`docs/cli.md`, section 1).
+/// A shipped library as `check` reads it. Its files show as `<labcraft>/visa/close.lcf`, and those of a sub-library as
+/// `<labcraft>/visa/sim/open.lcf` (`docs/cli.md`, section 1).
 pub fn source(name: &str) -> Option<LibrarySource> {
     let library = find(name)?;
-    let shown = format!("<labcraft>/{}", library.name);
+    let shown = format!("<labcraft>/{}", library.folder());
     let files = library
         .files
         .iter()
@@ -95,18 +104,30 @@ mod tests {
     #[test]
     fn the_libraries_are_those_of_the_folder() {
         let names: Vec<&str> = LIBRARIES.iter().map(|library| library.name).collect();
-        assert_eq!(names, ["net", "scpi", "serial", "visa"]);
+        assert_eq!(names, ["net", "scpi", "serial", "visa", "visa.sim"]);
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         for library in LIBRARIES {
-            let on_disk: BTreeSet<String> = std::fs::read_dir(root.join(library.name))
+            let on_disk: BTreeSet<String> = std::fs::read_dir(root.join(library.folder()))
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .filter(|name| name.ends_with(".lcf") || name.ends_with(".lct"))
                 .collect();
             let embedded: BTreeSet<String> = library.files.iter().map(|file| file.name.to_owned()).collect();
             assert_eq!(embedded, on_disk, "{}", library.name);
-            assert!(library.manifest.contains(&format!("name = \"{}\"", library.name)), "{}", library.name);
+            // The name of its folder (docs/cli.md 3): `sim` for `visa.sim`.
+            let own = library.name.rsplit('.').next().unwrap();
+            assert!(library.manifest.contains(&format!("name = \"{own}\"")), "{}", library.name);
         }
+        let visa = find("visa").unwrap();
+        assert!(visa.simulations.iter().all(|file| file.name != "sim/labcraft.toml"), "the manifest of `visa.sim` is no simulation file");
+        assert_eq!(visa.simulations.len(), 15);
+    }
+
+    #[test]
+    fn a_sub_library_shows_under_the_folder_of_its_library() {
+        let source = source("visa.sim").unwrap();
+        assert_eq!(source.name, "visa.sim");
+        assert!(source.files.iter().any(|file| file.shown == "<labcraft>/visa/sim/open.lcf"));
     }
 
     #[test]

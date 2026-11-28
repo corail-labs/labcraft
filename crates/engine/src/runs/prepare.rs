@@ -43,9 +43,10 @@ pub(crate) enum TraceMode {
     None,
 }
 
-/// A native library of the run: its id in the table of types, the library, and its part of the simulation file.
+/// A native library of the run: the ids in the table of types of its library and of its sub-libraries that the run reaches
+/// (`visa`, `visa.sim`), the library, and its part of the simulation file.
 pub(crate) struct NativeOf {
-    pub library: LibraryId,
+    pub libraries: Vec<LibraryId>,
     pub native: Arc<dyn NativeLibrary>,
     pub simulation: Option<Simulation>,
 }
@@ -766,19 +767,18 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     endpoints.sort_unstable();
     endpoints.dedup();
     let endpoints: Arc<[String]> = endpoints.into();
-    // The native libraries the program uses, each with its part of the simulation file.
-    let used: Vec<(LibraryId, Arc<dyn NativeLibrary>)> = session
+    // The native libraries the program uses, each with its part of the simulation file: a native library gives the bodies of
+    // its sub-libraries too (`visa.sim` for `visa`), with one run for them all.
+    simulations.resize_with(session.config.natives.len(), || None);
+    let natives = session
         .config
         .natives
         .iter()
-        .filter_map(|native| checked.libraries.iter().find(|library| library.name == native.name()).map(|library| (library.id, Arc::clone(native))))
-        .collect();
-    let natives = used
-        .into_iter()
-        .map(|(library, native)| {
-            let position = session.config.natives.iter().position(|given| Arc::ptr_eq(given, &native));
-            let simulation = position.and_then(|position| simulations.get_mut(position)).and_then(Option::take);
-            NativeOf { library, native, simulation }
+        .zip(simulations.iter_mut())
+        .filter_map(|(native, simulation)| {
+            let libraries: Vec<LibraryId> =
+                checked.libraries.iter().filter(|library| serves(session, native.name(), &library.name)).map(|library| library.id).collect();
+            (!libraries.is_empty()).then(|| NativeOf { libraries, native: Arc::clone(native), simulation: simulation.take() })
         })
         .collect();
 
@@ -880,6 +880,12 @@ fn judge_signature(
         }
     }
     problems
+}
+
+/// Whether the native library `native` gives the bodies of `library`: its own, or one of its sub-libraries shipped with it
+/// (`visa.sim`), never a library of the project that only bears a name under it.
+fn serves(session: &Session, native: &str, library: &str) -> bool {
+    library == native || (library.strip_prefix(native).is_some_and(|rest| rest.starts_with('.')) && session.config.shipped.find(library).is_some())
 }
 
 /// How a simulation file is shown: from the root, or as a shipped file.

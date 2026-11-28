@@ -547,8 +547,10 @@ pub(crate) fn execute(
         context,
     } = prepared;
     let env = Env { program: &program, names: &names };
-    let natives: Vec<Native<'_>> =
-        natives.iter().map(|native| Native { library: native.library, native: &*native.native, simulation: native.simulation.as_ref() }).collect();
+    let natives: Vec<Native<'_>> = natives
+        .iter()
+        .map(|native| Native { libraries: &native.libraries, native: &*native.native, simulation: native.simulation.as_ref() })
+        .collect();
     let header_files: Vec<(&str, &str)> = files.iter().map(|(file, sha)| (file.as_str(), sha.as_str())).collect();
     let shown = program.functions.first().map_or(function.as_str(), |top| &*top.shown);
     let mode = if real_time { "real_time" } else { "deterministic" };

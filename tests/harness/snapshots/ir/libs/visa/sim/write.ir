@@ -1,0 +1,2 @@
+fn visa.sim.write(instrument: instrument, data: bytes, err: error = none) -> (instrument: instrument, err: error)
+  native sim_write  skip(err: 2)

@@ -1,0 +1,2 @@
+fn visa.sim.close(instrument: instrument, err: error = none) -> (err: error)
+  native sim_close  skip(err: 1)

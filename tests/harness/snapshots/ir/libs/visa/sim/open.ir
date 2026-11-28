@@ -1,0 +1,2 @@
+fn visa.sim.open(resource: string, timeout: duration = 2000000000 ns, err: error = none) -> (instrument: instrument, err: error)
+  native sim_open  skip(err: 2)

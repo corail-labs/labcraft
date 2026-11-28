@@ -1,0 +1,11 @@
+labcraft 1
+
+/// Takes the bytes of the answer waiting up to `terminator`, which it includes; `io.too_long` without it in `max`
+/// bytes, which it takes; `io.timeout` if no answer comes within the timeout.
+extern rust(crate: "labcraft-visa", function: "sim_read_until")
+fn read_until(
+    instrument: instrument,
+    terminator: bytes,
+    max: i32 = 65536,
+    err: error = none,
+) -> (data: bytes, instrument: instrument, err: error)

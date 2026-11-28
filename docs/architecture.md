@@ -866,6 +866,13 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   (`resource_not_found` for a text that is no name), then `io.unsupported`, then `open_real`, then the open itself.
 - **What a run holds is the library's own** (`LibraryRun`): its sessions and simulated instruments live and end with
   the run, and `describe` and `release` read them there.
+- **A native library gives the bodies of its sub-libraries too** (0.5.0): `labcraft-visa` those of `visa` and of
+  `visa.sim`. The engine gives it every library of the run that is its own or one of its sub-libraries, and one run of it
+  serves them all, so that they share its handles and its instruments; the kind of a handle names its type from the
+  library (`sim.instrument`, which the report writes `visa.sim.instrument`). A call reaches it by the `function` of its
+  `extern rust` alone, so the native functions of its libraries have names apart (`open`, `sim_open`). A sub-library of a shipped library is
+  embedded with its manifest, as `visa.sim` from `libs/visa/sim/`, its files shown as `<labcraft>/visa/sim/open.lcf`; the
+  simulation files there stay those of `visa`. Its manifest names its folder, `sim` (cli.md 3).
 - **What libraries keep for the report has one budget per run** (`LogBudget`, decision of the owner, 2026-11-10): 16 MiB
   *(proposed)*, or `--max-memory` when lower (`LogBudget::of_run`), which every library of the run is given and takes
   from, so that what a program sends to instruments or logs stays within that bound. A library that finds it spent counts
@@ -893,10 +900,11 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   and it calls `release` on what a run leaves open after an abort or a fault.
 
 `labcraft-visa` holds the sessions, the `SIM::` backend of [simulation.md](../libs/visa/simulation.md) (the clock in
-whole nanoseconds, the noise generator, the error queue, the faults). The fuzz target `simulation` reads and judges simulation
+whole nanoseconds, the noise generator, the error queue and the status registers, the faults), and, from 0.5.0, the native
+bodies of `visa.sim`, over the same instruments. The fuzz target `simulation` reads and judges simulation
 files, and runs every instrument of a file it accepts (`fuzz/README.md`).
 
-**From 0.5.0** (M4, specified, not built; [libs/visa](../libs/visa/README.md), decisions of the owner of 2026-11-24 and
+**From 0.5.0** (M4; [libs/visa](../libs/visa/README.md), decisions of the owner of 2026-11-24 and
 2026-11-26), `visa` is written in LabCraft, in the `.lcf` and `.lct` files of `libs/visa`, and its crate keeps two
 things. The native `visa.resolve` reduces a name by `runtime::io::endpoint` and gives its route by
 `Context::simulation_file`, so that the name a human allows and the name `visa` opens are read by the same code. The
@@ -908,7 +916,8 @@ such as `X\r`, is sent as `X\r\n` and the simulator takes the command `X`, where
 (decision of the owner, 2026-11-28). A real instrument is reached by `labcraft-net` and
 `labcraft-serial`, which know nothing of VISA. What the report counts does change: the resources of the transports
 (`visa.sim.instrument`, `net.connection`, `serial.port`) instead of `visa.session`, since a session is no handle but a
-value that holds one.
+value that holds one. *Status: `visa.sim` is implemented, beside the native functions of `visa` of M0b, which share its
+instruments and its simulator of 0.5.0 (each `visa.write` still taken as M0 takes it, `X\r` included); `visa.resolve`, `LC8112` and `visa` written in LabCraft are specified, not built.*
 `labcraft-results-log` keeps the results it is given, as the proof of concept did, and the report shows them (`logs`,
 commands.md 7, decision of the owner, 2026-11-09): one entry per call, with its time and the input it holds, whose type in the
 signature the host writes it against; the first 1,000 entries *(proposed)*, each costing the logical size of its value from

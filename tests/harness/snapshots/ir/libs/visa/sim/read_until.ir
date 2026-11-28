@@ -1,0 +1,2 @@
+fn visa.sim.read_until(instrument: instrument, terminator: bytes, max: i32 = 65536, err: error = none) -> (data: bytes, instrument: instrument, err: error)
+  native sim_read_until  skip(err: 3)

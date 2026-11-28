@@ -248,10 +248,12 @@ pub struct Progress {
     pub loops: Vec<LoopAt>,
 }
 
-/// A native library of the run, by the id of its library in the table of types, with what it judged of its section of the
-/// simulation file.
+/// A native library of the run, by the ids of its libraries in the table of types, with what it judged of its section of the
+/// simulation file. A native library gives the bodies of its sub-libraries too (`labcraft-visa` those of `visa.sim`): one
+/// run of it serves them all, so that they share its handles and its instruments.
 pub struct Native<'a> {
-    pub library: LibraryId,
+    /// The library and those of its sub-libraries that the program reaches.
+    pub libraries: &'a [LibraryId],
     pub native: &'a dyn NativeLibrary,
     pub simulation: Option<&'a Simulation>,
 }
