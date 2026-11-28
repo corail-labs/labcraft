@@ -1,22 +1,23 @@
 # Roadmap
 
-*Last updated: 2026-11-19*
+*Last updated: 2026-11-28*
 
 The language was described and tried out by a throwaway Python proof of concept, retired after M0 (2026-11-15). M0, the first
 milestone in Rust, is done in its three parts, M0a, M0b and M0v ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work); for M0v, [11.7](architecture.md#117-order-of-work)),
-with the tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`, the first release with binaries. This page says where the project stands, what the themes and the
+with the tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`, the first release with binaries. Release 0.4.0, the
+editor, is tagged `v0.4.0` ([acceptance-m1.md](acceptance-m1.md)). This page says where the project stands, what the themes and the
 releases are, and how the Rust code is organized.
 
-## Where we are: M0 done
+## Where we are: 0.4.0, the editor
 
 | Document or tool | Status |
 |---|---|
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
 | Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-29 |
-| Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a; `run` and `mcp`: implemented for M0b; `diagram` and the viewer: implemented for M0v |
-| Architecture ([architecture.md](architecture.md)) | The crates of M0a, M0b and M0v as implemented, and the order of work |
-| Rust code (`crates/`, `apps/`, `libs/embedded`, `libs/visa`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build. M0b: crates `trace`, `ir`, `runtime`, `engine`, `mcp`, `labcraft-visa`, and that of `examples/results_log`; `labcraft-cli run` and `mcp`; the corpus of runs, the skills of `skills/`. M0v: crates `diagram`, `editor` (read-only), the module `text` of `types`; `labcraft-cli diagram`; the apps `labcraft` and `labcraft-web`; the snapshots of the drawings |
+| Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a; `run` and `mcp`: implemented for M0b; `diagram` and the viewer: implemented for M0v; the desktop IDE, `exec` and `mcp setup`: implemented for M1 (0.4.0) |
+| Architecture ([architecture.md](architecture.md)) | The crates of M0a, M0b, M0v and M1 (section 12) as implemented, and the order of work |
+| Rust code (`crates/`, `apps/`, `libs/embedded`, `libs/visa`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build. M0b: crates `trace`, `ir`, `runtime`, `engine`, `mcp`, `labcraft-visa`, and that of `examples/results_log`; `labcraft-cli run` and `mcp`; the corpus of runs, the skills of `skills/`. M0v: crates `diagram`, `editor` (read-only), the module `text` of `types`; `labcraft-cli diagram`; the apps `labcraft` and `labcraft-web`; the snapshots of the drawings. M1 (0.4.0): crates `edit`, `ide` and those of `kit/`; `editor` edits, `engine` keeps the history; `libs/core` gives the blocks of the primitives; the window edits on the desktop and in the browser, with an agent attached; `labcraft-cli exec` and `mcp setup`. Early pieces of M4: `bytes`, `net`, `serial`, `--allow-hardware` and `--allow-path` |
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-15 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |

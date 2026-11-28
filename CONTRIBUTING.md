@@ -49,8 +49,9 @@ issue can be wrong: when it contradicts the documents, say so on the issue inste
 ## Where the project is
 
 LabCraft has **done M0, its first milestone in Rust** (tag `v0.3.0-m0`): `labcraft-cli` reads, checks, writes and
-runs programs against simulated instruments and serves them to an agent over MCP, and a viewer draws them. M1, the
-diagram editor, is under way. The repository holds the language and file format specification, the decisions behind
+runs programs against simulated instruments and serves them to an agent over MCP, and a viewer draws them. Release
+0.4.0 (tag `v0.4.0`) makes the viewer an editor, with an agent attached to the window; 0.5.0, the first real bench,
+is under way. The repository holds the language and file format specification, the decisions behind
 it, example programs and the Rust workspace. The throwaway Python tools of the specification phase (a proof of
 concept and a viewer) were retired after M0 (2026-11-15).
 

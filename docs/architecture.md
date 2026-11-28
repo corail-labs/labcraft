@@ -1,7 +1,7 @@
 # Architecture
 
-*Last updated: 2026-11-15. Status: implemented for M0a (sections 1 to 9), M0b (section 10) and M0v
-(section 11); M0 is tagged `v0.3.0-m0`. Section 12, M1, is an outline.*
+*Last updated: 2026-11-28. Status: implemented for M0a (sections 1 to 9), M0b (section 10) and M0v
+(section 11); M0 is tagged `v0.3.0-m0`. Section 12, M1, is implemented for 0.4.0 (tag `v0.4.0`).*
 
 How the Rust code is arranged. Sections 1 to 9: M0a, the crates `types`, `graph`, `format` and `check`, the app
 `labcraft-cli`, and `xtask`. Section 10: M0b, the crates `ir`, `runtime`, `engine` and `mcp`, and the native crate of

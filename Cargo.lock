@@ -2082,7 +2082,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "kit-shell"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "craft-menu",
  "craft-ui",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "kit-text"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "lsp-types",
  "ropey",
@@ -2102,7 +2102,7 @@ dependencies = [
 
 [[package]]
 name = "kit-text-egui"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -2164,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "craft-dialogs",
  "craft-settings",
@@ -2190,7 +2190,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-check"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-format",
  "labcraft-graph",
@@ -2201,7 +2201,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-cli"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "craft-atomic",
  "craft-settings",
@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-diagram"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2236,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-edit"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2246,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-editor"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "egui",
  "labcraft-check",
@@ -2259,7 +2259,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-engine"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-check",
  "labcraft-diagram",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-format"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-graph",
  "labcraft-types",
@@ -2289,14 +2289,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-graph"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-types",
 ]
 
 [[package]]
 name = "labcraft-harness"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "egui",
  "labcraft-check",
@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-ide"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "craft-keymap",
  "craft-menu",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-ir"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-libs"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-check",
  "labcraft-engine",
@@ -2364,7 +2364,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-mcp"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-engine",
  "labcraft-format",
@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-net"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-runtime",
  "labcraft-types",
@@ -2383,14 +2383,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-results-log"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-runtime",
 ]
 
 [[package]]
 name = "labcraft-runtime"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2405,7 +2405,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-serial"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-runtime",
  "labcraft-types",
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-trace"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "serde_json",
  "sha2",
@@ -2424,7 +2424,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-types"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2434,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-visa"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-runtime",
  "labcraft-trace",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-web"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "craft-ui",
  "craft-window",
@@ -5377,7 +5377,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.4.0-dev"
+version = "0.4.0"
 dependencies = [
  "labcraft-engine",
  "labcraft-libs",
