@@ -30,8 +30,20 @@ fn failed(category: &'static str, message: String) -> NativeOutcome {
 struct Simulated {
     spec: Arc<DeviceSpec>,
     stream: Device,
-    /// Opened with settings the device does not expect: it takes the writes and never answers (io.md 6).
+    /// The port has settings the device does not expect: it takes the writes and never answers (io.md 6). Set by the open and
+    /// by each `configure`, so the writes after a `configure` to the settings it expects are answered.
     deaf: bool,
+}
+
+/// Whether a device that expects `spec` is deaf to a port with `settings`; when it is, the report says which settings differ,
+/// at `now` (io.md 6; decision of the owner, 2026-11-20). An open and a `configure` say them alike.
+fn judge(log: &mut EndpointLogs, endpoint: &str, now: i64, spec: &DeviceSpec, settings: &Settings) -> bool {
+    let differ = spec.expected.differ(settings);
+    let deaf = !differ.is_empty();
+    if deaf {
+        log.settings(endpoint, now, differ);
+    }
+    deaf
 }
 
 /// What a port talks to.
@@ -88,6 +100,7 @@ enum Body {
     List(ListPhase),
     Open(Box<OpenCall>),
     Close(CloseCall),
+    Configure(ConfigureCall),
     Transfer(TransferCall),
 }
 
@@ -133,6 +146,24 @@ struct CloseCall {
     held: bool,
 }
 
+/// `configure`: new settings for an open port.
+struct ConfigureCall {
+    handle: Handle,
+    /// Its settings, or why they are wrong, said after the name of the port.
+    settings: Result<Settings, String>,
+    phase: ConfigurePhase,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConfigurePhase {
+    Start,
+    /// It holds the key of its port.
+    Held,
+    /// The real work runs.
+    #[cfg_attr(target_arch = "wasm32", expect(dead_code, reason = "a real port only, which WASM has not"))]
+    Working,
+}
+
 /// A write or a read.
 struct TransferCall {
     handle: Handle,
@@ -166,6 +197,10 @@ struct Opened(Result<Backend, Failure>);
 /// What the real list returned.
 #[cfg(not(target_arch = "wasm32"))]
 struct Listed(Result<Vec<String>, Failure>);
+
+/// What the real work of `configure` returned.
+#[cfg(not(target_arch = "wasm32"))]
+struct Configured(Result<(), Failure>);
 
 /// What the real work of a read or a write returned.
 #[cfg(not(target_arch = "wasm32"))]
@@ -257,6 +292,7 @@ impl SerialRun {
             Body::List(phase) => self.list(phase, done),
             Body::Open(open) => self.open(open, done, cx),
             Body::Close(close) => self.close(close),
+            Body::Configure(configure) => self.configure(configure, done, cx),
             Body::Transfer(transfer) => self.transfer(transfer, done, cx),
         };
         if !matches!(step, Step::Done(_)) {
@@ -370,11 +406,7 @@ impl SerialRun {
     /// A device of the file. Opened with settings it does not expect, it gets no response from it, and the report says which
     /// differ (io.md 6; decision of the owner, 2026-11-20).
     fn open_simulated(&mut self, endpoint: &Endpoint, timeout: i64, settings: Settings, spec: Arc<DeviceSpec>, now: i64) -> Handle {
-        let differ = spec.expected.differ(&settings);
-        let deaf = !differ.is_empty();
-        if deaf {
-            self.log.settings(&endpoint.text, now, differ);
-        }
+        let deaf = judge(&mut self.log, &endpoint.text, now, &spec, &settings);
         self.register(endpoint, timeout, Backend::Simulated(Simulated { spec, stream: Device::default(), deaf }))
     }
 
@@ -428,6 +460,54 @@ impl SerialRun {
         }
         call.held = true;
         Step::Exclusive(self.key(call.handle))
+    }
+
+    /// `configure`: closed or never opened gives `io.closed`; then, holding the key of the port, a setting out of range gives
+    /// `io.invalid_argument`, before anything is changed, and a simulated device takes the settings at once (it judges them at
+    /// each write; one it does not expect is said in the report, as an open's are, and takes no time on the clock), and a real
+    /// port has them set by the system, as `Blocking` work, without closing it.
+    #[cfg_attr(target_arch = "wasm32", expect(unused_variables, reason = "a real port only, which WASM has not, does work"))]
+    fn configure(&mut self, call: &mut ConfigureCall, done: Option<Box<dyn Any + Send>>, cx: CallContext) -> Step {
+        let index = match self.open_index(call.handle) {
+            Ok(index) => index,
+            Err(outcome) => return Step::Done(outcome),
+        };
+        if call.phase == ConfigurePhase::Start {
+            call.phase = ConfigurePhase::Held;
+            return Step::Exclusive(self.key(call.handle));
+        }
+        let Some(port) = self.ports.get_mut(index) else { return Step::Done(never_opened()) };
+        #[cfg(not(target_arch = "wasm32"))]
+        if call.phase == ConfigurePhase::Working {
+            let outcome = match done.and_then(|done| done.downcast::<Configured>().ok()).map(|configured| configured.0) {
+                Some(Ok(())) => opened(call.handle),
+                Some(Err(failure)) => failure.outcome(),
+                None => failed(CLOSED, format!("{}: the work of the call did not end", port.label)),
+            };
+            // A port gone (a board unplugged) is closed, as after a read or a write.
+            if port.broken() {
+                self.shut(call.handle);
+            }
+            return Step::Done(outcome);
+        }
+        // Judged once the call holds the port, as a write is: a port that the call before closed gives `io.closed`.
+        let settings = match &call.settings {
+            Ok(settings) => *settings,
+            Err(message) => return Step::Done(failed(INVALID_ARGUMENT, format!("{}: {message}", port.label))),
+        };
+        match &mut port.backend {
+            Backend::Simulated(device) => {
+                device.deaf = judge(&mut self.log, &port.endpoint, cx.now, &device.spec, &settings);
+                Step::Done(opened(call.handle))
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            Backend::Real(real) => {
+                let shared = real.handle();
+                call.phase = ConfigurePhase::Working;
+                Step::Blocking(Box::new(move || Box::new(Configured(real::reconfigure(&shared, settings))) as Box<dyn Any + Send>))
+            }
+            Backend::Closed => Step::Done(closed(&port.label)),
+        }
     }
 
     /// A write or a read.
@@ -528,7 +608,7 @@ pub(crate) fn first_checks(
     Ok(settings)
 }
 
-/// The outputs of an open.
+/// The outputs of an open, and of a `configure`: the port, no error.
 fn opened(handle: Handle) -> NativeOutcome {
     NativeOutcome::Outputs(vec![Value::Handle(handle), Value::NONE])
 }
@@ -572,8 +652,8 @@ fn real_job(port: &real::Port, op: &Op, call: &TransferCall) -> labcraft_runtime
     Box::new(move || Box::new(work()) as Box<dyn Any + Send>)
 }
 
-/// The settings of `open(port, baud, data_bits, parity, stop_bits, flow, …)`: `baud` above 0 and `data_bits` 5 to 8
-/// (`libs/serial/README.md`, `open`), else why not.
+/// The settings of `open(port, baud, data_bits, parity, stop_bits, flow, …)`, or of `configure(port, …)` with the same
+/// places: `baud` above 0 and `data_bits` 5 to 8 (`libs/serial/README.md`, `open`), else why not.
 fn settings_of(inputs: &[Value]) -> Result<Settings, String> {
     let variant = |at: usize| match inputs.get(at) {
         Some(Value::Variant(variant)) => variant.index,
@@ -622,6 +702,7 @@ impl LibraryRun for SerialRun {
                 phase: OpenPhase::Start,
             })),
             "close" => Body::Close(CloseCall { handle, held: false }),
+            "configure" => Body::Configure(ConfigureCall { handle, settings: settings_of(&inputs), phase: ConfigurePhase::Start }),
             "write" | "write_line" | "read" | "read_until" | "read_line" | "read_available" => Body::Transfer(TransferCall {
                 handle,
                 op: stream::op_of(function, &inputs),

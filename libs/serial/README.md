@@ -1,8 +1,7 @@
 # `serial`: serial ports
 
 *Status: built for release 0.5.0 (M4, [docs/io.md](../../docs/io.md)): its declarations are in this folder, and its native
-bodies in the crate `labcraft-serial` (`src/`). `configure`: specified for 0.5.0 (decision of the owner, 2026-11-26), not
-built yet. Values marked (proposed) are starting points.*
+bodies in the crate `labcraft-serial` (`src/`). Values marked (proposed) are starting points.*
 
 `serial` talks to a device on a serial port in raw bytes: an Arduino or an ESP32 board, a USB-serial adapter, an
 instrument with a protocol of its own. Its functions are native (`extern rust`, spec 4.1), over the crate `serial2`
@@ -59,8 +58,8 @@ instead of a connection.
 - **`open`** opens the port, endpoint `serial:PORT` (io.md 2), with its settings; `data_bits` is 5 to 8, `baud` above 0,
   any rate the system takes. The port keeps `timeout` for each of its reads and writes. It fails with
   `serial.port_not_found`, `serial.port_busy` (open elsewhere, or already open in this run), `io.invalid_argument` (a
-  setting out of range, or one the system refuses, such as 5 data bits with two stop bits), `io.timeout`, or the
-  errors of io.md 3 and 4. The message of `serial.port_not_found` helps with the name: for a `COM` name on a system
+  setting out of range, or one the system refuses, such as 5 data bits with two stop bits on Windows), `io.timeout`, or
+  the errors of io.md 3 and 4. The message of `serial.port_not_found` helps with the name: for a `COM` name on a system
   that has no `COM` ports, it says to name the port by its path (`/dev/ttyS2`, or `ASRL/dev/ttyS2::INSTR` through
   `visa`); under `--sim`, for the port of a `visa` instrument of the file, it comes after the timeout of the open, as for a
   port the file does not describe (io.md 3), and says to open it with `visa.open`.
@@ -71,8 +70,10 @@ instead of a connection.
   on Linux the open raises it, so the Uno should restart *(to be measured: about 2 s)*.
 - **`configure`** (0.5.0, decision of the owner, 2026-11-26) gives an open port other settings, in the ranges of
   `open`, without closing it: the board behind it does not reset, and the bytes that wait in its input stay there. It
-  fails as `open` does for a setting out of range, and with `io.closed` on a port closed or never opened. `visa.set_serial`
-  is written over it ([libs/visa](../visa/README.md)).
+  fails as `open` does for a setting out of range, and with `io.closed` on a port closed or never opened. Outside
+  Windows, the system gives the new settings once the bytes written have gone out: with `flow` `"hardware"` and a
+  device that holds CTS low, the call does not end. `visa.set_serial` is written over it
+  ([libs/visa](../visa/README.md)).
 
 ## What `serial` guarantees
 
