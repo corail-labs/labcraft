@@ -1,6 +1,8 @@
 # Real I/O (M4)
 
-*Specification of the theme M4 for release 0.5.0, decided with the owner on 2026-11-19. State: specified, not built.
+*Specification of the theme M4 for release 0.5.0, decided with the owner on 2026-11-19; `visa` written in LabCraft
+over the transports, 2026-11-24 and 2026-11-26. State: built in part, as the page of each library says; the rest
+specified, not built.
 A value marked (proposed) is a starting point, settled when the Rust is written. The goal and the place of the theme are
 in [outline.md](outline.md) (M4) and [roadmap.md](roadmap.md) ("Releases", 0.5.0).*
 
@@ -26,6 +28,11 @@ the new primitives (`bytes`, the bitwise operations) are in the spec, appendix A
   browser will.
 - **A protocol is written in LabCraft** on top of a transport, as `scpi` is on top of `visa`: the bitwise operations,
   the integer division and `bytes` (spec, appendix A) are enough for Modbus TCP, which the example of section 10 proves.
+- **`visa` is written in LabCraft too** (decision of the owner, 2026-11-24): it is no transport but a way to name
+  instruments, which resolves a name and calls `net`, `serial`, or its sub-library `visa.sim` for the simulated
+  instruments ([libs/visa](../libs/visa/README.md)). What that costs is written there: a session becomes the enum
+  `visa.Session`, and `visa.query`, a write and then a read, is atomic only when the program orders the calls on its
+  session (section 7).
 
 ## 2. Endpoints
 
@@ -52,8 +59,9 @@ consent covers it (decision of the owner, 2026-11-19):
   `serial.port_not_found` at once, and `serial:S003` in a simulation file (decision of the owner, 2026-11-20).
 - **A VISA name reduces to its endpoint**, its VISA words and its host without case, as VISA reads its names, a path
   inside it exactly: `TCPIP[n]::HOST::PORT::SOCKET` to `tcp:HOST:PORT`; `ASRL<n>::INSTR` (`n` from 1) to
-  `serial:COM<n>` on every system, whose real open reaches `COM<n>` on Windows and `/dev/ttyS<n−1>` elsewhere, the
-  usual numbering of VISA; `ASRL<path>::INSTR`, a path that starts with `/`, to `serial:<path>`. `ASRL0` and any
+  `serial:COM<n>` on every system, which is the port `COM<n>` and names no port outside Windows; there, a port is named
+  by its path (decision of the owner, 2026-11-26: what a human allows is what opens, and a simulation file means the same
+  on every system); `ASRL<path>::INSTR`, a path that starts with `/`, to `serial:<path>`. `ASRL0` and any
   other text that is no VISA name give `visa.resource_not_found`. The other VISA forms (`::INSTR` over VXI-11,
   `::hislip0::INSTR`, `USB…`, `GPIB…`) come later in the theme (section 11) and give `io.unsupported` today.
 - A file is not an endpoint: section 5 says what a run may write.
@@ -71,7 +79,8 @@ consent covers it (decision of the owner, 2026-11-19):
   that it does not describe is not found, as a `SIM::` name is: a typo in the file never sends a command to a real
   supply. A bench where some devices are simulated and others real is not in 0.5.0. `resource_not_found` is the category
   of the library (`visa.resource_not_found`, `net.host_not_found`, `serial.port_not_found`), after the timeout of the
-  open, as for `visa` today.
+  open, as for `visa` today. `visa` follows this table by `visa.resolve`: under `--sim` every name goes to its
+  simulated instruments, and without it a real name to `net` or `serial` (libs/visa, "Where a name goes").
 - **Real hardware needs real time** (decision of the owner, 2026-11-19): in deterministic mode the clock of the run is
   simulated, and a real device does not wait for it. The open of a real resource in deterministic mode gives
   `io.needs_real_time`, at once, whose message says to run with `--real-time` (`mode: "real_time"` in `run.start`, the
@@ -87,7 +96,7 @@ consent covers it (decision of the owner, 2026-11-19):
   `resource_not_found` after its timeout. No question is asked whose answer could not be used: an agent that opens a
   real name in deterministic mode gets `io.needs_real_time`, and no window.
 - **`serial.list` reaches no device**: without `--sim` it gives the ports of the system in both modes, with no consent;
-  with `--sim`, the serial endpoints of the file (section 6).
+  with `--sim`, the devices of `serial` in the file (section 6), not the `ASRL` instruments of `visa`.
 
 ## 4. Consent
 
@@ -109,8 +118,9 @@ consent covers it (decision of the owner, 2026-11-19):
   changes them (mcp.md 6). Until the window asks (#239), an agent attached to the IDE reaches no real endpoint and no
   folder outside the project, and `io.not_allowed` says so (decision of the owner, 2026-11-24).
 - **In the IDE**, a run started by an agent that opens a real endpoint, or a file outside the project, waits, and the
-  window asks: the client, the project, the endpoint (`tcp:10.0.0.5:5025`, with the name the program gave,
-  `TCPIP0::10.0.0.5::5025::SOCKET`) or the folder, and three answers (decision of the owner, 2026-11-19): **For this
+  window asks: the client, the project, the endpoint (`tcp:10.0.0.5:5025`; the transport that asks knows no VISA
+  name, since `visa` opens it as any program would, so 0.5.0 shows the endpoint alone, decision of the owner,
+  2026-11-26, and #239 may add the name) or the folder, and three answers (decision of the owner, 2026-11-19): **For this
   run**, **Until the window closes**, **Refuse**. With no answer in 60 s *(proposed)*, it is refused. An answer is never
   kept in the settings of the user or of the project. Disconnecting the client, or changing its policy, forgets its
   answers. The policies Ask, Edits and All (ide.md 8) do not reach the hardware: under All, the question is still asked.
@@ -237,23 +247,36 @@ response_hex = "0001 0000 0007 01 03 04 00e6 0019"
   `\t`, hexadecimal with `"hex": true` otherwise *(proposed)*, within the bounds of `instruments`.
 - **What is refused** is said by the library, with its codes (libs/net, libs/serial, "Simulation"), and the run is
   `refused`, as for `visa` (simulation.md 7).
-- `serial.list` under `--sim` gives the serial endpoints of the file: those of `serial` and the `ASRL` instruments of
-  `visa`, by their port name.
+- **An endpoint is described by one library** (decision of the owner, 2026-11-24): a device of `net` or `serial` and an
+  instrument of `visa` with a real name on the same endpoint (`serial:COM3` and `ASRL3::INSTR`) refuse the run, with
+  `LC8112` at the second one in the order of the file (cli.md 6.6), since the real port would open once and the
+  simulator twice. An instrument of `visa` is reached by `visa.open` only (decisions of the owner, 2026-11-26):
+  `net.connect` to its endpoint gives `net.host_not_found`, and `serial.open` of its port `serial.port_not_found`, after
+  the timeout of the open, as for an endpoint the file does not describe (section 3), with a message that says to open it
+  with `visa.open`.
+- `serial.list` under `--sim` gives the ports of the devices of `serial` in the file, by their name; not those of the
+  `ASRL` instruments of `visa`, which `serial.open` does not find.
 
 ## 7. Running real calls
 
 - **A real call never stops the other branches.** A blocking read, write or open runs apart from the run, as the
   `Blocking` work of a native call (architecture.md 10.6), while the call waits; the other branches go on.
-- **Each call is atomic on its connection, port or session**, as `visa` makes its calls atomic on its session
-  (libs/visa, "What `visa` guarantees"): a read that waits for its timeout holds its connection, so a write from
-  another branch waits for it. Reading and writing one connection from two branches at once comes with the events of M2
-  *(proposed)*.
+- **Each call is atomic on its connection, port or session of `visa.sim`**: a read that waits for its timeout holds its
+  connection, so a write from another branch waits for it. A simulated instrument handles one command at a time,
+  whichever session sends it, and a read waiting on one session does not hold it (libs/visa/simulation.md, section 4). Reading and writing one connection from two branches at once
+  comes with the events of M2 *(proposed)*. A function written in LabCraft over a transport is atomic only per call of
+  the transport: `visa.query` and `scpi.query_f64` are, when the program orders the calls on their session, which the
+  warning of spec 8.1 asks, until functions marked `atomic` (decision of the owner, 2026-11-26); holding a resource
+  across several drawn calls comes with the access structure of release 0.7.0 (Q-19; libs/visa, "What `visa`
+  guarantees").
 - **After an abort or a fault**, the runtime has each library release what the run opened (spec 8.2): connections
   and ports are closed, sessions too. A call in progress ends, or reaches its timeout, within the grace period of the
   runtime, or is abandoned and its resource reported as leaked. Closing a port does not switch off what is behind it.
 - **The code of an error** is 0 for `io.not_allowed`, `io.needs_real_time` and `io.unsupported`, which no transport
-  gives, in every library. Otherwise, it is that of VISA for `visa`, simulated or real (simulation.md 6), so that a
-  program written against the simulator reads the same codes. For `net`, `serial` and `file`, it is that of the system for a real error
+  gives, in every library. Otherwise, for `visa`, simulated or real (simulation.md 6), an error that VISA has has its
+  code, so that a program written against the simulator reads the same codes: `visa.sim` gives them, and `visa` makes
+  them from the errors of `net` and `serial`; the others pass on as their library gives them (libs/visa, "Errors and
+  their codes"). For `net`, `serial` and `file`, it is that of the system for a real error
   (`errno`, the Windows error), which differs from one system to another, and 0 for a simulated one: a program tells
   these errors apart by their category (spec 7.3), which does not depend on the system.
 
@@ -318,17 +341,24 @@ Modbus RTU (CRC-16 by the bitwise operations; frames cut by the length that the 
 silence of 3.5 characters, which is hard to hold from a diagram), MQTT, CAN, DAQmx, `i2c`/`spi`, an Arduino board as a
 slave; a raw `usb` library, on which USBTMC can be written in LabCraft, as Modbus TCP on `net`. Also later: the lines
 of a serial port (DTR, RTS, break), a listening TCP server, UDP broadcast, the discovery of devices (USB VID and PID,
-which `serial2` does not give), a bench where some devices are simulated and others real, wildcards in
+which `serial2` does not give), a bench where some devices are simulated and others real (below), wildcards in
 `--allow-hardware`, patterns in the requests of a simulated device, SRQ as events (M2), a dedicated interface for the
 simulation files (the `Text` view is enough), and reading a file into a declared type (`csv`, `json`, `config` of
 Q-15), which needs the generics of M2.
 
-**`visa` in LabCraft, to weigh after M2** (owner, 2026-11-19). In 0.5.0 `visa` stays native, and its crate reaches TCP
-and serial through the same Rust code as `net` and `serial`. Written in LabCraft, it would be a dispatcher over those
-transports (and `usb` later), the simulator of `SIM::` staying a native library apart. What stops it today: the atomicity
-of `visa.query` (spec 8.1), which a function in LabCraft cannot hold before the access structure of `ref<T>` (M2,
-Q-19); the report, whose `instruments` lists the commands of each instrument, where such a `visa` would show only the
-bytes of its endpoints; and the codes of VISA, which each call would have to make again.
+**`visa` in LabCraft from 0.5.0** (decision of the owner, 2026-11-24, which replaces that of 2026-11-19 to weigh it
+after M2). What stopped it is answered in [libs/visa](../libs/visa/README.md): `visa.query` is atomic only when the
+program orders the calls on its session, until functions marked `atomic` (decision of the owner, 2026-11-26), and
+holding a session across several drawn calls comes with the access structure of 0.7.0 (Q-19); the simulated instruments keep their
+commands and answers in the report, since `visa.sim` is their transport; and `visa` makes the codes of VISA again in
+LabCraft from the errors of `net` and `serial`. A later form of VISA name (VXI-11, HiSLIP, USBTMC over a `usb`
+library) is another route of `visa.resolve` and another branch of its functions, written over its transport; so is a
+binding to an installed VISA, later (#370).
+
+**The mixed bench, later.** That a simulation file is the whole bench (section 3) is the default of a later key of the
+file: a list of the endpoints that go to the hardware while the others stay simulated, each judged by the consent of
+section 4. A run with one real device runs in real time (section 3), so its simulated devices lose the deterministic
+clock.
 
 **Risks.**
 
